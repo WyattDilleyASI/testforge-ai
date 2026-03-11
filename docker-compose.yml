@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  testforge:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - SESSION_SECRET=${SESSION_SECRET:-change-this-in-production}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+    volumes:
+      - testforge-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  testforge-data:
