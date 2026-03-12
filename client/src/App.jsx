@@ -474,6 +474,11 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const [apiError, setApiError] = useState(null);
   const [sessionTcIds, setSessionTcIds] = useState(null);
   const [viewMode, setViewMode] = useState("library");
+  const [copyState, setCopyState] = useState("idle"); // idle | copying | copied | error
+  const [showImport, setShowImport] = useState(false);
+  const [importJson, setImportJson] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
@@ -490,13 +495,53 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     finally { setGenerating(false); }
   };
 
+  const copyPrompt = async () => {
+    if (!selectedReqId) return;
+    setCopyState("copying");
+    try {
+      const { prompt } = await api.getGenerationPrompt(selectedReqId, depth);
+      await navigator.clipboard.writeText(prompt);
+      setCopyState("copied");
+      setTimeout(() => setCopyState("idle"), 2500);
+    } catch (err) {
+      setCopyState("error");
+      setTimeout(() => setCopyState("idle"), 2500);
+    }
+  };
+
+  const doImport = async () => {
+    setImportError("");
+    let parsed;
+    try {
+      const cleaned = importJson.replace(/```json|```/g, "").trim();
+      parsed = JSON.parse(cleaned);
+      if (!Array.isArray(parsed)) throw new Error("Response must be a JSON array");
+    } catch (err) {
+      setImportError(`Invalid JSON: ${err.message}`);
+      return;
+    }
+    setImporting(true);
+    try {
+      const newTcs = await api.importTestCases(selectedReqId, depth, parsed);
+      setSessionTcIds(newTcs.map(tc => tc.tc_id));
+      setViewMode("session");
+      setShowImport(false);
+      setImportJson("");
+      refresh();
+    } catch (err) { setImportError(err.message); }
+    finally { setImporting(false); }
+  };
+
   const updateStatus = async (tcId, status) => {
     try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
   };
 
-  return <div>
-    <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
-    <Card glow style={{ marginBottom: 24 }}>
+  return <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+    <div style={{ marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
+    </div>
+    <Card glow style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} style={{ minWidth: 280 }} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
@@ -505,6 +550,56 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
       </div>
       {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
       {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
+    </Card>
+
+    {/* Claude.ai manual workflow */}
+    <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase", marginBottom: 3 }}>No API Key? Use Claude.ai Manually</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted }}>Copy the prompt → paste into claude.ai → paste the JSON response back here</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId || copyState === "copying"}
+            onClick={copyPrompt}
+            style={{ borderColor: COLORS.purple + "66", color: copyState === "copied" ? COLORS.green : copyState === "error" ? COLORS.red : COLORS.purple }}
+          >
+            {copyState === "copying" ? "Fetching..." : copyState === "copied" ? "✓ Copied!" : copyState === "error" ? "✗ Failed" : "Copy Prompt"}
+          </Button>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId}
+            onClick={() => { setShowImport(!showImport); setImportError(""); }}
+            style={{ borderColor: COLORS.purple + "66", color: COLORS.purple }}
+          >
+            {showImport ? "Cancel Import" : "Import Response"}
+          </Button>
+        </div>
+      </div>
+
+      {showImport && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
+          Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
+        </div>
+        <textarea
+          value={importJson}
+          onChange={e => setImportJson(e.target.value)}
+          placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "preconditions": "...",\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "passFailCriteria": "..."\n  }\n]'}
+          style={{ width: "100%", minHeight: 160, fontFamily: mono, fontSize: 11, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${importError ? COLORS.red : COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", outline: "none", boxSizing: "border-box" }}
+        />
+        {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
+        <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Button variant="secondary" small onClick={() => { setShowImport(false); setImportJson(""); setImportError(""); }}>Cancel</Button>
+          <Button small disabled={!importJson.trim() || importing} onClick={doImport}
+            style={{ background: COLORS.purple, color: COLORS.bg }}>
+            {importing ? "Saving..." : "Save Test Cases"}
+          </Button>
+        </div>
+      </div>}
     </Card>
     {testCases.length > 0 && <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
       <Button small variant={viewMode === "library" ? "primary" : "secondary"} onClick={() => setViewMode("library")}>Library ({testCases.length})</Button>
@@ -543,6 +638,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
         </div>}
       </Card>)}
     </>}
+    </div>
   </div>;
 };
 
