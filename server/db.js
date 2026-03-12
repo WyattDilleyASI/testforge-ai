@@ -61,11 +61,12 @@ function initialize() {
       linked_req_ids TEXT DEFAULT '[]',
       preconditions TEXT,
       steps TEXT DEFAULT '[]',
-      pass_fail_criteria TEXT,
+      description TEXT,
       type TEXT,
       depth TEXT,
       req_attribute TEXT,
       kb_references TEXT DEFAULT '[]',
+      upstream_relationship TEXT DEFAULT '[]',
       status TEXT NOT NULL DEFAULT 'Draft',
       generated_by TEXT,
       generated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -137,6 +138,8 @@ function initialize() {
   // Migration: add project_id column if missing (for existing DBs)
   const tcCols = db.prepare("PRAGMA table_info(test_cases)").all().map(c => c.name);
   if (!tcCols.includes("project_id")) db.exec("ALTER TABLE test_cases ADD COLUMN project_id TEXT");
+  if (!tcCols.includes("upstream_relationship")) db.exec("ALTER TABLE test_cases ADD COLUMN upstream_relationship TEXT DEFAULT '[]'");
+  if (tcCols.includes("pass_fail_criteria")) db.exec("ALTER TABLE test_cases RENAME COLUMN pass_fail_criteria TO description");
 
   // Seed default admin if no users exist
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;

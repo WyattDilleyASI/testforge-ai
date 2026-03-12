@@ -37,6 +37,8 @@ export const api = {
   getTestCases: () => request("/testcases"),
   generateTestCases: (reqId, depth) => request("/testcases/generate", { method: "POST", body: { reqId, depth } }),
   updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
+  getPrompt: (reqId, depth) => request(`/testcases/prompt?reqId=${encodeURIComponent(reqId)}&depth=${encodeURIComponent(depth || "standard")}`),
+  importTestCases: (reqId, depth, tcs) => request("/testcases/import", { method: "POST", body: { reqId, depth, tcs } }),
   clearTestCases: () => request("/testcases", { method: "DELETE" }),
   exportTestCasesXlsx: () => {
     const a = document.createElement("a");

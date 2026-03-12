@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const XLSX = require("xlsx");
 const cheerio = require("cheerio");
+const mammoth = require("mammoth");
 const { getDb, logAudit, logTokenUsage } = require("../db");
 const { requireAuth } = require("../auth");
 
@@ -16,6 +17,7 @@ router.get("/", requireAuth, (req, res) => {
     linked_req_ids: JSON.parse(tc.linked_req_ids || "[]"),
     steps: JSON.parse(tc.steps || "[]"),
     kb_references: JSON.parse(tc.kb_references || "[]"),
+    upstream_relationship: JSON.parse(tc.upstream_relationship || "[]"),
   })));
 });
 
@@ -96,11 +98,11 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
     const currentCount = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
     const newTcs = [];
 
-    const insertStmt = db.prepare("INSERT INTO test_cases (tc_id, title, linked_req_ids, preconditions, steps, pass_fail_criteria, type, depth, req_attribute, kb_references, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)");
+    const insertStmt = db.prepare("INSERT INTO test_cases (tc_id, title, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)");
 
     const insertMany = db.transaction((tcs) => {
       for (const tc of tcs) {
-        insertStmt.run(tc.tc_id, tc.title, tc.linked_req_ids, tc.preconditions, tc.steps, tc.pass_fail_criteria, tc.type, tc.depth, tc.req_attribute, tc.kb_references, tc.generated_by);
+        insertStmt.run(tc.tc_id, tc.title, tc.linked_req_ids, tc.preconditions, tc.steps, tc.description, tc.type, tc.depth, tc.req_attribute, tc.kb_references, tc.generated_by);
       }
     });
 
@@ -113,7 +115,7 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
         linked_req_ids: JSON.stringify([reqId]),
         preconditions: tc.setup ? JSON.stringify(tc.setup) : "",
         steps: JSON.stringify(tc.steps || []),
-        pass_fail_criteria: tc.description ? JSON.stringify(tc.description) : "",
+        description: tc.description ? JSON.stringify(tc.description) : "",
         type: tc.type || "Happy Path",
         depth: depth || "standard",
         req_attribute: tc.reqAttribute || "",
@@ -139,6 +141,7 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
       linked_req_ids: JSON.parse(tc.linked_req_ids || "[]"),
       steps: JSON.parse(tc.steps || "[]"),
       kb_references: JSON.parse(tc.kb_references || "[]"),
+      upstream_relationship: JSON.parse(tc.upstream_relationship || "[]"),
     })));
   } catch (err) {
     console.error("TC generation error:", err);
@@ -205,11 +208,11 @@ router.post("/import", requireAuth, (req, res) => {
   const currentCount = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
   const newTcs = [];
 
-  const insertStmt = db.prepare("INSERT INTO test_cases (tc_id, title, linked_req_ids, preconditions, steps, pass_fail_criteria, type, depth, req_attribute, kb_references, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)");
+  const insertStmt = db.prepare("INSERT INTO test_cases (tc_id, title, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)");
 
   const insertMany = db.transaction((items) => {
     for (const tc of items) {
-      insertStmt.run(tc.tc_id, tc.title, tc.linked_req_ids, tc.preconditions, tc.steps, tc.pass_fail_criteria, tc.type, tc.depth, tc.req_attribute, tc.kb_references, tc.generated_by);
+      insertStmt.run(tc.tc_id, tc.title, tc.linked_req_ids, tc.preconditions, tc.steps, tc.description, tc.type, tc.depth, tc.req_attribute, tc.kb_references, tc.generated_by);
     }
   });
 
@@ -220,9 +223,9 @@ router.post("/import", requireAuth, (req, res) => {
       tc_id: tcId,
       title: tc.title || "Untitled",
       linked_req_ids: JSON.stringify([reqId]),
-      preconditions: tc.preconditions || "",
+      preconditions: tc.setup ? JSON.stringify(tc.setup) : "",
       steps: JSON.stringify(tc.steps || []),
-      pass_fail_criteria: tc.passFailCriteria || tc.pass_fail_criteria || "",
+      description: tc.description ? JSON.stringify(tc.description) : "",
       type: tc.type || "Happy Path",
       depth: depth || "standard",
       req_attribute: tc.reqAttribute || tc.req_attribute || "",
@@ -240,6 +243,7 @@ router.post("/import", requireAuth, (req, res) => {
       linked_req_ids: JSON.parse(tc.linked_req_ids || "[]"),
       steps: JSON.parse(tc.steps || "[]"),
       kb_references: JSON.parse(tc.kb_references || "[]"),
+      upstream_relationship: JSON.parse(tc.upstream_relationship || "[]"),
     })));
   } catch (err) {
     res.status(500).json({ error: `Import failed: ${err.message}` });
@@ -270,6 +274,22 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Strip HTML tags and decode entities for plain-text XLSX cells
+function stripHtmlForXlsx(str) {
+  if (!str) return "";
+  return str
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9A-Fa-f]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // GET /api/testcases/export/xlsx — export all test cases in JAMA xlsx format
 router.get("/export/xlsx", requireAuth, (req, res) => {
   const db = getDb();
@@ -278,7 +298,7 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
   const reqMap = {};
   for (const r of requirements) reqMap[r.req_id] = r;
 
-  const headers = ["Name", "Description", "Setup", "Automation Tool", "Automated", "Step Action", "Step Expected Result", "", "Step Notes", "Priority"];
+  const headers = ["Name", "Description", "Setup", "Automation Tool", "Automated", "Step Number", "Step Action", "Step Expected Result", "Step Notes", "Priority", "Upstream Relationship"];
   const rows = [headers];
 
   for (const tc of testCases) {
@@ -286,10 +306,19 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
     const linkedReqIds = JSON.parse(tc.linked_req_ids || "[]");
     const priority = linkedReqIds.length > 0 && reqMap[linkedReqIds[0]] ? reqMap[linkedReqIds[0]].priority : "High";
 
-    // Unpack structured description and setup if JSON, otherwise use plain text
-    let descText = tc.pass_fail_criteria || "";
+    // Format upstream relationships as "ID - Name; ID - Name"
+    let upstreamText = "";
     try {
-      const d = JSON.parse(tc.pass_fail_criteria || "");
+      const ups = JSON.parse(tc.upstream_relationship || "[]");
+      if (Array.isArray(ups) && ups.length > 0) {
+        upstreamText = ups.map(u => `${u.id} - ${u.name}`).join("; ");
+      }
+    } catch {}
+
+    // Unpack structured description and setup if JSON, otherwise use plain text
+    let descText = tc.description || "";
+    try {
+      const d = JSON.parse(tc.description || "");
       if (d && typeof d === "object") {
         const parts = [];
         if (d.objective) parts.push(`Objective:\n${d.objective}`);
@@ -313,20 +342,21 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
     } catch {}
 
     if (steps.length === 0) {
-      rows.push([tc.title, descText, setupText, "Manual", "No", "", "", "", "", priority]);
+      rows.push([tc.title, descText, setupText, "Manual", "No", "", "", "", "", priority, upstreamText]);
     } else {
       steps.forEach((step, i) => {
         rows.push([
-          i === 0 ? tc.title : "",
-          i === 0 ? descText : "",
-          i === 0 ? setupText : "",
-          i === 0 ? "Manual" : "",
-          i === 0 ? "No" : "",
-          step.step || "",
-          step.expectedResult || "",
+          tc.title,
+          descText,
+          setupText,
+          "Manual",
+          "No",
+          i + 1,
+          stripHtmlForXlsx(step.step),
+          stripHtmlForXlsx(step.expectedResult),
           "",
-          "",
-          i === 0 ? priority : "",
+          priority,
+          upstreamText,
         ]);
       });
     }
@@ -338,7 +368,7 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
   // Column widths matching the JAMA template style
   ws["!cols"] = [
     { wch: 40 }, { wch: 50 }, { wch: 40 }, { wch: 16 }, { wch: 10 },
-    { wch: 50 }, { wch: 50 }, { wch: 5 }, { wch: 20 }, { wch: 10 },
+    { wch: 10 }, { wch: 50 }, { wch: 50 }, { wch: 20 }, { wch: 10 }, { wch: 50 },
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, "Test Cases");
@@ -350,187 +380,340 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
   res.send(buf);
 });
 
-// POST /api/testcases/import-doc — parse JAMA "All Item Details" .doc (MHT) and import as test cases
-router.post("/import-doc", requireAuth, upload.single("file"), (req, res) => {
+// POST /api/testcases/import-doc — parse JAMA Verification Test Cases .docx or "All Item Details" .doc (MHT)
+router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-  // Decode quoted-printable encoding used in Word MHT files
-  function decodeQP(str) {
-    return str
-      .replace(/=\r\n/g, "")
-      .replace(/=\n/g, "")
-      .replace(/=([0-9A-Fa-f]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-  }
-
-  // Walk a cheerio element, returning text with <img> src preserved as a placeholder
-  // so the step regex can split on text while images survive into the stored HTML
-  function textWithImagePlaceholders($, el) {
-    let out = "";
-    $(el).contents().each((_, node) => {
-      const tag = node.tagName?.toLowerCase();
-      if (node.type === "text") {
-        // Strip HTML markup embedded as literal text (JAMA encodes step HTML as entities
-        // which cheerio decodes back to < > characters in text nodes), decode any remaining
-        // HTML entities (e.g. &nbsp; left from double-encoded &amp;nbsp;), and remove \r chars
-        const text = node.data
-          .replace(/<[^>]*>/g, " ")
-          .replace(/&nbsp;/gi, " ")
-          .replace(/&amp;/g, "&")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"')
-          .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-          .replace(/&#x([0-9A-Fa-f]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-          .replace(/\r/g, "");
-        out += text;
-      } else if (tag === "img") {
-        const src = $(node).attr("src") || "";
-        if (/^https?:\/\//.test(src)) out += `[[IMG:${src}]]`;
-      } else if (tag === "br") {
-        out += " ";
-      } else {
-        out += textWithImagePlaceholders($, node);
-      }
-    });
-    return out;
-  }
-
-  // Convert a step string (with [[IMG:...]] placeholders) to safe HTML
-  function placeholdersToHtml(str) {
-    const escaped = str
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return escaped.replace(/\[\[IMG:(https?:\/\/[^\]]+)\]\]/g,
-      (_, src) => `<img src="${src}" alt="" style="max-width:480px;display:block;margin:6px 0;" />`);
-  }
-
-  // Parse structured subsections: <p><strong>Label:</strong></p><ul><li>...</li></ul>
-  function parseSubsections($, $cell) {
-    const result = {};
-    let currentKey = null;
-    $cell.children().each((_, el) => {
-      const tag = el.tagName?.toLowerCase();
-      if (tag === "p") {
-        const strongText = $(el).find("strong").text().replace(/:$/, "").trim().toLowerCase();
-        if (strongText) currentKey = strongText;
-      } else if (tag === "ul" && currentKey) {
-        const items = [];
-        $(el).find("li").each((_, li) => {
-          const text = $(li).text().replace(/\s+/g, " ").trim();
-          if (text) items.push(text);
-        });
-        if (!result[currentKey]) result[currentKey] = [];
-        result[currentKey].push(...items);
-      }
-    });
-    return result;
-  }
-
-  // Read as latin1 (byte-preserving), QP-decode, then reinterpret as UTF-8
-  // This fixes mojibake from inline UTF-8 bytes (e.g. • stored as E2 80 A2)
-  const raw = req.file.buffer.toString("latin1");
-  const decoded = decodeQP(raw);
-  const html = Buffer.from(decoded, "latin1").toString("utf8");
-  const $ = cheerio.load(html);
   const db = getDb();
-
   const imported = [];
   const skipped = [];
 
-  $("div.Section1").each((_, section) => {
-    try {
-      const fieldMap = {};
+  // Detect file format: .docx starts with PK (zip), .doc MHT starts with MIME-Version
+  const isDocx = req.file.buffer[0] === 0x50 && req.file.buffer[1] === 0x4B;
 
-      // Extract all label/value pairs from the two-column grid table
-      $(section).find("tr").each((_, row) => {
-        const cells = $(row).find("td");
-        if (cells.length === 2) {
-          const label = $(cells[0]).find("b").text().replace(/:$/, "").trim();
-          if (label) fieldMap[label] = $(cells[1]);
+  if (isDocx) {
+    // ─── DOCX format (Verification Test Cases export) ──────────────────────
+    try {
+      const result = await mammoth.convertToHtml({ buffer: req.file.buffer });
+      const $ = cheerio.load(result.value);
+
+      // Find the main data table (the one with the most rows)
+      let mainTable = null;
+      let maxRows = 0;
+      $("table").each((_, t) => {
+        if ($(t).parents("table").length === 0) {
+          const rowCount = $(t).find("tr").length;
+          if (rowCount > maxRows) { maxRows = rowCount; mainTable = t; }
         }
       });
+      if (!mainTable) return res.status(400).json({ error: "No data table found in DOCX" });
 
-      // Only process sections that have a Project ID (actual test cases)
-      const projectId = fieldMap["Project ID"] ? fieldMap["Project ID"].text().trim() : null;
-      const title = fieldMap["Name"] ? fieldMap["Name"].text().trim() : null;
-      if (!projectId || !title) return;
+      const rows = $(mainTable).find("tr");
+      const tcIdPattern = /^[A-Z0-9]+-[A-Z_a-z0-9]+-\d+$/;
 
-      // Check for duplicate
-      const existing = db.prepare("SELECT tc_id FROM test_cases WHERE tc_id = ?").get(projectId);
-      if (existing) { skipped.push(projectId); return; }
+      // Parse description cell HTML: <strong>Objective:</strong> <ul><li>...</li></ul> etc.
+      function parseDescriptionCell($, cell) {
+        const obj = { objective: "", scope: "", assumptions: [] };
+        let currentKey = null;
 
-      // Parse structured Description → {objective, scope, assumptions[]}
-      let descJson = "";
-      if (fieldMap["Description"]) {
-        const subs = parseSubsections($, fieldMap["Description"]);
-        const obj = {
-          objective: (subs["objective"] || []).join(" ").replace(/\s+/g, " ").trim(),
-          scope: (subs["scope"] || []).join(" ").replace(/\s+/g, " ").trim(),
-          assumptions: subs["assumptions"] || [],
-        };
-        if (obj.objective || obj.scope || obj.assumptions.length) {
-          descJson = JSON.stringify(obj);
-        } else {
-          // Fallback to plain text if no structured subsections
-          descJson = fieldMap["Description"].text().replace(/\s+/g, " ").trim();
-        }
-      }
-
-      // Parse structured Setup → {preconditions[], environment[], equipment[], testData[]}
-      let setupJson = "";
-      if (fieldMap["Setup"]) {
-        const subs = parseSubsections($, fieldMap["Setup"]);
-        const obj = {
-          preconditions: subs["preconditions"] || [],
-          environment: subs["environment"] || [],
-          equipment: subs["equipment"] || [],
-          testData: subs["test data"] || [],
-        };
-        if (obj.preconditions.length || obj.environment.length || obj.equipment.length || obj.testData.length) {
-          setupJson = JSON.stringify(obj);
-        } else {
-          setupJson = fieldMap["Setup"].text().replace(/\s+/g, " ").trim();
-        }
-      }
-
-      const status = fieldMap["Status"] ? fieldMap["Status"].text().trim() : "Draft";
-
-      // Parse steps: "1: action_text, expected_result\n2: ..."
-      // Uses image-placeholder extraction so <img> URLs survive the text split
-      const steps = [];
-      if (fieldMap["Steps"]) {
-        const rawText = textWithImagePlaceholders($, fieldMap["Steps"]);
-        const stepMatches = [...rawText.matchAll(/(\d+):\s*([\s\S]*?)(?=\s*\d+:|$)/g)];
-        for (const match of stepMatches) {
-          const stepBody = match[2].trim();
-          const commaIdx = stepBody.lastIndexOf(", ");
-          if (commaIdx > -1) {
-            steps.push({
-              step: placeholdersToHtml(stepBody.substring(0, commaIdx).replace(/\s+/g, " ").trim()),
-              expectedResult: placeholdersToHtml(stepBody.substring(commaIdx + 2).replace(/\s+/g, " ").trim()),
+        $(cell).children().each((_, el) => {
+          const tag = el.tagName?.toLowerCase();
+          if (tag === "p") {
+            const strongText = $(el).find("strong").text().replace(/:$/, "").trim().toLowerCase();
+            if (strongText) currentKey = strongText;
+          } else if (tag === "ul" && currentKey) {
+            const items = [];
+            $(el).find("li").each((_, li) => {
+              const text = $(li).text().replace(/\xa0/g, " ").replace(/\s+/g, " ").trim();
+              if (text) items.push(text);
             });
-          } else if (stepBody) {
-            steps.push({ step: placeholdersToHtml(stepBody.replace(/\s+/g, " ").trim()), expectedResult: "" });
+            if (currentKey === "objective") obj.objective = items.join(" ");
+            else if (currentKey === "scope") obj.scope = items.join(" ");
+            else if (currentKey === "assumptions") obj.assumptions.push(...items);
+          }
+        });
+
+        if (obj.objective || obj.scope || obj.assumptions.length) return JSON.stringify(obj);
+        // Fallback to plain text
+        return $(cell).text().replace(/\xa0/g, " ").replace(/\s+/g, " ").trim();
+      }
+
+      // Parse upstream relationships: "Upstream Relationships: ID1 Name1ID2 Name2"
+      function parseUpstream(text) {
+        const after = text.replace(/^Upstream Relationships:\s*/i, "").trim();
+        if (!after) return "[]";
+        // Match JAMA IDs (e.g. LFWM2-SYSRQ-292) followed by their name
+        const matches = [...after.matchAll(/([A-Z0-9]+-[\w]+-\d+)\s+([\s\S]*?)(?=[A-Z0-9]+-[\w]+-\d+|$)/g)];
+        if (matches.length === 0) return "[]";
+        const rels = matches.map(m => ({ id: m[1].trim(), name: m[2].trim() }));
+        return JSON.stringify(rels);
+      }
+
+      // Walk through rows, grouping by TC boundaries
+      let currentTc = null;
+      let state = "idle"; // idle | desc | verification | steps_pending | steps_header | steps
+
+      function saveTc() {
+        if (!currentTc) return;
+        const existing = db.prepare("SELECT tc_id FROM test_cases WHERE tc_id = ?").get(currentTc.tcId);
+        if (existing) { skipped.push(currentTc.tcId); return; }
+
+        db.prepare(
+          "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
+        ).run(
+          currentTc.tcId, currentTc.title, currentTc.tcId, "[]",
+          "", JSON.stringify(currentTc.steps), currentTc.descJson,
+          "Happy Path", "standard", "",
+          "[]", currentTc.upstream,
+          `${req.session.name} (JAMA DOCX import)`
+        );
+        imported.push(currentTc.tcId);
+      }
+
+      rows.each((_, row) => {
+        const cells = $(row).children("td");
+        const cellCount = cells.length;
+        const firstCellText = cells.eq(0).text().replace(/\xa0/g, " ").trim();
+
+        // TC header row: 2 cells, first cell matches ID pattern
+        if (cellCount === 2 && tcIdPattern.test(firstCellText)) {
+          saveTc();
+          currentTc = {
+            tcId: firstCellText,
+            title: cells.eq(1).text().replace(/\xa0/g, " ").trim(),
+            descJson: "",
+            steps: [],
+            upstream: "[]",
+          };
+          state = "desc";
+          return;
+        }
+
+        if (!currentTc) return;
+
+        // Description row: 1 cell after header
+        if (state === "desc" && cellCount === 1) {
+          currentTc.descJson = parseDescriptionCell($, cells.eq(0));
+          state = "verification";
+          return;
+        }
+
+        // Verification Method row
+        if (state === "verification" && firstCellText.startsWith("Verification Method")) {
+          state = "steps_pending";
+          return;
+        }
+
+        // "Steps" label row
+        if (state === "steps_pending" && firstCellText === "Steps") {
+          state = "steps_header";
+          return;
+        }
+
+        // Steps column header row: "Action", "Expected Results", "Notes"
+        if (state === "steps_header" && firstCellText === "Action") {
+          state = "steps";
+          return;
+        }
+
+        // Step data rows: 3 cells
+        if (state === "steps" && cellCount === 3) {
+          const action = cells.eq(0).text().replace(/\xa0/g, " ").replace(/\s+/g, " ").trim();
+          const expected = cells.eq(1).text().replace(/\xa0/g, " ").replace(/\s+/g, " ").trim();
+          if (action || expected) {
+            currentTc.steps.push({ step: action, expectedResult: expected });
+          }
+          return;
+        }
+
+        // Upstream Relationships row: 1 cell starting with "Upstream Relationships"
+        if (cellCount === 1 && firstCellText.startsWith("Upstream Relationships")) {
+          currentTc.upstream = parseUpstream(firstCellText);
+          saveTc();
+          currentTc = null;
+          state = "idle";
+          return;
+        }
+
+        // Skip single-cell rows in steps state (nested table duplicates from mammoth)
+        if (state === "steps" && cellCount === 1) return;
+      });
+
+      // Save last TC if no upstream row terminated it
+      saveTc();
+
+    } catch (err) {
+      console.error("DOCX import error:", err);
+      return res.status(500).json({ error: `DOCX import failed: ${err.message}` });
+    }
+  } else {
+    // ─── MHT .doc format (All Item Details export) ────────────────────────
+
+    function decodeQP(str) {
+      return str
+        .replace(/=\r\n/g, "")
+        .replace(/=\n/g, "")
+        .replace(/=([0-9A-Fa-f]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    }
+
+    function textWithImagePlaceholders($, el) {
+      let out = "";
+      $(el).contents().each((_, node) => {
+        const tag = node.tagName?.toLowerCase();
+        if (node.type === "text") {
+          const text = node.data
+            .replace(/<[^>]*>/g, " ")
+            .replace(/&nbsp;/gi, " ")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+            .replace(/&#x([0-9A-Fa-f]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+            .replace(/\r/g, "");
+          out += text;
+        } else if (tag === "img") {
+          const src = $(node).attr("src") || "";
+          if (/^https?:\/\//.test(src)) out += `[[IMG:${src}]]`;
+        } else if (tag === "br") {
+          out += " ";
+        } else {
+          out += textWithImagePlaceholders($, node);
+        }
+      });
+      return out;
+    }
+
+    function placeholdersToHtml(str) {
+      const escaped = str
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return escaped.replace(/\[\[IMG:(https?:\/\/[^\]]+)\]\]/g,
+        (_, src) => `<img src="${src}" alt="" style="max-width:480px;display:block;margin:6px 0;" />`);
+    }
+
+    function parseSubsections($, $cell) {
+      const result = {};
+      let currentKey = null;
+      $cell.children().each((_, el) => {
+        const tag = el.tagName?.toLowerCase();
+        if (tag === "p") {
+          const strongText = $(el).find("strong").text().replace(/:$/, "").trim().toLowerCase();
+          if (strongText) currentKey = strongText;
+        } else if (tag === "ul" && currentKey) {
+          const items = [];
+          $(el).find("li").each((_, li) => {
+            const text = $(li).text().replace(/\s+/g, " ").trim();
+            if (text) items.push(text);
+          });
+          if (!result[currentKey]) result[currentKey] = [];
+          result[currentKey].push(...items);
+        }
+      });
+      return result;
+    }
+
+    const raw = req.file.buffer.toString("latin1");
+    const decoded = decodeQP(raw);
+    const html = Buffer.from(decoded, "latin1").toString("utf8");
+    const $ = cheerio.load(html);
+
+    $("div.Section1").each((_, section) => {
+      try {
+        const fieldMap = {};
+        $(section).find("tr").each((_, row) => {
+          const cells = $(row).find("td");
+          if (cells.length === 2) {
+            const label = $(cells[0]).find("b").text().replace(/:$/, "").trim();
+            if (label) fieldMap[label] = $(cells[1]);
+          }
+        });
+
+        const projectId = fieldMap["Project ID"] ? fieldMap["Project ID"].text().trim() : null;
+        const title = fieldMap["Name"] ? fieldMap["Name"].text().trim() : null;
+        if (!projectId || !title) return;
+
+        const existing = db.prepare("SELECT tc_id FROM test_cases WHERE tc_id = ?").get(projectId);
+        if (existing) { skipped.push(projectId); return; }
+
+        let descJson = "";
+        if (fieldMap["Description"]) {
+          const subs = parseSubsections($, fieldMap["Description"]);
+          const obj = {
+            objective: (subs["objective"] || []).join(" ").replace(/\s+/g, " ").trim(),
+            scope: (subs["scope"] || []).join(" ").replace(/\s+/g, " ").trim(),
+            assumptions: subs["assumptions"] || [],
+          };
+          if (obj.objective || obj.scope || obj.assumptions.length) {
+            descJson = JSON.stringify(obj);
+          } else {
+            descJson = fieldMap["Description"].text().replace(/\s+/g, " ").trim();
           }
         }
+
+        let setupJson = "";
+        if (fieldMap["Setup"]) {
+          const subs = parseSubsections($, fieldMap["Setup"]);
+          const obj = {
+            preconditions: subs["preconditions"] || [],
+            environment: subs["environment"] || [],
+            equipment: subs["equipment"] || [],
+            testData: subs["test data"] || [],
+          };
+          if (obj.preconditions.length || obj.environment.length || obj.equipment.length || obj.testData.length) {
+            setupJson = JSON.stringify(obj);
+          } else {
+            setupJson = fieldMap["Setup"].text().replace(/\s+/g, " ").trim();
+          }
+        }
+
+        const status = fieldMap["Status"] ? fieldMap["Status"].text().trim() : "Draft";
+
+        const steps = [];
+        if (fieldMap["Steps"]) {
+          const rawText = textWithImagePlaceholders($, fieldMap["Steps"]);
+          const stepMatches = [...rawText.matchAll(/(\d+):\s*([\s\S]*?)(?=\s*\d+:|$)/g)];
+          for (const match of stepMatches) {
+            const stepBody = match[2].trim();
+            const commaIdx = stepBody.lastIndexOf(", ");
+            if (commaIdx > -1) {
+              steps.push({
+                step: placeholdersToHtml(stepBody.substring(0, commaIdx).replace(/\s+/g, " ").trim()),
+                expectedResult: placeholdersToHtml(stepBody.substring(commaIdx + 2).replace(/\s+/g, " ").trim()),
+              });
+            } else if (stepBody) {
+              steps.push({ step: placeholdersToHtml(stepBody.replace(/\s+/g, " ").trim()), expectedResult: "" });
+            }
+          }
+        }
+
+        // Parse upstream relationship from MHT if available
+        let upstream = "[]";
+        if (fieldMap["Upstream Relationships"]) {
+          const text = fieldMap["Upstream Relationships"].text().trim();
+          const matches = [...text.matchAll(/([A-Z0-9]+-[\w]+-\d+)\s+([\s\S]*?)(?=[A-Z0-9]+-[\w]+-\d+|$)/g)];
+          if (matches.length > 0) {
+            upstream = JSON.stringify(matches.map(m => ({ id: m[1].trim(), name: m[2].trim() })));
+          }
+        }
+
+        const tcStatus = status === "Approved" ? "Reviewed" : "Draft";
+
+        db.prepare(
+          "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).run(
+          projectId, title, projectId, "[]",
+          setupJson, JSON.stringify(steps), descJson,
+          "Happy Path", "standard", "",
+          "[]", upstream, tcStatus,
+          `${req.session.name} (JAMA DOC import)`
+        );
+
+        imported.push(projectId);
+      } catch (err) {
+        console.error("Error parsing section:", err.message);
       }
-
-      const tcStatus = status === "Approved" ? "Reviewed" : "Draft";
-
-      db.prepare(
-        "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, pass_fail_criteria, type, depth, req_attribute, kb_references, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).run(
-        projectId, title, projectId, "[]",
-        setupJson, JSON.stringify(steps), descJson,
-        "Happy Path", "standard", "",
-        "[]", tcStatus,
-        `${req.session.name} (JAMA DOC import)`
-      );
-
-      imported.push(projectId);
-    } catch (err) {
-      console.error("Error parsing section:", err.message);
-    }
-  });
+    });
+  }
 
   logAudit(req.session.name, "TC_IMPORT_DOC", `JAMA DOC import: ${imported.length} imported, ${skipped.length} skipped (duplicates)`);
   res.json({ imported: imported.length, skipped: skipped.length, tc_ids: imported });

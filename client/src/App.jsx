@@ -410,6 +410,32 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
   };
 
+  const copyPrompt = async () => {
+    if (!selectedReqId) return;
+    setCopyState("copying");
+    try {
+      const data = await api.getPrompt(selectedReqId, depth);
+      await navigator.clipboard.writeText(data.prompt);
+      setCopyState("copied");
+      setTimeout(() => setCopyState("idle"), 2000);
+    } catch (err) { setCopyState("error"); setTimeout(() => setCopyState("idle"), 2000); }
+  };
+
+  const doImport = async () => {
+    if (!importJson.trim() || !selectedReqId) return;
+    setImportError(""); setImporting(true);
+    try {
+      const parsed = JSON.parse(importJson);
+      if (!Array.isArray(parsed)) throw new Error("Expected a JSON array");
+      const result = await api.importTestCases(selectedReqId, depth, parsed);
+      setSessionTcIds(result.map(tc => tc.tc_id));
+      setViewMode("session");
+      setShowImport(false); setImportJson("");
+      refresh();
+    } catch (err) { setImportError(err.message); }
+    finally { setImporting(false); }
+  };
+
   const clearAll = async () => {
     if (!window.confirm(`Delete all ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}? This cannot be undone.`)) return;
     setClearing(true);
@@ -441,12 +467,12 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
       </div>
     </div>
     {showHtmlImport && <Card style={{ marginBottom: 16, border: `1px solid ${COLORS.accent}33` }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Import JAMA "All Item Details" DOC</div>
-      <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Upload a .doc report exported from JAMA. Test cases will be imported with their Project ID, steps, setup, and description. Duplicates are skipped.</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Import JAMA Test Cases</div>
+      <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Upload a .docx (Verification Test Cases) or .doc (All Item Details) export from JAMA. Test cases will be imported with their Project ID, steps, description, and upstream relationships. Duplicates are skipped.</div>
       <label style={{ display: "inline-block", cursor: htmlImporting ? "not-allowed" : "pointer" }}>
-        <input type="file" accept=".doc" onChange={doDocImport} disabled={htmlImporting} style={{ display: "none" }} />
+        <input type="file" accept=".doc,.docx" onChange={doDocImport} disabled={htmlImporting} style={{ display: "none" }} />
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: mono, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}44`, cursor: "pointer", opacity: htmlImporting ? 0.5 : 1 }}>
-          {htmlImporting ? "Importing..." : "Choose DOC file"}
+          {htmlImporting ? "Importing..." : "Choose DOC/DOCX file"}
         </span>
       </label>
       {htmlImportError && <div style={{ marginTop: 8, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{htmlImportError}</div>}
@@ -464,6 +490,56 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
       {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
       {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
     </Card>
+
+    {/* Claude.ai manual workflow */}
+    <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase", marginBottom: 3 }}>No API Key? Use Claude.ai Manually</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted }}>Copy the prompt → paste into claude.ai → paste the JSON response back here</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId || copyState === "copying"}
+            onClick={copyPrompt}
+            style={{ borderColor: COLORS.purple + "66", color: copyState === "copied" ? COLORS.green : copyState === "error" ? COLORS.red : COLORS.purple }}
+          >
+            {copyState === "copying" ? "Fetching..." : copyState === "copied" ? "Copied!" : copyState === "error" ? "Failed" : "Copy Prompt"}
+          </Button>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId}
+            onClick={() => { setShowImport(!showImport); setImportError(""); }}
+            style={{ borderColor: COLORS.purple + "66", color: COLORS.purple }}
+          >
+            {showImport ? "Cancel Import" : "Import Response"}
+          </Button>
+        </div>
+      </div>
+
+      {showImport && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
+          Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
+        </div>
+        <textarea
+          value={importJson}
+          onChange={e => setImportJson(e.target.value)}
+          placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "description": { "objective": "...", "scope": "...", "assumptions": [] },\n    "setup": { "preconditions": [], "environment": [], "equipment": [], "testData": [] },\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "reqAttribute": "..."\n  }\n]'}
+          style={{ width: "100%", minHeight: 160, fontFamily: mono, fontSize: 11, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${importError ? COLORS.red : COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", outline: "none", boxSizing: "border-box" }}
+        />
+        {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
+        <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Button variant="secondary" small onClick={() => { setShowImport(false); setImportJson(""); setImportError(""); }}>Cancel</Button>
+          <Button small disabled={!importJson.trim() || importing} onClick={doImport}
+            style={{ background: COLORS.purple, color: COLORS.bg }}>
+            {importing ? "Saving..." : "Save Test Cases"}
+          </Button>
+        </div>
+      </div>}
+    </Card>
     {testCases.length > 0 && <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
       <Button small variant={viewMode === "library" ? "primary" : "secondary"} onClick={() => setViewMode("library")}>Library ({testCases.length})</Button>
       {sessionTcIds && <Button small variant={viewMode === "session" ? "primary" : "secondary"} onClick={() => setViewMode("session")}>Session ({sessionTcIds.length})</Button>}
@@ -478,6 +554,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
             <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, display: "flex", alignItems: "center", gap: 8 }}>{tc.title}{isUnreviewed(tc) && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 6px", borderRadius: 3, fontWeight: 700, textTransform: "uppercase" }}>Draft</span>}</div>
             <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
               {tc.project_id && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Project ID: <span style={{ color: COLORS.accent }}>{tc.project_id}</span></span>}
+              {tc.upstream_relationship && tc.upstream_relationship.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Upstream: {tc.upstream_relationship.map(u => <span key={u.id} style={{ color: COLORS.purple, marginRight: 4 }}>{u.id}</span>)}</span>}
               {(tc.linked_req_ids || []).length > 0 && <><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</>}
               <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
             </div>
@@ -490,7 +567,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
         </div>
         {expandedTc === tc.tc_id && (() => {
           let desc = null, setup = null;
-          try { desc = typeof tc.pass_fail_criteria === "string" && tc.pass_fail_criteria.startsWith("{") ? JSON.parse(tc.pass_fail_criteria) : null; } catch {}
+          try { desc = typeof tc.description === "string" && tc.description.startsWith("{") ? JSON.parse(tc.description) : null; } catch {}
           try { setup = typeof tc.preconditions === "string" && tc.preconditions.startsWith("{") ? JSON.parse(tc.preconditions) : null; } catch {}
           const SectionLabel = ({ children }) => <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>;
           const BulletList = ({ items }) => items && items.length > 0 ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul> : null;
@@ -501,7 +578,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
               {desc.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.objective}</span></div>}
               {desc.scope && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.scope}</span></div>}
               {desc.assumptions && desc.assumptions.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BulletList items={desc.assumptions} /></>}
-            </> : tc.pass_fail_criteria ? <><SectionLabel>Description</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.pass_fail_criteria}</div></> : null}
+            </> : tc.description ? <><SectionLabel>Description</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.description}</div></> : null}
             {setup ? <>
               <SectionLabel>Setup</SectionLabel>
               {setup.preconditions && setup.preconditions.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Preconditions:</span><BulletList items={setup.preconditions} /></>}
@@ -524,6 +601,14 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
                 </tr>;
               })}</tbody>
             </table>
+            {tc.upstream_relationship && tc.upstream_relationship.length > 0 && <>
+              <SectionLabel>Upstream Relationships</SectionLabel>
+              {tc.upstream_relationship.map((u, i) => <div key={i} style={{ fontSize: 12, color: COLORS.text, marginBottom: 4, paddingLeft: 12, borderLeft: `2px solid ${COLORS.accent}44` }}>
+                <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color: COLORS.accent }}>{u.id}</span>
+                <span style={{ color: COLORS.textMuted, margin: "0 6px" }}>—</span>
+                <span>{u.name}</span>
+              </div>)}
+            </>}
           </div>;
         })()}
       </Card>)}
