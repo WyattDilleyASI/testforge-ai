@@ -1,15 +1,23 @@
 #!/usr/bin/env node
 
-// mcp-bridge.mjs v2
+// mcp-bridge.mjs v3
 // ═══════════════════════════════════════════════════════════════════
 // Stdio-to-SSE bridge for Claude Desktop → TestForge MCP server.
 // Claude Desktop launches this as a local process and communicates
 // via stdin/stdout (JSON-RPC). This script relays messages to the
 // TestForge SSE endpoint over HTTP.
+//
+// v3: Added reconnect-with-backoff to survive container rebuilds.
 // ═══════════════════════════════════════════════════════════════════
 
 const TESTFORGE_URL = process.env.TESTFORGE_URL || "http://localhost:3000";
 const MCP_TOKEN = process.env.MCP_TOKEN;
+
+// ─── Reconnection config ────────────────────────────────────────────
+const MAX_RETRIES = 30;          // Total attempts before giving up
+const INITIAL_DELAY_MS = 1000;   // Start at 1s
+const MAX_DELAY_MS = 10000;      // Cap at 10s
+const BACKOFF_FACTOR = 1.5;      // Exponential backoff multiplier
 
 if (!MCP_TOKEN) {
   process.stderr.write("ERROR: MCP_TOKEN environment variable is required.\n");
@@ -23,7 +31,7 @@ let sessionId = null;
 let buffer = "";
 let messageQueue = [];
 
-// ─── SSE Connection ─────────────────────────────────────────────────
+// ─── SSE Connection (single attempt) ────────────────────────────────
 
 async function connectSSE() {
   process.stderr.write(`Connecting to ${SSE_URL}...\n`);
@@ -38,8 +46,7 @@ async function connectSSE() {
 
   if (!response.ok) {
     const text = await response.text();
-    process.stderr.write(`SSE connection failed (${response.status}): ${text}\n`);
-    process.exit(1);
+    throw new Error(`SSE connection failed (${response.status}): ${text}`);
   }
 
   process.stderr.write("SSE connected.\n");
@@ -55,8 +62,8 @@ async function connectSSE() {
   while (true) {
     const { done, value } = await reader.read();
     if (done) {
-      process.stderr.write("SSE connection closed by server.\n");
-      process.exit(0);
+      // Server closed the connection — throw so reconnect logic kicks in
+      throw new Error("SSE connection closed by server");
     }
 
     sseBuffer += decoder.decode(value, { stream: true });
@@ -70,15 +77,12 @@ async function connectSSE() {
       if (line.startsWith("event: ")) {
         currentEventType = line.slice(7).trim();
       } else if (line.startsWith("data: ")) {
-        // Accumulate data lines (SSE spec: multi-line data)
         currentDataLines.push(line.slice(6));
       } else if (line === "") {
-        // Empty line = end of event, dispatch it
         if (currentEventType && currentDataLines.length > 0) {
           const fullData = currentDataLines.join("\n");
           handleSSEEvent(currentEventType, fullData);
         }
-        // Reset for next event
         currentEventType = null;
         currentDataLines = [];
       }
@@ -86,17 +90,52 @@ async function connectSSE() {
   }
 }
 
+// ─── Reconnection wrapper ───────────────────────────────────────────
+
+async function connectWithRetry() {
+  let retries = 0;
+  let delay = INITIAL_DELAY_MS;
+
+  while (true) {
+    try {
+      // Reset session state on each new connection
+      sessionId = null;
+
+      await connectSSE();
+
+      // If connectSSE() returns cleanly (it shouldn't normally),
+      // treat it as a disconnect and retry
+    } catch (err) {
+      retries++;
+      process.stderr.write(
+        `Connection lost: ${err.message} (attempt ${retries}/${MAX_RETRIES})\n`
+      );
+
+      if (retries >= MAX_RETRIES) {
+        process.stderr.write("Max retries reached. Exiting.\n");
+        process.exit(1);
+      }
+
+      process.stderr.write(`Reconnecting in ${Math.round(delay / 1000)}s...\n`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      // Exponential backoff with cap
+      delay = Math.min(delay * BACKOFF_FACTOR, MAX_DELAY_MS);
+    }
+  }
+}
+
+// ─── SSE event handler ──────────────────────────────────────────────
+
 function handleSSEEvent(eventType, data) {
   if (eventType === "endpoint") {
     const match = data.match(/sessionId=([^&\s]+)/);
     if (match) {
       sessionId = match[1];
       process.stderr.write(`Session: ${sessionId}\n`);
-      // Flush any queued messages
       flushQueue();
     }
   } else if (eventType === "message") {
-    // Forward server→client JSON-RPC message to stdout
     process.stderr.write(`SSE→stdout: ${data.slice(0, 120)}...\n`);
     process.stdout.write(data + "\n");
   }
@@ -173,9 +212,9 @@ process.stdin.on("end", () => {
   process.exit(0);
 });
 
-// ─── Start ──────────────────────────────────────────────────────────
+// ─── Start (with reconnection) ──────────────────────────────────────
 
-connectSSE().catch((err) => {
+connectWithRetry().catch((err) => {
   process.stderr.write(`Fatal: ${err.message}\n`);
   process.exit(1);
 });
