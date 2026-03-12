@@ -462,7 +462,8 @@ router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) 
           "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
         ).run(
           currentTc.tcId, currentTc.title, currentTc.tcId, "[]",
-          "", JSON.stringify(currentTc.steps), currentTc.descJson,
+          JSON.stringify({ preconditions: [], environment: [], equipment: [], testData: [] }),
+          JSON.stringify(currentTc.steps), currentTc.descJson,
           "Happy Path", "standard", "",
           "[]", currentTc.upstream,
           `${req.session.name} (JAMA DOCX import)`
@@ -668,6 +669,12 @@ router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) 
 
         const status = fieldMap["Status"] ? fieldMap["Status"].text().trim() : "Draft";
 
+        // Convert step text: only use HTML if it contains image placeholders, otherwise plain text
+        function stepText(str) {
+          const clean = str.replace(/\s+/g, " ").trim();
+          return clean.includes("[[IMG:") ? placeholdersToHtml(clean) : clean;
+        }
+
         const steps = [];
         if (fieldMap["Steps"]) {
           const rawText = textWithImagePlaceholders($, fieldMap["Steps"]);
@@ -677,24 +684,29 @@ router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) 
             const commaIdx = stepBody.lastIndexOf(", ");
             if (commaIdx > -1) {
               steps.push({
-                step: placeholdersToHtml(stepBody.substring(0, commaIdx).replace(/\s+/g, " ").trim()),
-                expectedResult: placeholdersToHtml(stepBody.substring(commaIdx + 2).replace(/\s+/g, " ").trim()),
+                step: stepText(stepBody.substring(0, commaIdx)),
+                expectedResult: stepText(stepBody.substring(commaIdx + 2)),
               });
             } else if (stepBody) {
-              steps.push({ step: placeholdersToHtml(stepBody.replace(/\s+/g, " ").trim()), expectedResult: "" });
+              steps.push({ step: stepText(stepBody), expectedResult: "" });
             }
           }
         }
 
-        // Parse upstream relationship from MHT if available
-        let upstream = "[]";
-        if (fieldMap["Upstream Relationships"]) {
-          const text = fieldMap["Upstream Relationships"].text().trim();
-          const matches = [...text.matchAll(/([A-Z0-9]+-[\w]+-\d+)\s+([\s\S]*?)(?=[A-Z0-9]+-[\w]+-\d+|$)/g)];
-          if (matches.length > 0) {
-            upstream = JSON.stringify(matches.map(m => ({ id: m[1].trim(), name: m[2].trim() })));
+        // Parse upstream relationships from 6-cell rows: [Item ID, Name, Direction, Project, Group, Relationship]
+        const upstreamRels = [];
+        $(section).find("tr").each((_, row) => {
+          const cells = $(row).find("td");
+          if (cells.length === 6) {
+            const direction = $(cells[2]).text().trim();
+            if (direction === "Upstream") {
+              const itemId = $(cells[0]).text().trim();
+              const name = $(cells[1]).text().trim();
+              if (itemId) upstreamRels.push({ id: itemId, name });
+            }
           }
-        }
+        });
+        const upstream = upstreamRels.length > 0 ? JSON.stringify(upstreamRels) : "[]";
 
         const tcStatus = status === "Approved" ? "Reviewed" : "Draft";
 
