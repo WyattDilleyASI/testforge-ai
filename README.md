@@ -1,6 +1,6 @@
 # ◈ TestForge AI — Test Creation Tool v1.2
 
-AI-powered test case generation with full requirement traceability, built to the FRD v1.2 specification. This branch adds **MCP (Model Context Protocol) server integration**, allowing Claude Desktop, Claude Code, and other MCP-compatible clients to interact with TestForge directly.
+AI-powered test case generation with full requirement traceability, built to the FRD v1.2 specification.
 
 ## Quick Start
 
@@ -12,7 +12,7 @@ cd testforge-ai
 
 # 2. Copy and configure environment
 cp .env.example .env
-# Edit .env — add your ANTHROPIC_API_KEY and change SESSION_SECRET
+# Edit .env — add your ANTHROPIC_API_KEY, SESSION_SECRET, and SERVER_ENCRYPTION_KEY
 
 # 3. Install everything and build the frontend
 npm install
@@ -32,7 +32,7 @@ Open **http://localhost:3000** and log in with:
 ```bash
 # 1. Copy and configure environment
 cp .env.example .env
-# Edit .env — add your ANTHROPIC_API_KEY and change SESSION_SECRET
+# Edit .env — add your ANTHROPIC_API_KEY, SESSION_SECRET, and SERVER_ENCRYPTION_KEY
 
 # 2. Build and run
 docker-compose up -d --build
@@ -45,92 +45,30 @@ Open **http://localhost:3000**.
 ```
 testforge-ai/
 ├── server/
-│   ├── index.js              Express server (serves API + static frontend + MCP)
-│   ├── db.js                 SQLite database layer (schema, seeds, helpers)
-│   ├── auth.js               Authentication middleware (session-based)
-│   ├── mcp.js                MCP server (SSE transport, tools, token auth)
+│   ├── index.js          Express server (serves API + static frontend)
+│   ├── db.js             SQLite database layer (schema, seeds, helpers)
+│   ├── auth.js           Authentication middleware (session-based)
+│   ├── crypto.js          AES-256-GCM encryption for MCP auth tokens
 │   └── routes/
-│       ├── auth.js           Login, logout, password change
-│       ├── users.js          User CRUD, role changes, OTP reset
-│       ├── requirements.js   Requirement ingestion and editing
-│       ├── testcases.js      TC generation via Claude API, status updates
-│       └── data.js           Knowledge Base, audit log, Jama export
+│       ├── auth.js       Login, logout, password change
+│       ├── users.js      User CRUD, role changes, OTP reset
+│       ├── requirements.js  Requirement ingestion and editing
+│       ├── testcases.js  TC generation via Claude API, status updates
+│       ├── mcp.js        MCP server configuration (Admin only)
+│       └── data.js       Knowledge Base, audit log, Jama export
 ├── client/
 │   ├── src/
-│   │   ├── App.jsx           Full React frontend
-│   │   ├── api.js            API client helper
-│   │   └── main.jsx          Entry point
+│   │   ├── App.jsx       Full React frontend
+│   │   ├── api.js        API client helper
+│   │   └── main.jsx      Entry point
 │   ├── index.html
-│   └── vite.config.js        Build config with dev proxy
-├── mcp-bridge.mjs            Downloadable MCP bridge script for local clients
-├── data/                     SQLite databases (auto-created)
-├── .env.example              Environment template
-├── Dockerfile                Container build
-├── docker-compose.yml        One-command deployment
-└── package.json              Server dependencies
+│   └── vite.config.js    Build config with dev proxy
+├── data/                 SQLite databases (auto-created)
+├── .env.example          Environment template
+├── Dockerfile            Container build
+├── docker-compose.yml    One-command deployment
+└── package.json          Server dependencies
 ```
-
-## MCP Server Integration
-
-TestForge exposes an MCP server over SSE, enabling Claude Desktop, Claude Code, and other MCP-compatible clients to manage requirements, generate test cases, query the knowledge base, and review coverage — all without leaving the AI assistant.
-
-### How It Works
-
-1. **Generate an MCP token** in the TestForge UI (Settings → MCP Tokens) or via the API.
-2. **Configure your MCP client** to connect to `http://localhost:3000/mcp/sse` with the token as a Bearer credential.
-3. Claude gains access to nine tools that operate directly on TestForge's database.
-
-### MCP Authentication
-
-MCP connections use **personal API tokens** (not session cookies). Each token is bound to a TestForge user account and inherits that user's identity for audit logging. Tokens are prefixed with `tfmcp_` and are shown only once at creation time.
-
-### Available MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `list_requirements` | List all requirements with optional status/module filters |
-| `get_requirement` | Get full requirement details including related KB entries and linked test cases |
-| `create_requirement` | Create a new requirement in TestForge |
-| `save_test_cases` | Persist AI-generated test cases into the database as drafts |
-| `list_test_cases` | List test cases with optional requirement/status filters |
-| `review_test_case` | Update a test case's status (Draft → Reviewed or Rejected) |
-| `search_knowledge_base` | Search KB entries by query, requirement tag, or type |
-| `create_kb_entry` | Add a new knowledge base entry |
-| `get_coverage_summary` | Get requirement coverage statistics and untested requirement list |
-
-### Typical MCP Workflow
-
-A typical interaction through an MCP client follows this pattern:
-
-1. `list_requirements` — browse what needs testing
-2. `get_requirement` — fetch full context (acceptance criteria, KB entries, existing TCs)
-3. Claude reasons over the requirement and generates test cases
-4. `save_test_cases` — persist the drafts into TestForge
-5. `review_test_case` — mark TCs as Reviewed or Rejected after human review
-6. `get_coverage_summary` — check overall coverage progress
-
-All test cases saved via MCP are marked as **Draft** and tagged with `(via MCP)` in the `generated_by` field. QA engineer review is always required before use.
-
-### MCP Client Configuration Example
-
-For Claude Desktop, add to your MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "testforge": {
-      "url": "http://localhost:3000/mcp/sse",
-      "headers": {
-        "Authorization": "Bearer tfmcp_your_token_here"
-      }
-    }
-  }
-}
-```
-
-### MCP Bridge
-
-A downloadable bridge script is available at `GET /mcp-bridge.mjs` for local MCP client setups that require a stdio-to-SSE adapter.
 
 ## FRD Traceability
 
@@ -143,7 +81,7 @@ Every feature maps to specific FRD v1.2 requirement IDs:
 | Knowledge Base | KB-001 – KB-006 | Tagged entries, KB-informed generation |
 | User Management | UM-001 – UM-009 | RBAC, OTP flow, audit log, lockout |
 | Jama Integration | JM-001 – JM-009 | Pre-export validation, simulated sync |
-| MCP Integration | — | SSE server, token auth, nine tools |
+| MCP Server Config | Admin Config | Admin-only CRUD, connection testing, token encryption |
 | Deferred (v2) | AL-001 – AL-008, KB-007 | Documented in Deferred view |
 
 ## Authentication Flow
@@ -153,7 +91,37 @@ Every feature maps to specific FRD v1.2 requirement IDs:
 3. **Password reset** — Admin issues new OTP for any user
 4. **Account lockout** — 5 failed attempts locks the account (UM-008)
 5. **Session timeout** — 60 minutes (UM-009)
-6. **MCP tokens** — Personal bearer tokens for MCP client connections, scoped to a user account
+
+## MCP Server Configuration
+
+MCP (Model Context Protocol) server connections are managed through the admin UI and stored in the database. Only Admin users can create, edit, delete, or test MCP server connections. All authenticated users can view the configured servers (read-only).
+
+### Access Control
+
+| Role | Permissions |
+|------|------------|
+| Admin | Full CRUD on MCP servers, test connections, toggle enabled/disabled |
+| QA Manager | View configured servers (read-only) |
+| QA Engineer | View configured servers (read-only) |
+
+### Auth Token Encryption
+
+MCP server auth tokens are encrypted at rest using AES-256-GCM via `server/crypto.js`. This requires a `SERVER_ENCRYPTION_KEY` environment variable. If the key is not set, tokens are stored unencrypted and a warning is logged to the console.
+
+To generate an encryption key:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### Database Tables
+
+The MCP feature adds two tables to the SQLite database:
+
+- **`mcp_settings`** — Stores server name, URL, auth type, encrypted auth token, enabled state, and metadata
+- **`mcp_tokens`** — Stores per-user MCP access tokens with a foreign key to the users table
+
+Both tables are created automatically on server start via `CREATE TABLE IF NOT EXISTS`.
 
 ## API Endpoints
 
@@ -177,7 +145,7 @@ All endpoints require authentication (session cookie) unless noted.
 - `GET /api/requirements` — List all
 - `POST /api/requirements` — Create
 - `PUT /api/requirements/:reqId` — Update
-- `DELETE /api/requirements/:reqId` — Delete (Manager+ only)
+- `DELETE /api/requirements/:reqId` — Delete (Admin/Manager only)
 
 ### Test Cases
 - `GET /api/testcases` — List all
@@ -188,33 +156,18 @@ All endpoints require authentication (session cookie) unless noted.
 - `GET /api/kb` — List all
 - `POST /api/kb` — Create entry
 
+### MCP Settings
+- `GET /api/mcp/settings` — List all MCP servers (all authenticated users)
+- `POST /api/mcp/settings` — Add MCP server (Admin only)
+- `PUT /api/mcp/settings/:id` — Update MCP server (Admin only)
+- `DELETE /api/mcp/settings/:id` — Remove MCP server (Admin only)
+- `POST /api/mcp/settings/:id/test` — Test connection (Admin only, 5s timeout)
+- `PUT /api/mcp/settings/:id/toggle` — Quick enable/disable (Admin only)
+
 ### Audit & Jama
 - `GET /api/audit` — Audit log (Admin only)
 - `GET /api/jama/log` — Export log
 - `POST /api/jama/export` — Simulate Jama export (Manager+)
-
-### MCP Token Management
-- `GET /api/mcp/tokens` — List current user's tokens (masked)
-- `POST /api/mcp/tokens` — Create a new MCP token (full token returned only at creation)
-- `DELETE /api/mcp/tokens/:id` — Revoke a token
-
-### MCP Transport
-- `GET /mcp/sse` — SSE endpoint for MCP clients (Bearer token required)
-- `POST /mcp/messages` — JSON-RPC message endpoint (session-scoped)
-- `GET /mcp-bridge.mjs` — Download the MCP bridge adapter script
-
-## Database Schema
-
-### Core Tables
-- `users` — Accounts with RBAC, lockout tracking, OTP state
-- `requirements` — Requirements with acceptance criteria, priority, status, module
-- `test_cases` — Generated test cases linked to requirements with step-level detail
-- `kb_entries` — Knowledge base entries tagged to requirements
-- `audit_log` — Timestamped event log for all significant actions
-- `jama_export_log` — Jama export activity tracking
-
-### MCP Table
-- `mcp_tokens` — Personal MCP authentication tokens linked to user accounts; tracks creation time and last usage
 
 ## Development
 
@@ -234,21 +187,29 @@ The Vite dev server runs on port 5173 and proxies `/api` requests to port 3000.
 |----------|----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | — | Claude API key for TC generation |
 | `SESSION_SECRET` | Yes | dev fallback | Session encryption secret |
+| `SERVER_ENCRYPTION_KEY` | Recommended | — | AES-256-GCM key for MCP auth token encryption at rest. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `PORT` | No | 3000 | Server port |
 | `ANTHROPIC_MODEL` | No | claude-sonnet-4-20250514 | Model for generation |
 | `DB_PATH` | No | ./data/testforge.db | SQLite database path |
 
-## Dependencies
+## Remote Access
 
-### Server
-- `express` — HTTP server and routing
-- `better-sqlite3` — SQLite database driver
-- `bcryptjs` — Password hashing
-- `express-session` + `connect-sqlite3` — Session management
-- `@modelcontextprotocol/sdk` — MCP server SDK (SSE transport)
-- `zod` — Schema validation for MCP tool parameters
-- `helmet`, `cors`, `morgan`, `dotenv` — Security, logging, configuration
+To make TestForge accessible from a remote server:
 
-### Client
-- `react` + `react-dom` — UI framework
-- `vite` + `@vitejs/plugin-react` — Build tooling
+1. **Firewall** — Open port 3000 (e.g. `sudo ufw allow 3000/tcp`) and configure cloud security groups if applicable
+2. **Reverse proxy (recommended)** — Put Nginx or Caddy in front for SSL/TLS termination and domain handling
+3. **Session security** — Add `secure: true` to the session cookie config in `server/index.js` when behind HTTPS
+4. **CORS** — Lock down `cors({ origin: true })` in `server/index.js` to your specific domain
+5. **Secrets** — Ensure `SESSION_SECRET` and `SERVER_ENCRYPTION_KEY` are strong random values, and that `.env` is never committed
+
+## Audit Trail
+
+All MCP configuration changes are logged to the audit trail with the following action types:
+
+| Action | Trigger |
+|--------|---------|
+| `MCP_CREATED` | New MCP server added |
+| `MCP_UPDATED` | Server settings modified (logs specific changes) |
+| `MCP_DELETED` | Server removed |
+| `MCP_TEST` | Connection test attempted (logs status or failure) |
+| `MCP_TOGGLED` | Server enabled or disabled |

@@ -101,14 +101,27 @@ function initialize() {
       tc_count INTEGER DEFAULT 0
     );
 	
-		CREATE TABLE IF NOT EXISTS mcp_tokens (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	token TEXT UNIQUE NOT NULL,
-	user_id TEXT NOT NULL REFERENCES users(id),
-	name TEXT NOT NULL,
-	created_at TEXT NOT NULL DEFAULT (datetime('now')),
-	last_used TEXT
-	);
+    CREATE TABLE IF NOT EXISTS mcp_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      auth_type TEXT NOT NULL DEFAULT 'none' CHECK(auth_type IN ('none', 'bearer', 'api_key', 'oauth2')),
+      auth_token_encrypted TEXT,
+      description TEXT DEFAULT '',
+      updated_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+		  CREATE TABLE IF NOT EXISTS mcp_tokens (
+	  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	  token TEXT UNIQUE NOT NULL,
+	  user_id TEXT NOT NULL REFERENCES users(id),
+	  name TEXT NOT NULL,
+	  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+	  last_used TEXT
+	  );
   `);
 
   // Seed default admin if no users exist
@@ -183,4 +196,27 @@ function nextKbId() {
   return `KB-E${String(num).padStart(3, "0")}`;
 }
 
-module.exports = { getDb, initialize, logAudit, generateOtp, nextUserId, nextKbId };
+// ─── MCP HELPERS ────────────────────────────────────────────────────────────
+
+function getMcpSettings() {
+  return getDb()
+    .prepare("SELECT id, name, url, enabled, auth_type, description, updated_by, created_at, updated_at FROM mcp_settings ORDER BY rowid")
+    .all();
+}
+
+function getMcpSettingById(id) {
+  return getDb()
+    .prepare("SELECT * FROM mcp_settings WHERE id = ?")
+    .get(id);
+}
+
+function getMcpEnabledServers() {
+  return getDb()
+    .prepare("SELECT id, name, url, auth_type, auth_token_encrypted FROM mcp_settings WHERE enabled = 1 ORDER BY rowid")
+    .all();
+}
+
+module.exports = {
+  getDb, initialize, logAudit, generateOtp, nextUserId, nextKbId,
+  getMcpSettings, getMcpSettingById, getMcpEnabledServers
+};

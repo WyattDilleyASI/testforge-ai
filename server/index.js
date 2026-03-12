@@ -52,6 +52,7 @@ app.use("/api/users", require("./routes/users"));
 app.use("/api/requirements", require("./routes/requirements"));
 app.use("/api/testcases", require("./routes/testcases"));
 app.use("/api", require("./routes/data")); // KB, audit, jama
+app.use("/api/mcp", require("./routes/mcp"));
 const { mountMcpRoutes } = require("./mcp");
 mountMcpRoutes(app);
 
