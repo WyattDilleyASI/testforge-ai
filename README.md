@@ -130,7 +130,11 @@ For Claude Desktop, add to your MCP configuration:
 
 ### MCP Bridge
 
-A downloadable bridge script is available at `GET /mcp-bridge.mjs` for local MCP client setups that require a stdio-to-SSE adapter.
+Claude Desktop communicates with MCP servers via stdio, so a small bridge script (`mcp-bridge.mjs`) is needed to translate between stdio and TestForge's SSE transport.
+
+The script is served from the project root and can be downloaded from `GET /mcp-bridge.mjs` (or via the download button in the TestForge UI). Save it to **any permanent location on your local machine** — the only requirement is that the full file path you provide in your Claude Desktop config matches where you saved it. Placing it in your `testforge-ai/` project folder is a reasonable convention, but not required.
+
+The bridge has zero dependencies and requires Node.js 18+.
 
 ## FRD Traceability
 
