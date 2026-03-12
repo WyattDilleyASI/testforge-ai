@@ -57,6 +57,7 @@ function initialize() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tc_id TEXT UNIQUE NOT NULL,
       title TEXT NOT NULL,
+      project_id TEXT,
       linked_req_ids TEXT DEFAULT '[]',
       preconditions TEXT,
       steps TEXT DEFAULT '[]',
@@ -100,7 +101,7 @@ function initialize() {
       status TEXT NOT NULL,
       tc_count INTEGER DEFAULT 0
     );
-	
+
     CREATE TABLE IF NOT EXISTS mcp_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -114,15 +115,28 @@ function initialize() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-		  CREATE TABLE IF NOT EXISTS mcp_tokens (
-	  id INTEGER PRIMARY KEY AUTOINCREMENT,
-	  token TEXT UNIQUE NOT NULL,
-	  user_id TEXT NOT NULL REFERENCES users(id),
-	  name TEXT NOT NULL,
-	  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-	  last_used TEXT
-	  );
+    CREATE TABLE IF NOT EXISTS mcp_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT UNIQUE NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS token_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+      user_name TEXT NOT NULL,
+      req_id TEXT,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0
+    );
   `);
+
+  // Migration: add project_id column if missing (for existing DBs)
+  const tcCols = db.prepare("PRAGMA table_info(test_cases)").all().map(c => c.name);
+  if (!tcCols.includes("project_id")) db.exec("ALTER TABLE test_cases ADD COLUMN project_id TEXT");
 
   // Seed default admin if no users exist
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;
@@ -216,7 +230,11 @@ function getMcpEnabledServers() {
     .all();
 }
 
+function logTokenUsage(userName, reqId, inputTokens, outputTokens) {
+  getDb().prepare("INSERT INTO token_usage (user_name, req_id, input_tokens, output_tokens) VALUES (?, ?, ?, ?)").run(userName, reqId || null, inputTokens, outputTokens);
+}
+
 module.exports = {
-  getDb, initialize, logAudit, generateOtp, nextUserId, nextKbId,
+  getDb, initialize, logAudit, logTokenUsage, generateOtp, nextUserId, nextKbId,
   getMcpSettings, getMcpSettingById, getMcpEnabledServers
 };

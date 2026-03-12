@@ -33,6 +33,24 @@ router.get("/audit", requireRole("Admin"), (req, res) => {
   res.json(rows);
 });
 
+// ─── TOKEN USAGE ─────────────────────────────────────────────────────────────
+
+// GET /api/usage/tokens
+router.get("/usage/tokens", requireAuth, (req, res) => {
+  const db = getDb();
+  const row = db.prepare("SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, COUNT(*) as call_count FROM token_usage").get();
+  const budget = process.env.TOKEN_BUDGET ? parseInt(process.env.TOKEN_BUDGET) : null;
+  const totalTokens = (row.total_input || 0) + (row.total_output || 0);
+  res.json({
+    input_tokens: row.total_input || 0,
+    output_tokens: row.total_output || 0,
+    total_tokens: totalTokens,
+    call_count: row.call_count || 0,
+    budget: budget,
+    remaining: budget !== null ? Math.max(0, budget - totalTokens) : null,
+  });
+});
+
 // ─── JAMA EXPORT ────────────────────────────────────────────────────────────
 
 // GET /api/jama/log — export activity log
