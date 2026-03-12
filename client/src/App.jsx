@@ -154,6 +154,13 @@ const PasswordChangeScreen = ({ userId, userName, isOtp, onComplete }) => {
 };
 
 // ─── NAVIGATION ─────────────────────────────────────────────────────────────
+//
+// Replace your existing NAV_ITEMS array and Sidebar component with these.
+// Changes:
+//   1. "MCP Servers" now has  adminOnly: true  — hidden for non-Admins
+//   2. Removed the duplicate "Settings & MCP" entry
+//   3. Sidebar .filter() skips adminOnly items for non-Admin users
+//
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Coverage Dashboard", icon: "◫", reqs: "RS-007" },
@@ -163,15 +170,18 @@ const NAV_ITEMS = [
   { key: "kb", label: "Knowledge Base", icon: "◪", reqs: "KB-001 – KB-006" },
   { key: "users", label: "User Management", icon: "◯", reqs: "UM-001 – UM-009" },
   { key: "jama", label: "Jama Connect", icon: "◭", reqs: "JM-001 – JM-009" },
-  { key: "mcp", label: "MCP Servers", icon: "◆", reqs: "Admin Config" },
+  { key: "mcp", label: "MCP Servers", icon: "◆", reqs: "Admin Config", adminOnly: true },
   { key: "deferred", label: "Deferred to v2", icon: "◬", reqs: "AL-xxx · KB-007" },
-  { key: "settings", label: "Settings & MCP", icon: "◇", reqs: "MCP" },
+  { key: "settings", label: "Settings & MCP", icon: "⚙", reqs: "MCP", adminOnly: true },
 ];
 
 const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
   <div style={{ width: 250, minHeight: "100vh", background: COLORS.surface, borderRight: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", fontFamily: font, flexShrink: 0 }}>
     <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${COLORS.border}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 20, color: COLORS.accent }}>◈</span><span style={{ fontSize: 15, fontWeight: 700, color: COLORS.textBright }}>TestForge AI</span></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 20, color: COLORS.accent }}>◈</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: COLORS.textBright }}>TestForge AI</span>
+      </div>
       <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.2</div>
     </div>
     <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 8 }}>
@@ -183,13 +193,35 @@ const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
       <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 10, fontFamily: mono, padding: "4px 8px", borderRadius: 4 }}>Sign Out</button>
     </div>
     <nav style={{ padding: "12px 10px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-      {NAV_ITEMS.map(item => {
-        const d = item.key === "deferred";
-        return <button key={item.key} onClick={() => onNavigate(item.key)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 7, border: "none", cursor: "pointer", textAlign: "left", fontFamily: font, fontSize: 13, fontWeight: active === item.key ? 600 : 400, color: active === item.key ? COLORS.textBright : d ? COLORS.textMuted + "88" : COLORS.textMuted, background: active === item.key ? COLORS.accentDim : "transparent", borderLeft: active === item.key ? `2px solid ${COLORS.accent}` : "2px solid transparent", fontStyle: d ? "italic" : "normal" }}>
-          <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center" }}>{item.icon}</span>
-          <div><div>{item.label}</div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div></div>
-        </button>;
-      })}
+      {/* ── KEY CHANGE: filter out adminOnly items for non-Admin users ── */}
+      {NAV_ITEMS
+        .filter(item => !item.adminOnly || currentUser.role === "Admin")
+        .map(item => {
+          const d = item.key === "deferred";
+          return (
+            <button
+              key={item.key}
+              onClick={() => onNavigate(item.key)}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", borderRadius: 7, border: "none",
+                cursor: "pointer", textAlign: "left", fontFamily: font,
+                fontSize: 13,
+                fontWeight: active === item.key ? 600 : 400,
+                color: active === item.key ? COLORS.textBright : d ? COLORS.textMuted + "88" : COLORS.textMuted,
+                background: active === item.key ? COLORS.accentDim : "transparent",
+                borderLeft: active === item.key ? `2px solid ${COLORS.accent}` : "2px solid transparent",
+                fontStyle: d ? "italic" : "normal",
+              }}
+            >
+              <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center" }}>{item.icon}</span>
+              <div>
+                <div>{item.label}</div>
+                <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div>
+              </div>
+            </button>
+          );
+        })}
     </nav>
     <div style={{ padding: "14px 16px", borderTop: `1px solid ${COLORS.border}`, fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>FRD v1.2 — 39 active REQs</div>
   </div>
