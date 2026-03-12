@@ -100,6 +100,15 @@ function initialize() {
       status TEXT NOT NULL,
       tc_count INTEGER DEFAULT 0
     );
+	
+		CREATE TABLE IF NOT EXISTS mcp_tokens (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	token TEXT UNIQUE NOT NULL,
+	user_id TEXT NOT NULL REFERENCES users(id),
+	name TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (datetime('now')),
+	last_used TEXT
+	);
   `);
 
   // Seed default admin if no users exist

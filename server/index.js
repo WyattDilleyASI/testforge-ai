@@ -27,7 +27,10 @@ initialize();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("short"));
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: "10mb" }));
+app.use((req, res, next) => {
+  if (req.path === "/mcp/messages") return next();
+  express.json({ limit: "10mb" })(req, res, next);
+});
 
 // Session store — persisted to SQLite (UM-009: 60min timeout)
 app.use(session({
@@ -49,6 +52,14 @@ app.use("/api/users", require("./routes/users"));
 app.use("/api/requirements", require("./routes/requirements"));
 app.use("/api/testcases", require("./routes/testcases"));
 app.use("/api", require("./routes/data")); // KB, audit, jama
+const { mountMcpRoutes } = require("./mcp");
+mountMcpRoutes(app);
+
+// ─── MCP BRIDGE DOWNLOAD ────────────────────────────────────────────
+
+app.get("/mcp-bridge.mjs", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "mcp-bridge.mjs"));
+});
 
 // ─── STATIC FRONTEND ───────────────────────────────────────────────────────
 
