@@ -47,10 +47,18 @@ export const api = {
 
   // Jama
   getJamaLog: () => request("/jama/log"),
-  exportToJama: () => request("/jama/export", { method: "POST" }), exportToJama: () => request("/jama/export", { method: "POST" }),
-  
+  exportToJama: () => request("/jama/export", { method: "POST" }), 
+   
   // MCP Tokens
   getMcpTokens: () => request("/mcp/tokens"),
   createMcpToken: (name) => request("/mcp/tokens", { method: "POST", body: { name } }),
   deleteMcpToken: (id) => request(`/mcp/tokens/${id}`, { method: "DELETE" }),
+
+  // MCP Settings
+  getMcpSettings: () => request("/mcp/settings"),
+  createMcpServer: (data) => request("/mcp/settings", { method: "POST", body: data }),
+  updateMcpServer: (id, data) => request(`/mcp/settings/${id}`, { method: "PUT", body: data }),
+  deleteMcpServer: (id) => request(`/mcp/settings/${id}`, { method: "DELETE" }),
+  testMcpServer: (id) => request(`/mcp/settings/${id}/test`, { method: "POST" }),
+  toggleMcpServer: (id) => request(`/mcp/settings/${id}/toggle`, { method: "PUT" }),
 };

@@ -163,8 +163,9 @@ const NAV_ITEMS = [
   { key: "kb", label: "Knowledge Base", icon: "◪", reqs: "KB-001 – KB-006" },
   { key: "users", label: "User Management", icon: "◯", reqs: "UM-001 – UM-009" },
   { key: "jama", label: "Jama Connect", icon: "◭", reqs: "JM-001 – JM-009" },
+  { key: "mcp", label: "MCP Servers", icon: "◆", reqs: "Admin Config" },
   { key: "deferred", label: "Deferred to v2", icon: "◬", reqs: "AL-xxx · KB-007" },
-  { key: "settings", label: "Settings & MCP", icon: "◆", reqs: "MCP" },
+  { key: "settings", label: "Settings & MCP", icon: "◇", reqs: "MCP" },
 ];
 
 const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
@@ -238,7 +239,7 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const startAdd = () => { setAddForm({ req_id: `REQ-${String(requirements.length + 1).padStart(3, "0")}`, title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" }); setShowAdd(true); setEditId(null); setError(""); setDeleteConfirm(null); };
 
   const startEdit = (r) => {
-    if (editId === r.req_id) { setEditId(null); return; } // toggle closed
+    if (editId === r.req_id) { setEditId(null); return; }
     setEditForm({ req_id: r.req_id, title: r.title, description: r.description || "", acceptanceCriteria: (r.acceptance_criteria || []).join("\n"), priority: r.priority, status: r.status, module: r.module || "" });
     setEditId(r.req_id); setShowAdd(false); setError(""); setDeleteConfirm(null);
   };
@@ -260,7 +261,6 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
     try { await api.deleteRequirement(reqId); setEditId(null); setDeleteConfirm(null); refresh(); } catch (err) { setError(err.message); }
   };
 
-  // Shared form fields renderer
   const renderForm = (form, setForm, isEdit) => (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
@@ -282,7 +282,6 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
       <Button onClick={startAdd}>+ Add Requirement</Button>
     </div>
 
-    {/* Add form — always at the top */}
     {showAdd && <Card glow style={{ marginBottom: 20 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.accent, marginBottom: 14 }}>Add Requirement</div>
       {renderForm(addForm, setAddForm, false)}
@@ -292,11 +291,9 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
       </div>
     </Card>}
 
-    {/* Requirement list — edit form renders inline */}
     {requirements.map(r => {
       const isEditing = editId === r.req_id;
       return <Card key={r.req_id} style={{ marginBottom: 10, cursor: isEditing ? "default" : "pointer", borderColor: isEditing ? COLORS.accent + "44" : undefined, boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined }} onClick={() => !isEditing && startEdit(r)}>
-        {/* Read-only header — always visible */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
           <ReqIdTag id={r.req_id} />
           <div style={{ flex: 1 }}>
@@ -307,7 +304,6 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
           <div style={{ display: "flex", gap: 6 }}><Badge color={r.priority === "High" ? "red" : r.priority === "Medium" ? "amber" : "green"}>{r.priority}</Badge><Badge color={r.status === "Approved" ? "green" : r.status === "Review" ? "amber" : r.status === "Rejected" ? "red" : "textMuted"}>{r.status}</Badge></div>
         </div>
 
-        {/* Inline edit form — expands below the header */}
         {isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
           <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Editing</div>
           {renderForm(editForm, setEditForm, true)}
@@ -612,6 +608,7 @@ const DeferredView = () => <div>
 const SettingsView = ({ currentUser }) => {
   const [tokens, setTokens] = useState([]);
   const [tokenName, setTokenName] = useState("");
+  const [bridgePath, setBridgePath] = useState("");
   const [newToken, setNewToken] = useState(null);
   const [copied, setCopied] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
@@ -619,7 +616,6 @@ const SettingsView = ({ currentUser }) => {
   const [loading, setLoading] = useState(true);
   const [showConfig, setShowConfig] = useState("desktop");
   const [installOs, setInstallOs] = useState("windows");
-  const [bridgePath, setBridgePath] = useState("");
   const [showGuide, setShowGuide] = useState(false);
 
   const serverUrl = typeof window !== "undefined"
@@ -635,19 +631,16 @@ const SettingsView = ({ currentUser }) => {
 
   useEffect(() => { loadTokens(); }, [loadTokens]);
 
-  // Auto-detect OS and set default bridge path
+  // Auto-detect OS for install command tabs
   useEffect(() => {
     if (typeof navigator !== "undefined") {
       const ua = navigator.userAgent.toLowerCase();
       if (ua.includes("mac")) {
         setInstallOs("mac");
-        setBridgePath("~/testforge-ai/mcp-bridge.mjs");
       } else if (ua.includes("linux")) {
         setInstallOs("linux");
-        setBridgePath("~/testforge-ai/mcp-bridge.mjs");
       } else {
         setInstallOs("windows");
-        setBridgePath("C:\\\\Users\\\\YOUR_USERNAME\\\\Desktop\\\\testforge-ai\\\\mcp-bridge.mjs");
       }
     }
   }, []);
@@ -655,10 +648,12 @@ const SettingsView = ({ currentUser }) => {
   const createToken = async () => {
     setError(""); setCopied(false); setCopiedCmd(false);
     if (!tokenName.trim()) { setError("Token name is required."); return; }
+    if (!bridgePath.trim()) { setError("Path to mcp-bridge.mjs is required. Download the file first, then enter the full path to where you saved it."); return; }
     try {
       const data = await api.createMcpToken(tokenName.trim());
-      setNewToken(data);
+      setNewToken({ ...data, bridgePath: bridgePath.trim() });
       setTokenName("");
+      // Keep bridgePath so the user can reuse it for another token
       loadTokens();
     } catch (err) { setError(err.message); }
   };
@@ -677,15 +672,14 @@ const SettingsView = ({ currentUser }) => {
     }
   };
 
-  // ── Config generation — stdio bridge format ─────────────────────────
+  // ── Config generation — uses the bridgePath captured at creation time ──
 
-  const getDesktopConfigJson = (token) => {
-    const escapedPath = bridgePath.replace(/\\/g, "\\\\");
+  const getDesktopConfigJson = (token, path) => {
     return JSON.stringify({
       mcpServers: {
         testforge: {
           command: "node",
-          args: [bridgePath.replace(/\\\\/g, "\\")],
+          args: [path || bridgePath],
           env: {
             MCP_TOKEN: token || "tfmcp_your_token_here",
             TESTFORGE_URL: serverUrl
@@ -695,7 +689,7 @@ const SettingsView = ({ currentUser }) => {
     }, null, 2);
   };
 
-  const getFullDesktopConfig = (token) => {
+  const getFullDesktopConfig = (token, path) => {
     return JSON.stringify({
       preferences: {
         coworkScheduledTasksEnabled: true,
@@ -706,7 +700,7 @@ const SettingsView = ({ currentUser }) => {
       mcpServers: {
         testforge: {
           command: "node",
-          args: [bridgePath.replace(/\\\\/g, "\\")],
+          args: [path || bridgePath],
           env: {
             MCP_TOKEN: token || "tfmcp_your_token_here",
             TESTFORGE_URL: serverUrl
@@ -718,7 +712,7 @@ const SettingsView = ({ currentUser }) => {
 
   const downloadConfig = () => {
     if (!newToken?.token) return;
-    const json = getFullDesktopConfig(newToken.token);
+    const json = getFullDesktopConfig(newToken.token, newToken.bridgePath);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -730,8 +724,8 @@ const SettingsView = ({ currentUser }) => {
     URL.revokeObjectURL(url);
   };
 
-  const getInstallCommand = (token) => {
-    const configJson = getFullDesktopConfig(token || "tfmcp_your_token_here");
+  const getInstallCommand = (token, path) => {
+    const configJson = getFullDesktopConfig(token || "tfmcp_your_token_here", path);
 
     if (installOs === "windows") {
       return `# PowerShell — Run as your user (not admin)
@@ -771,14 +765,15 @@ echo "\\033[33mRestart Claude Desktop to activate.\\033[0m"`;
 
   const copyInstallCommand = () => {
     if (!newToken?.token) return;
-    navigator.clipboard.writeText(getInstallCommand(newToken.token)).then(() => {
+    navigator.clipboard.writeText(getInstallCommand(newToken.token, newToken.bridgePath)).then(() => {
       setCopiedCmd(true);
       setTimeout(() => setCopiedCmd(false), 3000);
     });
   };
 
+  // Config snippets use the path captured at token creation time
   const configSnippets = {
-    desktop: getDesktopConfigJson(newToken?.token),
+    desktop: getDesktopConfigJson(newToken?.token, newToken?.bridgePath),
     code: `# Claude Code — run in terminal
 claude mcp add testforge \\
   --transport sse \\
@@ -848,7 +843,7 @@ Paste the URL above and add the Authorization header.`,
             </span>
           </div>
           <div style={{ fontSize: 10, color: COLORS.textMuted, marginLeft: 18, marginBottom: 10, lineHeight: 1.6 }}>
-            Save to your <span style={{ fontWeight: 600, color: COLORS.textBright }}>testforge-ai</span> project folder (e.g. <span style={{ fontFamily: mono }}>C:\Path\to\Your\testforge-ai folder\testforge-ai\mcp-bridge.mjs</span>). The file must be accessible by Node.js on your local machine.
+            Save it anywhere on your machine that Node.js can access. You'll provide the full file path below when creating a token.
           </div>
           <div style={{ fontSize: 12, color: COLORS.text }}>
             <span style={{ color: COLORS.green, fontWeight: 600 }}>3.</span> <span style={{ fontWeight: 600 }}>TestForge server</span> must be running at <span style={{ fontFamily: mono, fontSize: 11, color: COLORS.accent }}>{serverUrl}</span>
@@ -863,8 +858,8 @@ Paste the URL above and add the Authorization header.`,
           Tokens authenticate your Claude client with TestForge. Each token is tied to your account ({currentUser.name} / {currentUser.role}).
         </div>
 
-        {/* Create new token */}
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 16 }}>
+        {/* Create new token — name + bridge path + button */}
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 10 }}>
           <Input
             label="Token Name"
             value={tokenName}
@@ -872,7 +867,24 @@ Paste the URL above and add the Authorization header.`,
             placeholder='e.g. "My Claude Desktop", "VS Code"'
             style={{ flex: 1 }}
           />
-          <Button onClick={createToken} disabled={!tokenName.trim()}>Create Token</Button>
+          <Button onClick={createToken} disabled={!tokenName.trim() || !bridgePath.trim()}>Create Token</Button>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <Input
+            label="Path to mcp-bridge.mjs on your machine"
+            value={bridgePath}
+            onChange={setBridgePath}
+            mono
+            placeholder={installOs === "windows"
+              ? "e.g. C:\\Users\\you\\testforge-ai\\mcp-bridge.mjs"
+              : "e.g. /Users/you/testforge-ai/mcp-bridge.mjs"}
+            style={{ marginBottom: 4 }}
+          />
+          <div style={{ fontSize: 10, color: COLORS.textMuted, lineHeight: 1.5 }}>
+            Enter the full path to where you saved <span style={{ fontFamily: mono }}>mcp-bridge.mjs</span> in step 2 above.
+            {installOs === "windows" && " Use double backslashes for Windows paths (e.g. C:\\\\Users\\\\...)."}
+            {" "}This path is embedded in the generated config file.
+          </div>
         </div>
         <ErrorBanner msg={error} />
 
@@ -885,7 +897,7 @@ Paste the URL above and add the Authorization header.`,
             </div>
 
             {/* Token value */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <div style={{
                 flex: 1, fontFamily: mono, fontSize: 12, color: COLORS.accent,
                 background: COLORS.bg, padding: "10px 14px", borderRadius: 6,
@@ -897,19 +909,10 @@ Paste the URL above and add the Authorization header.`,
               <Button small onClick={copyToken}>{copied ? "Copied!" : "Copy Token"}</Button>
             </div>
 
-            {/* ── Bridge path config ── */}
-            <div style={{ marginBottom: 16 }}>
-              <Input
-                label="Path to mcp-bridge.mjs on your machine"
-                value={bridgePath}
-                onChange={setBridgePath}
-                mono
-                placeholder="C:\\Users\\you\\Desktop\\testforge-ai\\mcp-bridge.mjs"
-                style={{ marginBottom: 4 }}
-              />
-              <div style={{ fontSize: 10, color: COLORS.textMuted }}>
-                Use double backslashes for Windows paths. This path is embedded in the config file.
-              </div>
+            {/* Show the path that was captured */}
+            <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.bg, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
+              <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Bridge Path (from your input above)</div>
+              <div style={{ fontFamily: mono, fontSize: 11, color: COLORS.textBright, wordBreak: "break-all" }}>{newToken.bridgePath}</div>
             </div>
 
             {/* ── Quick Install section ── */}
@@ -980,7 +983,7 @@ Paste the URL above and add the Authorization header.`,
                   whiteSpace: "pre-wrap", lineHeight: 1.6, margin: 0,
                   maxHeight: 220,
                 }}>
-                  {getInstallCommand(newToken.token)}
+                  {getInstallCommand(newToken.token, newToken.bridgePath)}
                 </pre>
               </div>
 
@@ -1137,25 +1140,34 @@ Paste the URL above and add the Authorization header.`,
             <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.accent, marginBottom: 8 }}>Getting Started</div>
 
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Step 1: Create an MCP Token</div>
+              <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Step 1: Download & Place the Bridge Script</div>
               <div style={{ paddingLeft: 14, borderLeft: `2px solid ${COLORS.border}` }}>
-                <div>Open <span style={{ fontWeight: 600, color: COLORS.accent }}>Settings & MCP</span> from the sidebar.</div>
-                <div>Enter a name and click <span style={{ fontWeight: 600 }}>Create Token</span>.</div>
-                <div>Copy the <span style={{ fontFamily: mono, fontSize: 11, color: COLORS.accent }}>tfmcp_...</span> token immediately.</div>
+                <div>Click <span style={{ fontWeight: 600 }}>Download mcp-bridge.mjs</span> in the Prerequisites section above.</div>
+                <div>Save the file to a permanent location on your machine (e.g. your project folder).</div>
+                <div>Note the <span style={{ fontWeight: 600 }}>full file path</span> — you'll need it in the next step.</div>
               </div>
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Step 2: Install the Config</div>
+              <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Step 2: Create an MCP Token</div>
+              <div style={{ paddingLeft: 14, borderLeft: `2px solid ${COLORS.border}` }}>
+                <div>Enter a name for the token (e.g. "My Claude Desktop").</div>
+                <div>Paste the full path to your <span style={{ fontFamily: mono, fontSize: 11 }}>mcp-bridge.mjs</span> file.</div>
+                <div>Click <span style={{ fontWeight: 600 }}>Create Token</span>.</div>
+                <div>Copy the <span style={{ fontFamily: mono, fontSize: 11, color: COLORS.accent }}>tfmcp_...</span> token immediately — it won't be shown again.</div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Step 3: Install the Config</div>
               <div style={{ paddingLeft: 14, borderLeft: `2px solid ${COLORS.border}` }}>
                 <div style={{ marginBottom: 6 }}><Badge color="green">Easiest</Badge> <span style={{ fontWeight: 600 }}>Download Config</span> — click the button, move the file to your Claude config folder.</div>
                 <div style={{ marginBottom: 6 }}><Badge color="accent">Terminal</Badge> <span style={{ fontWeight: 600 }}>Auto-Install</span> — copy the PowerShell/bash command, paste and run. Auto-detects Windows Store vs standard install.</div>
-                <div style={{ marginBottom: 6 }}><Badge color="amber">Important</Badge> Update the <span style={{ fontFamily: mono, fontSize: 11 }}>mcp-bridge.mjs</span> path in the config to match your actual file location.</div>
               </div>
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Step 3: Restart & Verify</div>
+              <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Step 4: Restart & Verify</div>
               <div style={{ paddingLeft: 14, borderLeft: `2px solid ${COLORS.border}` }}>
                 <div>Fully quit Claude Desktop (system tray → <span style={{ fontWeight: 600 }}>Quit Claude</span>, not just close the window).</div>
                 <div>Reopen and check <span style={{ fontWeight: 600 }}>Settings → Developer</span> — "testforge" should appear in the MCP servers list.</div>
@@ -1211,21 +1223,279 @@ Paste the URL above and add the Authorization header.`,
   );
 };
 
+// ─── MCP SERVER SETTINGS ────────────────────────────────────────────────────
+
+const McpSettingsView = ({ currentUser }) => {
+  const [servers, setServers] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [testResults, setTestResults] = useState({});
+  const [error, setError] = useState("");
+  const [addForm, setAddForm] = useState({
+    name: "", url: "", auth_type: "none", auth_token: "", description: "", enabled: true,
+  });
+  const [editForm, setEditForm] = useState({
+    name: "", url: "", auth_type: "none", auth_token: "", description: "", enabled: true,
+  });
+
+  const isAdmin = currentUser.role === "Admin";
+
+  const loadServers = useCallback(async () => {
+    try { setServers(await api.getMcpSettings()); } catch (e) {}
+  }, []);
+
+  useEffect(() => { loadServers(); }, [loadServers]);
+
+  const startAdd = () => {
+    setAddForm({ name: "", url: "", auth_type: "none", auth_token: "", description: "", enabled: true });
+    setShowAdd(true); setEditId(null); setError(""); setDeleteConfirm(null);
+  };
+
+  const startEdit = (s) => {
+    if (editId === s.id) { setEditId(null); return; }
+    setEditForm({
+      name: s.name, url: s.url, auth_type: s.auth_type,
+      auth_token: "", description: s.description || "", enabled: !!s.enabled,
+    });
+    setEditId(s.id); setShowAdd(false); setError(""); setDeleteConfirm(null);
+  };
+
+  const saveAdd = async () => {
+    setError("");
+    try {
+      await api.createMcpServer(addForm);
+      setShowAdd(false); loadServers();
+    } catch (err) { setError(err.message); }
+  };
+
+  const saveEdit = async () => {
+    setError("");
+    const payload = { ...editForm };
+    // Only send auth_token if the user typed something (avoid clearing on edit)
+    if (!payload.auth_token) delete payload.auth_token;
+    try {
+      await api.updateMcpServer(editId, payload);
+      setEditId(null); loadServers();
+    } catch (err) { setError(err.message); }
+  };
+
+  const doDelete = async (id) => {
+    try { await api.deleteMcpServer(id); setDeleteConfirm(null); setEditId(null); loadServers(); }
+    catch (err) { setError(err.message); }
+  };
+
+  const doToggle = async (id) => {
+    try { await api.toggleMcpServer(id); loadServers(); } catch (e) {}
+  };
+
+  const doTest = async (id) => {
+    setTestResults(prev => ({ ...prev, [id]: { testing: true } }));
+    try {
+      const result = await api.testMcpServer(id);
+      setTestResults(prev => ({ ...prev, [id]: result }));
+    } catch (err) {
+      setTestResults(prev => ({ ...prev, [id]: { ok: false, error: err.message } }));
+    }
+  };
+
+  const renderForm = (form, setForm) => (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <Input label="Server Name" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))}
+          placeholder="e.g. Jira MCP, GitHub MCP" />
+        <Input label="Server URL" value={form.url} onChange={v => setForm(p => ({ ...p, url: v }))}
+          placeholder="https://mcp.example.com/sse" mono />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <Select label="Auth Type" value={form.auth_type}
+          onChange={v => setForm(p => ({ ...p, auth_type: v }))}
+          options={[
+            { value: "none", label: "None" },
+            { value: "bearer", label: "Bearer Token" },
+            { value: "api_key", label: "API Key" },
+            { value: "oauth2", label: "OAuth 2.0" },
+          ]} />
+        {form.auth_type !== "none" && (
+          <Input label="Auth Token / Secret" value={form.auth_token}
+            onChange={v => setForm(p => ({ ...p, auth_token: v }))}
+            placeholder={editId ? "(leave blank to keep existing)" : "Enter token"}
+            type="password" mono />
+        )}
+      </div>
+      <Input label="Description" value={form.description}
+        onChange={v => setForm(p => ({ ...p, description: v }))}
+        placeholder="What this server provides (optional)" style={{ marginBottom: 14 }} />
+      <ErrorBanner msg={error} />
+    </>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>MCP Server Configuration</h2>
+          <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
+            Model Context Protocol Connections — Admin Only
+          </p>
+        </div>
+        {isAdmin && <Button onClick={startAdd}>+ Add Server</Button>}
+      </div>
+
+      {!isAdmin && (
+        <Card style={{ marginBottom: 16, padding: "12px 16px" }}>
+          <div style={{ fontSize: 12, color: COLORS.amber }}>
+            Admin role required to configure MCP servers. Contact an administrator to add or modify connections.
+          </div>
+        </Card>
+      )}
+
+      {/* Add form */}
+      {showAdd && isAdmin && (
+        <Card glow style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.accent, marginBottom: 14 }}>Add MCP Server</div>
+          {renderForm(addForm, setAddForm)}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button onClick={saveAdd} disabled={!addForm.name || !addForm.url}>Save</Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Server list */}
+      {servers.length === 0 && !showAdd && (
+        <EmptyState icon="◆" title="No MCP Servers Configured"
+          subtitle={isAdmin ? "Add a server connection above" : "An administrator needs to configure MCP servers"} />
+      )}
+
+      {servers.map(s => {
+        const isEditing = editId === s.id;
+        const test = testResults[s.id];
+
+        return (
+          <Card key={s.id} style={{
+            marginBottom: 10,
+            cursor: isAdmin && !isEditing ? "pointer" : "default",
+            borderColor: isEditing ? COLORS.accent + "44" : !s.enabled ? COLORS.border + "88" : undefined,
+            boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined,
+            opacity: s.enabled ? 1 : 0.6,
+          }}
+            onClick={() => isAdmin && !isEditing && startEdit(s)}>
+
+            {/* Read-only header */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <span style={{
+                fontFamily: mono, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+                color: s.enabled ? COLORS.green : COLORS.textMuted,
+                background: s.enabled ? COLORS.greenDim : COLORS.surface,
+              }}>
+                {s.enabled ? "ACTIVE" : "DISABLED"}
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 2 }}>{s.name}</div>
+                <div style={{ fontSize: 12, fontFamily: mono, color: COLORS.textMuted }}>{s.url}</div>
+                {s.description && !isEditing && (
+                  <div style={{ fontSize: 12, color: COLORS.text, marginTop: 6 }}>{s.description}</div>
+                )}
+                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <Badge color="purple">{s.auth_type === "none" ? "No Auth" : s.auth_type.toUpperCase()}</Badge>
+                  {s.updated_by && (
+                    <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>
+                      Updated by {s.updated_by}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}
+                onClick={e => e.stopPropagation()}>
+                {isAdmin && (
+                  <>
+                    <Button small variant="secondary" onClick={() => doTest(s.id)}
+                      disabled={test?.testing}>
+                      {test?.testing ? "Testing..." : "Test"}
+                    </Button>
+                    <Button small variant={s.enabled ? "ghost" : "secondary"} onClick={() => doToggle(s.id)}>
+                      {s.enabled ? "Disable" : "Enable"}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Test result banner */}
+            {test && !test.testing && (
+              <div style={{
+                marginTop: 10, padding: "6px 12px", borderRadius: 6, fontSize: 11, fontFamily: mono,
+                background: test.reachable ? COLORS.greenDim : COLORS.redDim,
+                color: test.reachable ? COLORS.green : COLORS.red,
+                border: `1px solid ${test.reachable ? COLORS.green : COLORS.red}33`,
+              }}
+                onClick={e => e.stopPropagation()}>
+                {test.reachable
+                  ? `Connection OK — ${test.status} ${test.statusText}`
+                  : `Connection Failed — ${test.error || `${test.status} ${test.statusText}`}`}
+              </div>
+            )}
+
+            {/* Inline edit form */}
+            {isEditing && isAdmin && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}
+                onClick={e => e.stopPropagation()}>
+                <div style={{
+                  fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12,
+                  fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em",
+                }}>Editing</div>
+                {renderForm(editForm, setEditForm)}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+                  {deleteConfirm !== s.id ? (
+                    <Button variant="danger" small onClick={() => setDeleteConfirm(s.id)}
+                      style={{ marginRight: "auto" }}>Delete</Button>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "auto" }}>
+                      <span style={{ fontSize: 11, color: COLORS.red }}>Remove this server?</span>
+                      <Button variant="danger" small onClick={() => doDelete(s.id)}>Confirm</Button>
+                      <Button variant="ghost" small onClick={() => setDeleteConfirm(null)}>No</Button>
+                    </div>
+                  )}
+                  <Button variant="secondary" onClick={() => setEditId(null)}>Cancel</Button>
+                  <Button onClick={saveEdit} disabled={!editForm.name || !editForm.url}>Save</Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      {/* Role permissions reference */}
+      <Card style={{ marginTop: 24, padding: "14px 16px" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, marginBottom: 8, textTransform: "uppercase" }}>
+          Access Control
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.8 }}>
+          <span style={{ color: COLORS.purple, fontWeight: 600 }}>Admin</span> — Full CRUD on MCP servers, test connections, toggle enabled/disabled
+          <br />
+          <span style={{ color: COLORS.amber, fontWeight: 600 }}>QA Manager</span> — View configured servers (read-only)
+          <br />
+          <span style={{ color: COLORS.accent, fontWeight: 600 }}>QA Engineer</span> — View configured servers (read-only)
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [authState, setAuthState] = useState("loading"); // loading | login | changePassword | authenticated
+  const [authState, setAuthState] = useState("loading");
   const [currentUser, setCurrentUser] = useState(null);
   const [pendingPw, setPendingPw] = useState(null);
   const [page, setPage] = useState("dashboard");
 
-  // Data
   const [requirements, setRequirements] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [kbEntries, setKbEntries] = useState([]);
 
   const loadData = useCallback(async () => {
-    // Load each independently — one failure must not block the others
     try { setRequirements(await api.getRequirements()); }
     catch (e) {
       console.error("Failed to load requirements:", e.message);
@@ -1237,7 +1507,6 @@ export default function App() {
     catch (e) { console.error("Failed to load KB entries:", e.message); }
   }, []);
 
-  // Check session on mount
   useEffect(() => {
     api.me().then(data => { setCurrentUser(data.user); setAuthState("authenticated"); loadData(); }).catch(() => setAuthState("login"));
   }, [loadData]);
@@ -1277,10 +1546,9 @@ export default function App() {
       {page === "kb" && <KbView kbEntries={kbEntries} refresh={loadData} />}
       {page === "users" && <UserManagementView currentUser={currentUser} refreshAll={loadData} />}
       {page === "jama" && <JamaView testCases={testCases} requirements={requirements} currentUser={currentUser} />}
+      {page === "mcp" && <McpSettingsView currentUser={currentUser} />}
       {page === "deferred" && <DeferredView />}
-	    {page === "deferred" && <DeferredView />}
       {page === "settings" && <SettingsView currentUser={currentUser} />}
-      
     </main>
   </div>;
 }
