@@ -36,6 +36,8 @@ export const api = {
   // Test Cases
   getTestCases: () => request("/testcases"),
   generateTestCases: (reqId, depth) => request("/testcases/generate", { method: "POST", body: { reqId, depth } }),
+  getGenerationPrompt: (reqId, depth) => request(`/testcases/prompt?reqId=${encodeURIComponent(reqId)}&depth=${encodeURIComponent(depth)}`),
+  importTestCases: (reqId, depth, tcs) => request("/testcases/import", { method: "POST", body: { reqId, depth, tcs } }),
   updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
 
   // Knowledge Base

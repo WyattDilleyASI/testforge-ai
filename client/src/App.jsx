@@ -1,77 +1,208 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { api } from "./api";
+
+// ─── THEMES ─────────────────────────────────────────────────────────────────
+
+const THEMES = {
+  dark: {
+    name: "Cyber Dark",
+    swatch: "#22D3EE",
+    bg: "#0B0E14", surface: "#121821", surfaceRaised: "#1A2233",
+    border: "#243044", text: "#C8D6E5", textMuted: "#7A8BA3",
+    textBright: "#EFF4F8", accent: "#22D3EE", accentDim: "rgba(34,211,238,0.12)",
+    accentGlow: "rgba(34,211,238,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
+    red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
+    amberDim: "rgba(251,191,36,0.12)", purple: "#A78BFA", purpleDim: "rgba(167,139,250,0.12)",
+  },
+  cherry: {
+    name: "Cherry Blossom",
+    swatch: "#D63384",
+    bg: "#FEF6F8", surface: "#FFFFFF", surfaceRaised: "#FFF0F5",
+    border: "#F0C0D0", text: "#5A2030", textMuted: "#A06070",
+    textBright: "#2D0A18", accent: "#D63384", accentDim: "rgba(214,51,132,0.1)",
+    accentGlow: "rgba(214,51,132,0.22)", green: "#2D8A5A", greenDim: "rgba(45,138,90,0.1)",
+    red: "#C0392B", redDim: "rgba(192,57,43,0.1)", amber: "#B07020",
+    amberDim: "rgba(176,112,32,0.1)", purple: "#7D3C98", purpleDim: "rgba(125,60,152,0.1)",
+  },
+  ocean: {
+    name: "Ocean Depth",
+    swatch: "#00B4D8",
+    bg: "#04101A", surface: "#071828", surfaceRaised: "#0B2035",
+    border: "#0E3050", text: "#A8C8E0", textMuted: "#507090",
+    textBright: "#D0E8F5", accent: "#00B4D8", accentDim: "rgba(0,180,216,0.12)",
+    accentGlow: "rgba(0,180,216,0.25)", green: "#00C896", greenDim: "rgba(0,200,150,0.12)",
+    red: "#FF6B7A", redDim: "rgba(255,107,122,0.12)", amber: "#FFB347",
+    amberDim: "rgba(255,179,71,0.12)", purple: "#C084FC", purpleDim: "rgba(192,132,252,0.12)",
+  },
+  slate: {
+    name: "Slate",
+    swatch: "#2563EB",
+    bg: "#F5F7FA", surface: "#FFFFFF", surfaceRaised: "#EEF2F7",
+    border: "#D0D8E4", text: "#374151", textMuted: "#6B7280",
+    textBright: "#111827", accent: "#2563EB", accentDim: "rgba(37,99,235,0.1)",
+    accentGlow: "rgba(37,99,235,0.2)", green: "#059669", greenDim: "rgba(5,150,105,0.1)",
+    red: "#DC2626", redDim: "rgba(220,38,38,0.1)", amber: "#D97706",
+    amberDim: "rgba(217,119,6,0.1)", purple: "#7C3AED", purpleDim: "rgba(124,58,237,0.1)",
+  },
+  forest: {
+    name: "Forest",
+    swatch: "#22C55E",
+    bg: "#F0FAF4", surface: "#FFFFFF", surfaceRaised: "#E8F5ED",
+    border: "#B8DFC4", text: "#1A3D2A", textMuted: "#5A8A6A",
+    textBright: "#0A2015", accent: "#16A34A", accentDim: "rgba(22,163,74,0.1)",
+    accentGlow: "rgba(22,163,74,0.2)", green: "#15803D", greenDim: "rgba(21,128,61,0.12)",
+    red: "#DC2626", redDim: "rgba(220,38,38,0.1)", amber: "#CA8A04",
+    amberDim: "rgba(202,138,4,0.1)", purple: "#7C3AED", purpleDim: "rgba(124,58,237,0.1)",
+  },
+  vaporwave: {
+    name: "Vaporwave",
+    swatch: "#FF71CE",
+    bg: "#1A0033", surface: "#2D0054", surfaceRaised: "#3D0070",
+    border: "#FF71CE", text: "#B967FF", textMuted: "#05FFA1",
+    textBright: "#FFFB96", accent: "#FF71CE", accentDim: "rgba(255,113,206,0.18)",
+    accentGlow: "rgba(255,113,206,0.4)", green: "#05FFA1", greenDim: "rgba(5,255,161,0.15)",
+    red: "#FF6B9D", redDim: "rgba(255,107,157,0.15)", amber: "#FFFB96",
+    amberDim: "rgba(255,251,150,0.15)", purple: "#01CDFE", purpleDim: "rgba(1,205,254,0.15)",
+  },
+  hotdog: {
+    name: "Hot Dog Stand",
+    swatch: "#FF0000",
+    bg: "#FF0000", surface: "#FFFF00", surfaceRaised: "#FF6600",
+    border: "#000000", text: "#000000", textMuted: "#8B0000",
+    textBright: "#FFFFFF", accent: "#0000FF", accentDim: "rgba(0,0,255,0.2)",
+    accentGlow: "rgba(0,0,255,0.4)", green: "#00FF00", greenDim: "rgba(0,255,0,0.2)",
+    red: "#FFFFFF", redDim: "rgba(255,255,255,0.2)", amber: "#FF00FF",
+    amberDim: "rgba(255,0,255,0.2)", purple: "#00FFFF", purpleDim: "rgba(0,255,255,0.2)",
+  },
+};
+
+const ThemeContext = createContext(THEMES.dark);
+const useTheme = () => useContext(ThemeContext);
 
 // ─── CONSTANTS ──────────────────────────────────────────────────────────────
 
-const COLORS = {
-  bg: "#0B0E14", surface: "#121821", surfaceRaised: "#1A2233",
-  border: "#243044", text: "#C8D6E5", textMuted: "#7A8BA3",
-  textBright: "#EFF4F8", accent: "#22D3EE", accentDim: "rgba(34,211,238,0.12)",
-  accentGlow: "rgba(34,211,238,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
-  red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
-  amberDim: "rgba(251,191,36,0.12)", purple: "#A78BFA", purpleDim: "rgba(167,139,250,0.12)",
-};
 const font = "'DM Sans', 'Segoe UI', system-ui, sans-serif";
 const mono = "'JetBrains Mono', 'Fira Code', monospace";
 const DRAFT_DISCLAIMER = "These test cases are AI-generated drafts and represent a suggested starting point only. QA Engineer review, augmentation, and approval are required before use.";
 
 const ROLE_PERMISSIONS = {
   "QA Engineer": { label: "QA Engineer", color: "accent", permissions: ["Ingest & edit requirements", "Generate & edit test cases", "Add & tag KB entries", "View Traceability Matrix & Coverage Dashboard"], restricted: ["Approve TCs for export", "Modify Jama settings", "Access user management"] },
-  "QA Manager": { label: "QA Manager", color: "amber", permissions: ["All QA Engineer permissions", "Approve or reject TCs for export", "Initiate & review Jama exports", "View user activity logs"], restricted: ["Create/edit/deactivate accounts", "Configure Jama API credentials", "Access full audit log"] },
+  "QA Manager": { label: "QA Manager", color: "amber", permissions: ["All QA Manager permissions", "Approve or reject TCs for export", "Initiate & review Jama exports", "View user activity logs"], restricted: ["Create/edit/deactivate accounts", "Configure Jama API credentials", "Access full audit log"] },
   "Admin": { label: "Admin", color: "purple", permissions: ["All QA Manager permissions", "Create, edit, deactivate accounts", "Assign roles to users", "Configure Jama credentials", "Access full system audit log"], restricted: [] },
 };
 
 // ─── UTILITY COMPONENTS ─────────────────────────────────────────────────────
 
 const Badge = ({ color = "accent", children, style }) => {
+  const COLORS = useTheme();
   const c = COLORS[color] || color;
   const dim = COLORS[color + "Dim"] || "rgba(255,255,255,0.08)";
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, letterSpacing: "0.04em", textTransform: "uppercase", color: c, background: dim, border: `1px solid ${c}22`, whiteSpace: "nowrap", ...style }}>{children}</span>;
 };
 
 const Button = ({ variant = "primary", children, onClick, disabled, style, small }) => {
+  const COLORS = useTheme();
   const base = { fontFamily: font, fontSize: small ? 12 : 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", borderRadius: 6, padding: small ? "5px 12px" : "9px 20px", transition: "all 0.2s", opacity: disabled ? 0.4 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
   const variants = { primary: { ...base, background: COLORS.accent, color: COLORS.bg }, secondary: { ...base, background: COLORS.surfaceRaised, color: COLORS.text, border: `1px solid ${COLORS.border}` }, danger: { ...base, background: COLORS.redDim, color: COLORS.red, border: `1px solid ${COLORS.red}33` }, ghost: { ...base, background: "transparent", color: COLORS.textMuted } };
   return <button style={{ ...variants[variant], ...style }} onClick={onClick} disabled={disabled}>{children}</button>;
 };
 
-const Card = ({ children, style, glow, ...rest }) => <div style={{ background: COLORS.surfaceRaised, border: `1px solid ${glow ? COLORS.accent + "44" : COLORS.border}`, borderRadius: 10, padding: 20, boxShadow: glow ? `0 0 20px ${COLORS.accentGlow}` : "0 2px 8px rgba(0,0,0,0.3)", ...style }} {...rest}>{children}</div>;
+const Card = ({ children, style, glow, ...rest }) => {
+  const COLORS = useTheme();
+  return <div style={{ background: COLORS.surfaceRaised, border: `1px solid ${glow ? COLORS.accent + "44" : COLORS.border}`, borderRadius: 10, padding: 20, boxShadow: glow ? `0 0 20px ${COLORS.accentGlow}` : "0 2px 8px rgba(0,0,0,0.12)", ...style }} {...rest}>{children}</div>;
+};
 
-const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    {textarea ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", minHeight: 80, outline: "none", opacity: disabled ? 0.5 : 1 }} />
-    : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
-  </div>
-);
+const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => {
+  const COLORS = useTheme();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
+      {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
+      {textarea
+        ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", minHeight: 80, outline: "none", opacity: disabled ? 0.5 : 1 }} />
+        : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
+    </div>
+  );
+};
 
-const PasswordInput = ({ label, value, onChange, placeholder, style, onKeyDown }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    <input type="password" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none" }} />
-  </div>
-);
+const PasswordInput = ({ label, value, onChange, placeholder, style, onKeyDown }) => {
+  const COLORS = useTheme();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
+      {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
+      <input type="password" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none" }} />
+    </div>
+  );
+};
 
-const Select = ({ label, value, onChange, options, style, disabled }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-  </div>
-);
+const Select = ({ label, value, onChange, options, style, disabled }) => {
+  const COLORS = useTheme();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
+      {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
+      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+    </div>
+  );
+};
 
-const ReqIdTag = ({ id }) => <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.accent, background: COLORS.accentDim, padding: "2px 8px", borderRadius: 4, border: `1px solid ${COLORS.accent}33` }}>{id}</span>;
+const ReqIdTag = ({ id }) => {
+  const COLORS = useTheme();
+  return <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.accent, background: COLORS.accentDim, padding: "2px 8px", borderRadius: 4, border: `1px solid ${COLORS.accent}33` }}>{id}</span>;
+};
 
-const Spinner = () => <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.accent }}><div style={{ width: 18, height: 18, border: `2px solid ${COLORS.border}`, borderTopColor: COLORS.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontFamily: mono }}>Generating drafts via Claude API...</span><style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style></div>;
+const Spinner = () => {
+  const COLORS = useTheme();
+  return <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.accent }}><div style={{ width: 18, height: 18, border: `2px solid ${COLORS.border}`, borderTopColor: COLORS.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontFamily: mono }}>Generating drafts via Claude API...</span><style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style></div>;
+};
 
-const EmptyState = ({ icon, title, subtitle }) => <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60, color: COLORS.textMuted, textAlign: "center" }}><span style={{ fontSize: 36, marginBottom: 12, opacity: 0.4 }}>{icon}</span><span style={{ fontSize: 15, fontWeight: 600, color: COLORS.text, marginBottom: 4 }}>{title}</span><span style={{ fontSize: 13 }}>{subtitle}</span></div>;
+const EmptyState = ({ icon, title, subtitle }) => {
+  const COLORS = useTheme();
+  return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60, color: COLORS.textMuted, textAlign: "center" }}><span style={{ fontSize: 36, marginBottom: 12, opacity: 0.4 }}>{icon}</span><span style={{ fontSize: 15, fontWeight: 600, color: COLORS.text, marginBottom: 4 }}>{title}</span><span style={{ fontSize: 13 }}>{subtitle}</span></div>;
+};
 
-const DraftDisclaimer = ({ style }) => <div style={{ padding: "10px 14px", background: "rgba(251,191,36,0.08)", borderRadius: 6, border: `1px solid ${COLORS.amber}33`, fontSize: 11, color: COLORS.amber, lineHeight: 1.5, ...style }}><span style={{ fontFamily: mono, fontWeight: 700, marginRight: 6, fontSize: 10, textTransform: "uppercase" }}>TC-003a DRAFT</span>{DRAFT_DISCLAIMER}</div>;
+const DraftDisclaimer = ({ style }) => {
+  const COLORS = useTheme();
+  return <div style={{ padding: "10px 14px", background: COLORS.amberDim, borderRadius: 6, border: `1px solid ${COLORS.amber}33`, fontSize: 11, color: COLORS.amber, lineHeight: 1.5, ...style }}><span style={{ fontFamily: mono, fontWeight: 700, marginRight: 6, fontSize: 10, textTransform: "uppercase" }}>TC-003a DRAFT</span>{DRAFT_DISCLAIMER}</div>;
+};
 
-const ErrorBanner = ({ msg }) => msg ? <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.redDim, borderRadius: 6, border: `1px solid ${COLORS.red}33`, fontSize: 12, color: COLORS.red }}>{msg}</div> : null;
+const ErrorBanner = ({ msg }) => {
+  const COLORS = useTheme();
+  return msg ? <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.redDim, borderRadius: 6, border: `1px solid ${COLORS.red}33`, fontSize: 12, color: COLORS.red }}>{msg}</div> : null;
+};
+
+// ─── THEME PICKER ────────────────────────────────────────────────────────────
+
+const ThemePicker = ({ currentTheme, onThemeChange }) => {
+  const COLORS = useTheme();
+  return (
+    <div style={{ padding: "10px 16px", borderTop: `1px solid ${COLORS.border}` }}>
+      <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Theme</div>
+      <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+        {Object.entries(THEMES).map(([key, theme]) => (
+          <button
+            key={key}
+            title={theme.name}
+            onClick={() => onThemeChange(key)}
+            style={{
+              width: 20, height: 20, borderRadius: "50%",
+              background: theme.swatch,
+              border: currentTheme === key ? `2px solid ${COLORS.textBright}` : "2px solid transparent",
+              cursor: "pointer", padding: 0, flexShrink: 0,
+              outline: currentTheme === key ? `2px solid ${COLORS.textMuted}` : "none",
+              outlineOffset: 1,
+              transition: "all 0.15s",
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.accent, marginTop: 6 }}>{THEMES[currentTheme]?.name}</div>
+    </div>
+  );
+};
 
 // ─── LOGIN SCREEN ───────────────────────────────────────────────────────────
 
 const LoginScreen = ({ onLogin }) => {
+  const COLORS = useTheme();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -112,6 +243,7 @@ const LoginScreen = ({ onLogin }) => {
 // ─── PASSWORD CHANGE SCREEN ─────────────────────────────────────────────────
 
 const PasswordChangeScreen = ({ userId, userName, isOtp, onComplete }) => {
+  const COLORS = useTheme();
   const [newPass, setNewPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [error, setError] = useState("");
@@ -166,36 +298,41 @@ const NAV_ITEMS = [
   { key: "deferred", label: "Deferred to v2", icon: "◬", reqs: "AL-xxx · KB-007" },
 ];
 
-const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
-  <div style={{ width: 250, minHeight: "100vh", background: COLORS.surface, borderRight: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", fontFamily: font, flexShrink: 0 }}>
-    <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${COLORS.border}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 20, color: COLORS.accent }}>◈</span><span style={{ fontSize: 15, fontWeight: 700, color: COLORS.textBright }}>TestForge AI</span></div>
-      <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.2</div>
-    </div>
-    <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS.green, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: COLORS.textBright, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
-        <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>@{currentUser.username} · {currentUser.role}</div>
+const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentTheme, onThemeChange }) => {
+  const COLORS = useTheme();
+  return (
+    <div style={{ width: 250, minHeight: "100vh", background: COLORS.surface, borderRight: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", fontFamily: font, flexShrink: 0 }}>
+      <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${COLORS.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 20, color: COLORS.accent }}>◈</span><span style={{ fontSize: 15, fontWeight: 700, color: COLORS.textBright }}>TestForge AI</span></div>
+        <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.2</div>
       </div>
-      <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 10, fontFamily: mono, padding: "4px 8px", borderRadius: 4 }}>Sign Out</button>
+      <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS.green, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: COLORS.textBright, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
+          <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>@{currentUser.username} · {currentUser.role}</div>
+        </div>
+        <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 10, fontFamily: mono, padding: "4px 8px", borderRadius: 4 }}>Sign Out</button>
+      </div>
+      <nav style={{ padding: "12px 10px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+        {NAV_ITEMS.map(item => {
+          const d = item.key === "deferred";
+          return <button key={item.key} onClick={() => onNavigate(item.key)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 7, border: "none", cursor: "pointer", textAlign: "left", fontFamily: font, fontSize: 13, fontWeight: active === item.key ? 600 : 400, color: active === item.key ? COLORS.textBright : d ? COLORS.textMuted + "88" : COLORS.textMuted, background: active === item.key ? COLORS.accentDim : "transparent", borderLeft: active === item.key ? `2px solid ${COLORS.accent}` : "2px solid transparent", fontStyle: d ? "italic" : "normal" }}>
+            <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center" }}>{item.icon}</span>
+            <div><div>{item.label}</div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div></div>
+          </button>;
+        })}
+      </nav>
+      <ThemePicker currentTheme={currentTheme} onThemeChange={onThemeChange} />
+      <div style={{ padding: "10px 16px", borderTop: `1px solid ${COLORS.border}`, fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>FRD v1.2 — 39 active REQs</div>
     </div>
-    <nav style={{ padding: "12px 10px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-      {NAV_ITEMS.map(item => {
-        const d = item.key === "deferred";
-        return <button key={item.key} onClick={() => onNavigate(item.key)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 7, border: "none", cursor: "pointer", textAlign: "left", fontFamily: font, fontSize: 13, fontWeight: active === item.key ? 600 : 400, color: active === item.key ? COLORS.textBright : d ? COLORS.textMuted + "88" : COLORS.textMuted, background: active === item.key ? COLORS.accentDim : "transparent", borderLeft: active === item.key ? `2px solid ${COLORS.accent}` : "2px solid transparent", fontStyle: d ? "italic" : "normal" }}>
-          <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center" }}>{item.icon}</span>
-          <div><div>{item.label}</div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div></div>
-        </button>;
-      })}
-    </nav>
-    <div style={{ padding: "14px 16px", borderTop: `1px solid ${COLORS.border}`, fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>FRD v1.2 — 39 active REQs</div>
-  </div>
-);
+  );
+};
 
 // ─── DASHBOARD ──────────────────────────────────────────────────────────────
 
 const DashboardView = ({ requirements, testCases, kbEntries }) => {
+  const COLORS = useTheme();
   const covered = requirements.filter(r => testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
   const untested = requirements.filter(r => !testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
   const coveragePct = requirements.length ? Math.round((covered.length / requirements.length) * 100) : 0;
@@ -225,6 +362,7 @@ const DashboardView = ({ requirements, testCases, kbEntries }) => {
 // ─── REQUIREMENTS ───────────────────────────────────────────────────────────
 
 const RequirementsView = ({ requirements, refresh, currentUser }) => {
+  const COLORS = useTheme();
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
   const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
@@ -237,7 +375,7 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const startAdd = () => { setAddForm({ req_id: `REQ-${String(requirements.length + 1).padStart(3, "0")}`, title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" }); setShowAdd(true); setEditId(null); setError(""); setDeleteConfirm(null); };
 
   const startEdit = (r) => {
-    if (editId === r.req_id) { setEditId(null); return; } // toggle closed
+    if (editId === r.req_id) { setEditId(null); return; }
     setEditForm({ req_id: r.req_id, title: r.title, description: r.description || "", acceptanceCriteria: (r.acceptance_criteria || []).join("\n"), priority: r.priority, status: r.status, module: r.module || "" });
     setEditId(r.req_id); setShowAdd(false); setError(""); setDeleteConfirm(null);
   };
@@ -259,7 +397,6 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
     try { await api.deleteRequirement(reqId); setEditId(null); setDeleteConfirm(null); refresh(); } catch (err) { setError(err.message); }
   };
 
-  // Shared form fields renderer
   const renderForm = (form, setForm, isEdit) => (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
@@ -281,7 +418,6 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
       <Button onClick={startAdd}>+ Add Requirement</Button>
     </div>
 
-    {/* Add form — always at the top */}
     {showAdd && <Card glow style={{ marginBottom: 20 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.accent, marginBottom: 14 }}>Add Requirement</div>
       {renderForm(addForm, setAddForm, false)}
@@ -291,11 +427,9 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
       </div>
     </Card>}
 
-    {/* Requirement list — edit form renders inline */}
     {requirements.map(r => {
       const isEditing = editId === r.req_id;
       return <Card key={r.req_id} style={{ marginBottom: 10, cursor: isEditing ? "default" : "pointer", borderColor: isEditing ? COLORS.accent + "44" : undefined, boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined }} onClick={() => !isEditing && startEdit(r)}>
-        {/* Read-only header — always visible */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
           <ReqIdTag id={r.req_id} />
           <div style={{ flex: 1 }}>
@@ -306,7 +440,6 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
           <div style={{ display: "flex", gap: 6 }}><Badge color={r.priority === "High" ? "red" : r.priority === "Medium" ? "amber" : "green"}>{r.priority}</Badge><Badge color={r.status === "Approved" ? "green" : r.status === "Review" ? "amber" : r.status === "Rejected" ? "red" : "textMuted"}>{r.status}</Badge></div>
         </div>
 
-        {/* Inline edit form — expands below the header */}
         {isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
           <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Editing</div>
           {renderForm(editForm, setEditForm, true)}
@@ -333,6 +466,7 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
 // ─── TEST CASES ─────────────────────────────────────────────────────────────
 
 const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
+  const COLORS = useTheme();
   const [selectedReqId, setSelectedReqId] = useState("");
   const [depth, setDepth] = useState("standard");
   const [generating, setGenerating] = useState(false);
@@ -340,6 +474,11 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const [apiError, setApiError] = useState(null);
   const [sessionTcIds, setSessionTcIds] = useState(null);
   const [viewMode, setViewMode] = useState("library");
+  const [copyState, setCopyState] = useState("idle"); // idle | copying | copied | error
+  const [showImport, setShowImport] = useState(false);
+  const [importJson, setImportJson] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
@@ -356,13 +495,53 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     finally { setGenerating(false); }
   };
 
+  const copyPrompt = async () => {
+    if (!selectedReqId) return;
+    setCopyState("copying");
+    try {
+      const { prompt } = await api.getGenerationPrompt(selectedReqId, depth);
+      await navigator.clipboard.writeText(prompt);
+      setCopyState("copied");
+      setTimeout(() => setCopyState("idle"), 2500);
+    } catch (err) {
+      setCopyState("error");
+      setTimeout(() => setCopyState("idle"), 2500);
+    }
+  };
+
+  const doImport = async () => {
+    setImportError("");
+    let parsed;
+    try {
+      const cleaned = importJson.replace(/```json|```/g, "").trim();
+      parsed = JSON.parse(cleaned);
+      if (!Array.isArray(parsed)) throw new Error("Response must be a JSON array");
+    } catch (err) {
+      setImportError(`Invalid JSON: ${err.message}`);
+      return;
+    }
+    setImporting(true);
+    try {
+      const newTcs = await api.importTestCases(selectedReqId, depth, parsed);
+      setSessionTcIds(newTcs.map(tc => tc.tc_id));
+      setViewMode("session");
+      setShowImport(false);
+      setImportJson("");
+      refresh();
+    } catch (err) { setImportError(err.message); }
+    finally { setImporting(false); }
+  };
+
   const updateStatus = async (tcId, status) => {
     try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
   };
 
-  return <div>
-    <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
-    <Card glow style={{ marginBottom: 24 }}>
+  return <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+    <div style={{ marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
+    </div>
+    <Card glow style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} style={{ minWidth: 280 }} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
@@ -371,6 +550,56 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
       </div>
       {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
       {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
+    </Card>
+
+    {/* Claude.ai manual workflow */}
+    <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase", marginBottom: 3 }}>No API Key? Use Claude.ai Manually</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted }}>Copy the prompt → paste into claude.ai → paste the JSON response back here</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId || copyState === "copying"}
+            onClick={copyPrompt}
+            style={{ borderColor: COLORS.purple + "66", color: copyState === "copied" ? COLORS.green : copyState === "error" ? COLORS.red : COLORS.purple }}
+          >
+            {copyState === "copying" ? "Fetching..." : copyState === "copied" ? "✓ Copied!" : copyState === "error" ? "✗ Failed" : "Copy Prompt"}
+          </Button>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId}
+            onClick={() => { setShowImport(!showImport); setImportError(""); }}
+            style={{ borderColor: COLORS.purple + "66", color: COLORS.purple }}
+          >
+            {showImport ? "Cancel Import" : "Import Response"}
+          </Button>
+        </div>
+      </div>
+
+      {showImport && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
+          Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
+        </div>
+        <textarea
+          value={importJson}
+          onChange={e => setImportJson(e.target.value)}
+          placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "preconditions": "...",\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "passFailCriteria": "..."\n  }\n]'}
+          style={{ width: "100%", minHeight: 160, fontFamily: mono, fontSize: 11, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${importError ? COLORS.red : COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", outline: "none", boxSizing: "border-box" }}
+        />
+        {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
+        <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Button variant="secondary" small onClick={() => { setShowImport(false); setImportJson(""); setImportError(""); }}>Cancel</Button>
+          <Button small disabled={!importJson.trim() || importing} onClick={doImport}
+            style={{ background: COLORS.purple, color: COLORS.bg }}>
+            {importing ? "Saving..." : "Save Test Cases"}
+          </Button>
+        </div>
+      </div>}
     </Card>
     {testCases.length > 0 && <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
       <Button small variant={viewMode === "library" ? "primary" : "secondary"} onClick={() => setViewMode("library")}>Library ({testCases.length})</Button>
@@ -409,33 +638,38 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
         </div>}
       </Card>)}
     </>}
+    </div>
   </div>;
 };
 
 // ─── TRACEABILITY MATRIX ────────────────────────────────────────────────────
 
-const TraceabilityView = ({ requirements, testCases }) => <div>
-  <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Traceability Matrix</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-007</p></div>
-  <Card style={{ overflow: "auto" }}>
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-      <thead><tr><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.accent, fontFamily: mono, fontSize: 11 }}>REQ ID</th><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Requirement</th><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Linked TCs</th><th style={{ textAlign: "center", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Status</th></tr></thead>
-      <tbody>{requirements.map(req => {
-        const linked = testCases.filter(tc => (tc.linked_req_ids || []).includes(req.req_id));
-        const hasReviewed = linked.some(tc => tc.status === "Reviewed");
-        return <tr key={req.req_id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-          <td style={{ padding: "10px 14px" }}><ReqIdTag id={req.req_id} /></td>
-          <td style={{ padding: "10px 14px", color: COLORS.text }}>{req.title}</td>
-          <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{linked.length === 0 ? <span style={{ color: COLORS.red, fontSize: 11, fontFamily: mono }}>— NONE —</span> : linked.map(tc => <span key={tc.tc_id} style={{ fontFamily: mono, fontSize: 10, padding: "2px 6px", borderRadius: 3, color: tc.status === "Reviewed" ? COLORS.green : COLORS.amber, background: tc.status === "Reviewed" ? COLORS.greenDim : COLORS.amberDim }}>{tc.tc_id}</span>)}</div></td>
-          <td style={{ padding: "10px 14px", textAlign: "center" }}>{linked.length === 0 ? <span style={{ color: COLORS.red }}>○</span> : hasReviewed ? <span style={{ color: COLORS.green }}>●</span> : <span style={{ color: COLORS.amber }}>◐</span>}</td>
-        </tr>;
-      })}</tbody>
-    </table>
-  </Card>
-</div>;
+const TraceabilityView = ({ requirements, testCases }) => {
+  const COLORS = useTheme();
+  return <div>
+    <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Traceability Matrix</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-007</p></div>
+    <Card style={{ overflow: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead><tr><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.accent, fontFamily: mono, fontSize: 11 }}>REQ ID</th><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Requirement</th><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Linked TCs</th><th style={{ textAlign: "center", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Status</th></tr></thead>
+        <tbody>{requirements.map(req => {
+          const linked = testCases.filter(tc => (tc.linked_req_ids || []).includes(req.req_id));
+          const hasReviewed = linked.some(tc => tc.status === "Reviewed");
+          return <tr key={req.req_id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+            <td style={{ padding: "10px 14px" }}><ReqIdTag id={req.req_id} /></td>
+            <td style={{ padding: "10px 14px", color: COLORS.text }}>{req.title}</td>
+            <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{linked.length === 0 ? <span style={{ color: COLORS.red, fontSize: 11, fontFamily: mono }}>— NONE —</span> : linked.map(tc => <span key={tc.tc_id} style={{ fontFamily: mono, fontSize: 10, padding: "2px 6px", borderRadius: 3, color: tc.status === "Reviewed" ? COLORS.green : COLORS.amber, background: tc.status === "Reviewed" ? COLORS.greenDim : COLORS.amberDim }}>{tc.tc_id}</span>)}</div></td>
+            <td style={{ padding: "10px 14px", textAlign: "center" }}>{linked.length === 0 ? <span style={{ color: COLORS.red }}>○</span> : hasReviewed ? <span style={{ color: COLORS.green }}>●</span> : <span style={{ color: COLORS.amber }}>◐</span>}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </Card>
+  </div>;
+};
 
 // ─── KNOWLEDGE BASE ─────────────────────────────────────────────────────────
 
 const KbView = ({ kbEntries, refresh }) => {
+  const COLORS = useTheme();
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", type: "Defect History", content: "", tags: "" });
   const [error, setError] = useState("");
@@ -468,6 +702,7 @@ const KbView = ({ kbEntries, refresh }) => {
 // ─── USER MANAGEMENT ────────────────────────────────────────────────────────
 
 const UserManagementView = ({ currentUser, refreshAll }) => {
+  const COLORS = useTheme();
   const [users, setUsers] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -559,6 +794,7 @@ const UserManagementView = ({ currentUser, refreshAll }) => {
 // ─── JAMA CONNECT ───────────────────────────────────────────────────────────
 
 const JamaView = ({ testCases, requirements, currentUser }) => {
+  const COLORS = useTheme();
   const [exportLog, setExportLog] = useState([]);
   const [config, setConfig] = useState({ url: "https://your-org.jamacloud.com", project: "AI-Test-Tool" });
   const isManager = currentUser.role === "QA Manager" || currentUser.role === "Admin";
@@ -595,33 +831,59 @@ const JamaView = ({ testCases, requirements, currentUser }) => {
 
 // ─── DEFERRED ───────────────────────────────────────────────────────────────
 
-const DeferredView = () => <div>
-  <div style={{ marginBottom: 28 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Deferred to v2</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>FRD v1.2 Section 9</p></div>
-  {[{ title: "Adaptive Learning Engine", sub: "AL-001 – AL-008", desc: "Descoped from v1 to keep the tool focused on assistive generation." },
-    { title: "Confluence KB Import", sub: "KB-007", desc: "Manual entry only in v1. v2 implements Confluence REST API import." },
-    { title: "SSO / External Identity", sub: "UM-xxx", desc: "v1 uses local accounts. v2 adds SAML/OAuth integration." }
-  ].map((item, i) => <Card key={i} style={{ marginBottom: 16 }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><Badge color="amber">DEFERRED</Badge><span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright }}>{item.title}</span><span style={{ fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>{item.sub}</span></div>
-    <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.7 }}>{item.desc}</div>
-  </Card>)}
-</div>;
+const DeferredView = () => {
+  const COLORS = useTheme();
+  return <div>
+    <div style={{ marginBottom: 28 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Deferred to v2</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>FRD v1.2 Section 9</p></div>
+    {[{ title: "Adaptive Learning Engine", sub: "AL-001 – AL-008", desc: "Descoped from v1 to keep the tool focused on assistive generation." },
+      { title: "Confluence KB Import", sub: "KB-007", desc: "Manual entry only in v1. v2 implements Confluence REST API import." },
+      { title: "SSO / External Identity", sub: "UM-xxx", desc: "v1 uses local accounts. v2 adds SAML/OAuth integration." }
+    ].map((item, i) => <Card key={i} style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><Badge color="amber">DEFERRED</Badge><span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright }}>{item.title}</span><span style={{ fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>{item.sub}</span></div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.7 }}>{item.desc}</div>
+    </Card>)}
+  </div>;
+};
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [authState, setAuthState] = useState("loading"); // loading | login | changePassword | authenticated
+  const [authState, setAuthState] = useState("loading");
   const [currentUser, setCurrentUser] = useState(null);
   const [pendingPw, setPendingPw] = useState(null);
   const [page, setPage] = useState("dashboard");
+  const [themeName, setThemeName] = useState(() => localStorage.getItem("tfai-theme") || "dark");
 
-  // Data
-  const [requirements, setRequirements] = useState([]);
+  const [reqs, setReqs] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [kbEntries, setKbEntries] = useState([]);
 
+  const activeTheme = THEMES[themeName] || THEMES.dark;
+
+  // Sync body background and scrollbar colors to active theme
+  useEffect(() => {
+    document.body.style.background = activeTheme.bg;
+    document.body.style.color = activeTheme.text;
+    const style = document.getElementById("tfai-theme-style") || (() => {
+      const s = document.createElement("style");
+      s.id = "tfai-theme-style";
+      document.head.appendChild(s);
+      return s;
+    })();
+    style.textContent = `
+      ::-webkit-scrollbar-track { background: ${activeTheme.bg}; }
+      ::-webkit-scrollbar-thumb { background: ${activeTheme.border}; border-radius: 3px; }
+      ::selection { background: ${activeTheme.accentGlow}; }
+    `;
+  }, [activeTheme]);
+
+  const handleThemeChange = (key) => {
+    setThemeName(key);
+    localStorage.setItem("tfai-theme", key);
+  };
+
   const loadData = useCallback(async () => {
-    // Load each independently — one failure must not block the others
-    try { setRequirements(await api.getRequirements()); }
+    try { setReqs(await api.getRequirements()); }
     catch (e) {
       console.error("Failed to load requirements:", e.message);
       if (e.message?.includes("Not authenticated")) { setCurrentUser(null); setAuthState("login"); return; }
@@ -632,7 +894,6 @@ export default function App() {
     catch (e) { console.error("Failed to load KB entries:", e.message); }
   }, []);
 
-  // Check session on mount
   useEffect(() => {
     api.me().then(data => { setCurrentUser(data.user); setAuthState("authenticated"); loadData(); }).catch(() => setAuthState("login"));
   }, [loadData]);
@@ -655,24 +916,42 @@ export default function App() {
     setCurrentUser(null); setAuthState("login"); setPage("dashboard");
   };
 
-  if (authState === "loading") return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, color: COLORS.accent, fontFamily: mono }}>Loading...</div>;
-  if (authState === "login") return <LoginScreen onLogin={handleLogin} />;
-  if (authState === "changePassword" && pendingPw) return <PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} />;
+  const globalStyle = `input:focus, textarea:focus, select:focus { border-color: ${activeTheme.accent} !important; box-shadow: 0 0 0 2px ${activeTheme.accentDim}; } button:hover:not(:disabled) { filter: brightness(1.1); }`;
 
-  const globalStyle = `input:focus, textarea:focus, select:focus { border-color: ${COLORS.accent} !important; box-shadow: 0 0 0 2px ${COLORS.accentDim}; } button:hover:not(:disabled) { filter: brightness(1.15); }`;
+  if (authState === "loading") return (
+    <ThemeContext.Provider value={activeTheme}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: activeTheme.bg, color: activeTheme.accent, fontFamily: mono }}>Loading...</div>
+    </ThemeContext.Provider>
+  );
 
-  return <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, fontFamily: font, color: COLORS.text }}>
-    <style>{globalStyle}</style>
-    <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} />
-    <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
-      {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
-      {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
-      {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
-      {page === "traceability" && <TraceabilityView requirements={requirements} testCases={testCases} />}
-      {page === "kb" && <KbView kbEntries={kbEntries} refresh={loadData} />}
-      {page === "users" && <UserManagementView currentUser={currentUser} refreshAll={loadData} />}
-      {page === "jama" && <JamaView testCases={testCases} requirements={requirements} currentUser={currentUser} />}
-      {page === "deferred" && <DeferredView />}
-    </main>
-  </div>;
+  if (authState === "login") return (
+    <ThemeContext.Provider value={activeTheme}>
+      <LoginScreen onLogin={handleLogin} />
+    </ThemeContext.Provider>
+  );
+
+  if (authState === "changePassword" && pendingPw) return (
+    <ThemeContext.Provider value={activeTheme}>
+      <PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} />
+    </ThemeContext.Provider>
+  );
+
+  return (
+    <ThemeContext.Provider value={activeTheme}>
+      <div style={{ display: "flex", minHeight: "100vh", background: activeTheme.bg, fontFamily: font, color: activeTheme.text }}>
+        <style>{globalStyle}</style>
+        <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
+        <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
+          {page === "dashboard" && <DashboardView requirements={reqs} testCases={testCases} kbEntries={kbEntries} />}
+          {page === "requirements" && <RequirementsView requirements={reqs} refresh={loadData} currentUser={currentUser} />}
+          {page === "testcases" && <TestCaseView requirements={reqs} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
+          {page === "traceability" && <TraceabilityView requirements={reqs} testCases={testCases} />}
+          {page === "kb" && <KbView kbEntries={kbEntries} refresh={loadData} />}
+          {page === "users" && <UserManagementView currentUser={currentUser} refreshAll={loadData} />}
+          {page === "jama" && <JamaView testCases={testCases} requirements={reqs} currentUser={currentUser} />}
+          {page === "deferred" && <DeferredView />}
+        </main>
+      </div>
+    </ThemeContext.Provider>
+  );
 }
