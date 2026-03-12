@@ -36,8 +36,6 @@ export const api = {
   // Test Cases
   getTestCases: () => request("/testcases"),
   generateTestCases: (reqId, depth) => request("/testcases/generate", { method: "POST", body: { reqId, depth } }),
-  getGenerationPrompt: (reqId, depth) => request(`/testcases/prompt?reqId=${encodeURIComponent(reqId)}&depth=${encodeURIComponent(depth)}`),
-  importTestCases: (reqId, depth, tcs) => request("/testcases/import", { method: "POST", body: { reqId, depth, tcs } }),
   updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
 
   // Knowledge Base
@@ -49,5 +47,10 @@ export const api = {
 
   // Jama
   getJamaLog: () => request("/jama/log"),
-  exportToJama: () => request("/jama/export", { method: "POST" }),
+  exportToJama: () => request("/jama/export", { method: "POST" }), exportToJama: () => request("/jama/export", { method: "POST" }),
+  
+  // MCP Tokens
+  getMcpTokens: () => request("/mcp/tokens"),
+  createMcpToken: (name) => request("/mcp/tokens", { method: "POST", body: { name } }),
+  deleteMcpToken: (id) => request(`/mcp/tokens/${id}`, { method: "DELETE" }),
 };
