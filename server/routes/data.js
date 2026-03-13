@@ -14,18 +14,19 @@ router.get("/kb", requireAuth, (req, res) => {
   res.json(rows.map(kb => ({
     ...kb,
     tags: JSON.parse(kb.tags || "[]"),
+    related_reqs: JSON.parse(kb.related_reqs || "[]"),
     images: JSON.parse(kb.images || "[]"),
   })));
 });
 
 // POST /api/kb
 router.post("/kb", requireAuth, (req, res) => {
-  const { title, type, content, tags } = req.body;
+  const { title, type, content, tags, related_reqs } = req.body;
   if (!title || !content) return res.status(400).json({ error: "Title and content are required" });
 
   const kbId = nextKbId();
-  getDb().prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, created_by) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(kbId, title, type || "Defect History", content, JSON.stringify(tags || []), req.session.name);
+  getDb().prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(kbId, title, type || "Defect History", content, JSON.stringify(tags || []), JSON.stringify(related_reqs || []), req.session.name);
 
   logAudit(req.session.name, "KB_CREATED", `Created KB entry ${kbId}: ${title}`);
   res.json({ ok: true, kb_id: kbId });
@@ -68,6 +69,45 @@ router.delete("/kb/:kbId/images/:index", requireAuth, (req, res) => {
 
   logAudit(req.session.name, "KB_IMAGE_REMOVED", `Removed image "${removed[0].name}" from ${req.params.kbId}`);
   res.json({ ok: true, imageCount: images.length });
+});
+
+// PUT /api/kb/:kbId — update KB entry tags and/or related requirements
+router.put("/kb/:kbId", requireAuth, (req, res) => {
+  const { tags, related_reqs } = req.body;
+  const db = getDb();
+  const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
+  if (!entry) return res.status(404).json({ error: "KB entry not found" });
+
+  const updates = [];
+  if (tags !== undefined) {
+    db.prepare("UPDATE kb_entries SET tags = ? WHERE kb_id = ?").run(JSON.stringify(tags), req.params.kbId);
+    updates.push(`tags: ${tags.join(", ")}`);
+  }
+  if (related_reqs !== undefined) {
+    db.prepare("UPDATE kb_entries SET related_reqs = ? WHERE kb_id = ?").run(JSON.stringify(related_reqs), req.params.kbId);
+    updates.push(`related_reqs: ${related_reqs.join(", ")}`);
+  }
+  if (updates.length > 0) {
+    logAudit(req.session.name, "KB_UPDATED", `Updated ${req.params.kbId}: ${updates.join("; ")}`);
+  }
+
+  res.json({ ok: true });
+});
+
+// DELETE /api/kb — delete selected KB entries
+router.delete("/kb", requireAuth, (req, res) => {
+  const { kbIds } = req.body;
+  if (!Array.isArray(kbIds) || kbIds.length === 0) return res.status(400).json({ error: "kbIds array is required" });
+
+  const db = getDb();
+  const deleteStmt = db.prepare("DELETE FROM kb_entries WHERE kb_id = ?");
+  const deleteMany = db.transaction((ids) => {
+    for (const id of ids) deleteStmt.run(id);
+  });
+  deleteMany(kbIds);
+
+  logAudit(req.session.name, "KB_DELETED", `Deleted ${kbIds.length} KB entries: ${kbIds.join(", ")}`);
+  res.json({ ok: true, deleted: kbIds.length });
 });
 
 // ─── AUDIT LOG ──────────────────────────────────────────────────────────────

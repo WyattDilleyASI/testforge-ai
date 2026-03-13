@@ -79,7 +79,9 @@ ${relatedReqs.length > 0 ? `RELATED REQUIREMENTS:\n${relatedStr}` : ""}
 
 ${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${allKb.map(kb => {
     const imgCount = JSON.parse(kb.images || "[]").length;
-    return `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}${imgCount > 0 ? ` [${imgCount} UI reference image(s) attached below]` : ""}`;
+    const kbTags = JSON.parse(kb.tags || "[]");
+    const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
+    return `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}${kbTags.length > 0 ? ` [Tags: ${kbTags.join(", ")}]` : ""}${kbRelReqs.length > 0 ? ` [Related Reqs: ${kbRelReqs.join(", ")}]` : ""}${imgCount > 0 ? ` [${imgCount} UI reference image(s) attached below]` : ""}`;
   }).join("\n")}` : ""}
 
 GENERATION DEPTH: ${depth || "standard"}

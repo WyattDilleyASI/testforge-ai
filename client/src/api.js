@@ -78,6 +78,8 @@ export const api = {
     return data;
   },
   deleteKbImage: (kbId, index) => request(`/kb/${kbId}/images/${index}`, { method: "DELETE" }),
+  updateKbEntry: (kbId, data) => request(`/kb/${kbId}`, { method: "PUT", body: data }),
+  deleteKbEntries: (kbIds) => request("/kb", { method: "DELETE", body: { kbIds } }),
 
   // Token Usage
   getTokenUsage: () => request("/usage/tokens"),

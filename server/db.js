@@ -90,6 +90,7 @@ function initialize() {
       type TEXT NOT NULL,
       content TEXT NOT NULL,
       tags TEXT DEFAULT '[]',
+      related_reqs TEXT DEFAULT '[]',
       images TEXT DEFAULT '[]',
       usage_count INTEGER NOT NULL DEFAULT 0,
       created_by TEXT,
@@ -165,9 +166,10 @@ function initialize() {
     if (!reqCols.includes(col)) db.exec(`ALTER TABLE requirements ADD COLUMN ${col} ${type}`);
   }
 
-  // Migration: add images column to kb_entries if missing
+  // Migration: add images and related_reqs columns to kb_entries if missing
   const kbCols = db.prepare("PRAGMA table_info(kb_entries)").all().map(c => c.name);
   if (!kbCols.includes("images")) db.exec("ALTER TABLE kb_entries ADD COLUMN images TEXT DEFAULT '[]'");
+  if (!kbCols.includes("related_reqs")) db.exec("ALTER TABLE kb_entries ADD COLUMN related_reqs TEXT DEFAULT '[]'");
 
   // Seed default admin if no users exist
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;
@@ -187,12 +189,12 @@ function initialize() {
   const kbCount = db.prepare("SELECT COUNT(*) as count FROM kb_entries").get().count;
   if (kbCount === 0) {
     const seedKb = [
-      { kb_id: "KB-E001", title: "PDF parsing fails on scanned documents", type: "Defect History", content: "Historical defect: PDF ingestion module crashes when processing scanned (image-based) PDFs without OCR. Ensure test cases include scanned PDF variants.", tags: JSON.stringify(["RS-001"]) },
-      { kb_id: "KB-E002", title: "Jama field mapping edge cases", type: "System Behavior", content: "Jama custom fields with special characters in names cause mapping failures. Test with non-alphanumeric field names.", tags: JSON.stringify(["JM-007", "JM-003"]) },
-      { kb_id: "KB-E003", title: "Acceptance criteria parsing rules", type: "Business Rule", content: "Acceptance criteria should be parsed as individual testable statements. Criteria containing 'and' or 'or' should be split into separate assertions.", tags: JSON.stringify(["RS-003", "TC-002"]) },
+      { kb_id: "KB-E001", title: "PDF parsing fails on scanned documents", type: "Defect History", content: "Historical defect: PDF ingestion module crashes when processing scanned (image-based) PDFs without OCR. Ensure test cases include scanned PDF variants.", tags: JSON.stringify(["PDF", "OCR"]), related_reqs: JSON.stringify(["RS-001"]) },
+      { kb_id: "KB-E002", title: "Jama field mapping edge cases", type: "System Behavior", content: "Jama custom fields with special characters in names cause mapping failures. Test with non-alphanumeric field names.", tags: JSON.stringify(["Jama", "field-mapping"]), related_reqs: JSON.stringify(["JM-007", "JM-003"]) },
+      { kb_id: "KB-E003", title: "Acceptance criteria parsing rules", type: "Business Rule", content: "Acceptance criteria should be parsed as individual testable statements. Criteria containing 'and' or 'or' should be split into separate assertions.", tags: JSON.stringify(["parsing", "acceptance-criteria"]), related_reqs: JSON.stringify(["RS-003", "TC-002"]) },
     ];
-    const insert = db.prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags) VALUES (?, ?, ?, ?, ?)");
-    for (const kb of seedKb) insert.run(kb.kb_id, kb.title, kb.type, kb.content, kb.tags);
+    const insert = db.prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const kb of seedKb) insert.run(kb.kb_id, kb.title, kb.type, kb.content, kb.tags, kb.related_reqs);
   }
 
   console.log("✓ Database initialized at", DB_PATH);
