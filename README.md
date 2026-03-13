@@ -2,7 +2,12 @@
 
 AI-powered test case generation with full requirement traceability, built to the FRD v1.2 specification.
 
+
 ## Quick Start
+
+## Branch Strategy
+    Merge into Branch ***
+    After Review we will merge into main-stg
 
 ### Option A: Run Directly (Node.js)
 
