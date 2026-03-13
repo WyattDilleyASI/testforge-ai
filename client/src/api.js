@@ -69,6 +69,17 @@ export const api = {
   // Knowledge Base
   getKbEntries: () => request("/kb"),
   createKbEntry: (data) => request("/kb", { method: "POST", body: data }),
+  uploadKbImages: async (kbId, files) => {
+    const form = new FormData();
+    for (const f of files) form.append("images", f);
+    const res = await fetch(`${BASE}/kb/${kbId}/images`, { method: "POST", credentials: "include", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  },
+  deleteKbImage: (kbId, index) => request(`/kb/${kbId}/images/${index}`, { method: "DELETE" }),
+  updateKbEntry: (kbId, data) => request(`/kb/${kbId}`, { method: "PUT", body: data }),
+  deleteKbEntries: (kbIds) => request("/kb", { method: "DELETE", body: { kbIds } }),
 
   // Token Usage
   getTokenUsage: () => request("/usage/tokens"),
