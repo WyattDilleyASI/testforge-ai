@@ -7,13 +7,13 @@ const router = express.Router();
 // ─── KNOWLEDGE BASE ─────────────────────────────────────────────────────────
 
 // GET /api/kb
-router.get("/", requireAuth, (req, res) => {
+router.get("/kb", requireAuth, (req, res) => {
   const rows = getDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
   res.json(rows.map(kb => ({ ...kb, tags: JSON.parse(kb.tags || "[]") })));
 });
 
 // POST /api/kb
-router.post("/", requireAuth, (req, res) => {
+router.post("/kb", requireAuth, (req, res) => {
   const { title, type, content, tags } = req.body;
   if (!title || !content) return res.status(400).json({ error: "Title and content are required" });
 

@@ -579,6 +579,11 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const [htmlImporting, setHtmlImporting] = useState(false);
   const [htmlImportError, setHtmlImportError] = useState("");
   const [clearing, setClearing] = useState(false);
+  const [refiningTcId, setRefiningTcId] = useState(null);
+  const [refineFeedback, setRefineFeedback] = useState("");
+  const [refineLoading, setRefineLoading] = useState(false);
+  const [refineError, setRefineError] = useState("");
+  const [refineCopyState, setRefineCopyState] = useState("idle");
 
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
@@ -597,6 +602,27 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
 
   const updateStatus = async (tcId, status) => {
     try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
+  };
+
+  const refineTestCase = async (tcId) => {
+    if (!refineFeedback.trim()) return;
+    setRefineLoading(true); setRefineError("");
+    try {
+      await api.refineTestCase(tcId, refineFeedback.trim());
+      setRefiningTcId(null); setRefineFeedback(""); refresh();
+    } catch (err) { setRefineError(err.message); }
+    finally { setRefineLoading(false); }
+  };
+
+  const copyRefinePrompt = async (tcId) => {
+    if (!refineFeedback.trim()) return;
+    setRefineCopyState("copying");
+    try {
+      const data = await api.refinePrompt(tcId, refineFeedback.trim());
+      await navigator.clipboard.writeText(data.prompt);
+      setRefineCopyState("copied");
+      setTimeout(() => setRefineCopyState("idle"), 2000);
+    } catch (err) { setRefineCopyState("error"); setTimeout(() => setRefineCopyState("idle"), 2000); }
   };
 
   const copyPrompt = async () => {
@@ -798,6 +824,27 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
                 <span>{u.name}</span>
               </div>)}
             </>}
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
+              {refiningTcId === tc.tc_id ? <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <SectionLabel>Refine Test Case</SectionLabel>
+                <textarea
+                  value={refineFeedback}
+                  onChange={e => setRefineFeedback(e.target.value)}
+                  placeholder="Describe improvements — e.g. 'Add a step to verify error message displays correctly' or 'Include boundary test for max input length'"
+                  style={{ width: "100%", minHeight: 80, padding: 10, fontSize: 12, fontFamily: mono, background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, resize: "vertical", boxSizing: "border-box" }}
+                />
+                {refineError && <div style={{ fontSize: 11, color: COLORS.red }}>{refineError}</div>}
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Button small variant="primary" disabled={refineLoading || !refineFeedback.trim()} onClick={e => { e.stopPropagation(); refineTestCase(tc.tc_id); }}>
+                    {refineLoading ? "Refining..." : "Submit Refinement"}
+                  </Button>
+                  <Button small variant="secondary" disabled={refineLoading || !refineFeedback.trim() || refineCopyState === "copying"} onClick={e => { e.stopPropagation(); copyRefinePrompt(tc.tc_id); }}>
+                    {refineCopyState === "copying" ? "Copying..." : refineCopyState === "copied" ? "Copied!" : refineCopyState === "error" ? "Failed" : "Copy Prompt"}
+                  </Button>
+                  <Button small variant="ghost" disabled={refineLoading} onClick={e => { e.stopPropagation(); setRefiningTcId(null); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Cancel</Button>
+                </div>
+              </div> : <div style={{ display: "flex" }}><Button small variant="secondary" onClick={e => { e.stopPropagation(); setRefiningTcId(tc.tc_id); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Refine</Button></div>}
+            </div>
           </div>;
         })()}
       </Card>)}
