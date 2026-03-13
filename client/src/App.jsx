@@ -389,8 +389,14 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [expandedReq, setExpandedReq] = useState(null);
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
 
   const canDelete = currentUser?.role === "Admin" || currentUser?.role === "QA Manager";
+
+  const handleClearAll = async () => {
+    setError("");
+    try { await api.clearRequirements(); setClearAllConfirm(false); refresh(); } catch (err) { setError(err.message); }
+  };
 
   const handleImportDoc = async (e) => {
     const file = e.target.files[0];
@@ -449,6 +455,12 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>RS-001 – RS-006</p></div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {canDelete && !clearAllConfirm && requirements.length > 0 && <Button variant="danger" small onClick={() => setClearAllConfirm(true)}>Clear All</Button>}
+        {clearAllConfirm && <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {requirements.length} requirements?</span>
+          <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
+          <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
+        </div>}
         <label style={{ cursor: importing ? "not-allowed" : "pointer" }}>
           <input type="file" accept=".doc" style={{ display: "none" }} onChange={handleImportDoc} disabled={importing} />
           <Button variant="secondary" small onClick={undefined} style={{ pointerEvents: "none" }}>{importing ? "Importing..." : "Import JAMA Requirements"}</Button>

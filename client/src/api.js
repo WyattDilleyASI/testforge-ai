@@ -32,6 +32,7 @@ export const api = {
   createRequirement: (data) => request("/requirements", { method: "POST", body: data }),
   updateRequirement: (reqId, data) => request(`/requirements/${reqId}`, { method: "PUT", body: data }),
   deleteRequirement: (reqId) => request(`/requirements/${reqId}`, { method: "DELETE" }),
+  clearRequirements: () => request("/requirements", { method: "DELETE" }),
   importRequirementsDoc: async (file) => {
     const form = new FormData();
     form.append("file", file);
