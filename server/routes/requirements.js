@@ -37,13 +37,13 @@ router.post("/", requireAuth, (req, res) => {
 
 // PUT /api/requirements/:reqId
 router.put("/:reqId", requireAuth, (req, res) => {
-  const { title, description, acceptance_criteria, priority, status, module } = req.body;
+  const { title, description, acceptance_criteria, priority, status, module, tags } = req.body;
   const db = getDb();
   const existing = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(req.params.reqId);
   if (!existing) return res.status(404).json({ error: "Requirement not found" });
 
-  db.prepare("UPDATE requirements SET title = ?, description = ?, acceptance_criteria = ?, priority = ?, status = ?, module = ?, updated_at = datetime('now') WHERE req_id = ?")
-    .run(title || existing.title, description ?? existing.description, JSON.stringify(acceptance_criteria || JSON.parse(existing.acceptance_criteria)), priority || existing.priority, status || existing.status, module ?? existing.module, req.params.reqId);
+  db.prepare("UPDATE requirements SET title = ?, description = ?, acceptance_criteria = ?, priority = ?, status = ?, module = ?, tags = ?, updated_at = datetime('now') WHERE req_id = ?")
+    .run(title || existing.title, description ?? existing.description, JSON.stringify(acceptance_criteria || JSON.parse(existing.acceptance_criteria)), priority || existing.priority, status || existing.status, module ?? existing.module, JSON.stringify(tags !== undefined ? tags : JSON.parse(existing.tags || "[]")), req.params.reqId);
 
   logAudit(req.session.name, "REQ_UPDATED", `Updated requirement ${req.params.reqId}`);
   res.json({ ok: true });
@@ -158,11 +158,14 @@ router.post("/import-doc", requireAuth, upload.single("file"), (req, res) => {
         });
       }
 
-      // Parse tags (br-separated)
+      // Parse tags (br-separated in HTML, e.g. "mobius<br>mobius_Desktop<br>...")
       const tags = [];
       if (fields["Tags"]) {
-        fields["Tags"].text.split(/\n/).forEach(t => {
-          const tag = t.trim();
+        // Use HTML and split on <br> tags to properly separate concatenated tags
+        const tagHtml = fields["Tags"].html || "";
+        tagHtml.split(/<br\s*\/?>/i).forEach(t => {
+          // Strip any remaining HTML tags and decode entities
+          const tag = t.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
           if (tag) tags.push(tag);
         });
       }

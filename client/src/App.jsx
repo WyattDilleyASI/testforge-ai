@@ -390,8 +390,28 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [importMsg, setImportMsg] = useState("");
   const [expandedReq, setExpandedReq] = useState(null);
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [editingReqTags, setEditingReqTags] = useState(null);
+  const [reqTagInput, setReqTagInput] = useState("");
 
   const canDelete = currentUser?.role === "Admin" || currentUser?.role === "QA Manager";
+
+  const addReqTag = async (reqId, tag) => {
+    const req = requirements.find(r => r.req_id === reqId);
+    if (!req || !tag.trim() || (req.tags || []).includes(tag.trim())) return;
+    try {
+      await api.updateRequirement(reqId, { tags: [...(req.tags || []), tag.trim()] });
+      refresh();
+    } catch (err) { setError(err.message); }
+  };
+
+  const removeReqTag = async (reqId, tag) => {
+    const req = requirements.find(r => r.req_id === reqId);
+    if (!req) return;
+    try {
+      await api.updateRequirement(reqId, { tags: (req.tags || []).filter(t => t !== tag) });
+      refresh();
+    } catch (err) { setError(err.message); }
+  };
 
   const handleClearAll = async () => {
     setError("");
@@ -521,7 +541,25 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
             {r.source && <div><SectionLabel>Source</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.source}</div></div>}
           </div>
           {(r.requirement_context || []).length > 0 && <><SectionLabel>Requirement Context</SectionLabel>{r.requirement_context.map((ctx, i) => <div key={i} style={{ marginTop: 6 }}><div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>{ctx.field}</div>{ctx.items.map((item, j) => <div key={j} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 2, borderLeft: `2px solid ${COLORS.border}` }}>• {item}</div>)}</div>)}</>}
-          {(r.tags || []).length > 0 && <><SectionLabel>Tags</SectionLabel><div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>{r.tags.map((tag, i) => <span key={i} style={{ fontSize: 10, fontFamily: mono, padding: "2px 8px", borderRadius: 4, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}22` }}>{tag}</span>)}</div></>}
+          <SectionLabel>Tags</SectionLabel>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4, alignItems: "center" }}>
+            {(r.tags || []).map((tag, i) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10, fontFamily: mono, padding: "2px 8px", borderRadius: 4, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}22` }}>
+              {tag}
+              {editingReqTags === r.req_id && <button onClick={() => removeReqTag(r.req_id, tag)} style={{ background: "none", border: "none", color: COLORS.red || "#ef4444", cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "0 2px", lineHeight: 1 }} title={`Remove ${tag}`}>&times;</button>}
+            </span>)}
+            <span onClick={() => { setEditingReqTags(editingReqTags === r.req_id ? null : r.req_id); setReqTagInput(""); }} style={{ fontSize: 11, color: COLORS.accent, cursor: "pointer", fontWeight: 600 }}>{editingReqTags === r.req_id ? "Done" : "+ Tag"}</span>
+          </div>
+          {editingReqTags === r.req_id && <div style={{ marginTop: 8, padding: 10, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                type="text" value={reqTagInput} onChange={ev => setReqTagInput(ev.target.value)}
+                onKeyDown={ev => { if (ev.key === "Enter" && reqTagInput.trim()) { addReqTag(r.req_id, reqTagInput); setReqTagInput(""); } }}
+                placeholder="Type a tag and press Enter"
+                style={{ flex: 1, fontSize: 12, fontFamily: mono, padding: "4px 8px", borderRadius: 4, border: `1px solid ${COLORS.border}`, background: COLORS.surfaceRaised, color: COLORS.text, outline: "none" }}
+              />
+              <button onClick={() => { if (reqTagInput.trim()) { addReqTag(r.req_id, reqTagInput); setReqTagInput(""); } }} disabled={!reqTagInput.trim()} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 4, border: "none", background: COLORS.accent, color: "#fff", cursor: reqTagInput.trim() ? "pointer" : "default", opacity: reqTagInput.trim() ? 1 : 0.5 }}>Add</button>
+            </div>
+          </div>}
           {rels.length > 0 && <><SectionLabel>Relationships</SectionLabel>
             <div style={{ marginTop: 4 }}>
               {rels.map((rel, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: i < rels.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
