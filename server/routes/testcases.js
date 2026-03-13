@@ -22,33 +22,74 @@ router.get("/", requireAuth, (req, res) => {
 });
 
 // POST /api/testcases/generate — call Claude API server-side
-router.post("/generate", requireAuth, async (req, res) => {
-  const { reqId, depth } = req.body;
-  if (!reqId) return res.status(400).json({ error: "reqId is required" });
+// ─── SHARED PROMPT BUILDER ─────────────────────────────────────────────────
 
-  const db = getDb();
+function buildPrompt(db, reqId, depth) {
   const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
-  if (!requirement) return res.status(404).json({ error: "Requirement not found" });
+  if (!requirement) return null;
 
   const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
+  const reqContext = JSON.parse(requirement.requirement_context || "[]");
+  const relationships = JSON.parse(requirement.relationships || "[]");
+  const tags = JSON.parse(requirement.tags || "[]");
 
-  // Fetch relevant KB entries
+  // Gather related requirements via relationships
+  const relatedReqs = [];
+  for (const rel of relationships) {
+    if (rel.direction === "Upstream" || (rel.group && rel.group !== "Verification Test Case")) {
+      const related = db.prepare("SELECT req_id, title, description, rationale, requirement_type, priority FROM requirements WHERE req_id = ?").get(rel.id);
+      if (related) relatedReqs.push({ ...related, relationship: rel.relationship, direction: rel.direction, group: rel.group });
+    }
+  }
+
+  // Fetch ALL KB entries
   const allKb = db.prepare("SELECT * FROM kb_entries").all();
-  const relevantKb = allKb.filter(kb => {
-    const tags = JSON.parse(kb.tags || "[]");
-    return tags.includes(reqId);
-  });
+
+  // Build requirement section with all fields
+  let reqSection = `REQUIREMENT UNDER TEST:
+- ID: ${requirement.req_id}
+- Title: ${requirement.title}
+- Description: ${requirement.description || ""}
+- Acceptance Criteria: ${acceptanceCriteria.length > 0 ? acceptanceCriteria.join("; ") : "None specified"}
+- Priority: ${requirement.priority}`;
+
+  if (requirement.rationale) reqSection += `\n- Rationale: ${requirement.rationale}`;
+  if (requirement.requirement_type) reqSection += `\n- Requirement Type: ${requirement.requirement_type}`;
+  if (requirement.safety_level && requirement.safety_level !== "NA") reqSection += `\n- Safety Level: ${requirement.safety_level}`;
+  if (requirement.verification_method) reqSection += `\n- Verification Method: ${requirement.verification_method}`;
+  if (requirement.scheduled_release) reqSection += `\n- Scheduled Release: ${requirement.scheduled_release}`;
+  if (tags.length > 0) reqSection += `\n- Tags: ${tags.join(", ")}`;
+
+  if (reqContext.length > 0) {
+    reqSection += `\n\nREQUIREMENT CONTEXT:`;
+    for (const ctx of reqContext) {
+      reqSection += `\n  ${ctx.field}:`;
+      for (const item of ctx.items) reqSection += `\n    - ${item}`;
+    }
+  }
+
+  // Related requirements section
+  let relatedSection = "";
+  if (relatedReqs.length > 0) {
+    relatedSection = `\nRELATED REQUIREMENTS:\n${relatedReqs.map(r =>
+      `- [${r.req_id}] ${r.title} (${r.direction} ${r.group || ""} — ${r.relationship || ""})\n  ${r.description || ""}${r.rationale ? `\n  Rationale: ${r.rationale}` : ""}`
+    ).join("\n")}`;
+  }
+
+  // KB section — include all entries
+  let kbSection = "";
+  if (allKb.length > 0) {
+    kbSection = `\nKNOWLEDGE BASE (all entries — use any relevant context):\n${allKb.map(kb => {
+      const kbTags = JSON.parse(kb.tags || "[]");
+      return `- [${kb.kb_id}] ${kb.title} (${kb.type}${kbTags.length > 0 ? `, tags: ${kbTags.join(", ")}` : ""}): ${kb.content}`;
+    }).join("\n")}`;
+  }
 
   const prompt = `You are a senior QA engineer generating software test case DRAFTS in JAMA format. These are starting points for engineer review — not finished test coverage.
 
-REQUIREMENT:
-- ID: ${requirement.req_id}
-- Title: ${requirement.title}
-- Description: ${requirement.description}
-- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
-- Priority: ${requirement.priority}
-
-${relevantKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${relevantKb.map(kb => `- [${kb.kb_id}] ${kb.title}: ${kb.content}`).join("\n")}` : ""}
+${reqSection}
+${relatedSection}
+${kbSection}
 
 GENERATION DEPTH: ${depth || "standard"}
 - basic: 2-3 test cases covering happy path and one negative case
@@ -62,9 +103,22 @@ Generate test cases as a JSON array. Each test case must have:
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
 - reqAttribute: which acceptance criterion or attribute this TC validates
-${relevantKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this test case" : ""}
+- kbReferences: array of KB entry IDs that informed this test case (empty array if none)
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
+
+  return { prompt, requirement, allKb };
+}
+
+router.post("/generate", requireAuth, async (req, res) => {
+  const { reqId, depth } = req.body;
+  if (!reqId) return res.status(400).json({ error: "reqId is required" });
+
+  const db = getDb();
+  const built = buildPrompt(db, reqId, depth);
+  if (!built) return res.status(404).json({ error: "Requirement not found" });
+
+  const { prompt, allKb } = built;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
@@ -126,10 +180,11 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
     insertMany(tcsToInsert);
 
-    // Update KB usage counts
-    if (relevantKb.length > 0) {
+    // Update KB usage counts for any KB entries referenced by the generated TCs
+    const referencedKbIds = new Set(tcsToInsert.flatMap(tc => JSON.parse(tc.kb_references || "[]")));
+    if (referencedKbIds.size > 0) {
       const updateKb = db.prepare("UPDATE kb_entries SET usage_count = usage_count + 1 WHERE kb_id = ?");
-      for (const kb of relevantKb) updateKb.run(kb.kb_id);
+      for (const kbId of referencedKbIds) updateKb.run(kbId);
     }
 
     logAudit(req.session.name, "TC_GENERATED", `Generated ${newTcs.length} draft TCs for ${reqId} (depth: ${depth || "standard"})`);
@@ -155,44 +210,10 @@ router.get("/prompt", requireAuth, (req, res) => {
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
   const db = getDb();
-  const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
-  if (!requirement) return res.status(404).json({ error: "Requirement not found" });
+  const built = buildPrompt(db, reqId, depth);
+  if (!built) return res.status(404).json({ error: "Requirement not found" });
 
-  const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
-  const allKb = db.prepare("SELECT * FROM kb_entries").all();
-  const relevantKb = allKb.filter(kb => {
-    const tags = JSON.parse(kb.tags || "[]");
-    return tags.includes(reqId);
-  });
-
-  const prompt = `You are a senior QA engineer generating software test case DRAFTS in JAMA format. These are starting points for engineer review — not finished test coverage.
-
-REQUIREMENT:
-- ID: ${requirement.req_id}
-- Title: ${requirement.title}
-- Description: ${requirement.description}
-- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
-- Priority: ${requirement.priority}
-
-${relevantKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${relevantKb.map(kb => `- [${kb.kb_id}] ${kb.title}: ${kb.content}`).join("\n")}` : ""}
-
-GENERATION DEPTH: ${depth || "standard"}
-- basic: 2-3 test cases covering happy path and one negative case
-- standard: 4-6 test cases covering happy path, negative, boundary conditions
-- comprehensive: 6-10 test cases covering happy path, negative, boundary, edge cases, error recovery
-
-Generate test cases as a JSON array. Each test case must have:
-- title: string
-- type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
-- description: object with keys: objective (string), scope (string), assumptions (array of strings)
-- setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
-- steps: array of { step: string, expectedResult: string }
-- reqAttribute: which acceptance criterion or attribute this TC validates
-${relevantKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this test case" : ""}
-
-Respond ONLY with valid JSON array, no markdown, no preamble.`;
-
-  res.json({ prompt, reqId, depth: depth || "standard" });
+  res.json({ prompt: built.prompt, reqId, depth: depth || "standard" });
 });
 
 // POST /api/testcases/import — save pre-generated TC JSON from Claude.ai (no API key needed)
