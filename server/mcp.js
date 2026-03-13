@@ -125,7 +125,7 @@ async function createMcpServer(user) {
       });
 
       // Existing linked test cases
-      const allTcs = db.prepare("SELECT tc_id, title, status, type, pass_fail_criteria FROM test_cases").all();
+      const allTcs = db.prepare("SELECT tc_id, title, status, type, description FROM test_cases").all();
       const linkedTcs = allTcs.filter(tc => {
         const linked = JSON.parse(tc.linked_req_ids || "[]");
         return linked.includes(req_id);
@@ -198,7 +198,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
 
       const insertStmt = db.prepare(`
         INSERT INTO test_cases
-          (tc_id, title, linked_req_ids, preconditions, steps, pass_fail_criteria,
+          (tc_id, title, linked_req_ids, preconditions, steps, description,
            type, depth, req_attribute, kb_references, status, generated_by)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)
       `);
@@ -207,7 +207,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         for (const tc of tcs) {
           insertStmt.run(
             tc.tc_id, tc.title, tc.linked_req_ids, tc.preconditions,
-            tc.steps, tc.pass_fail_criteria, tc.type, tc.depth,
+            tc.steps, tc.description, tc.type, tc.depth,
             tc.req_attribute, tc.kb_references, tc.generated_by
           );
         }
@@ -222,7 +222,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
           linked_req_ids: JSON.stringify([req_id]),
           preconditions: tc.preconditions || "",
           steps: JSON.stringify(tc.steps || []),
-          pass_fail_criteria: tc.passFailCriteria || "",
+          description: tc.passFailCriteria || tc.description || "",
           type: tc.type,
           depth: depth || "standard",
           req_attribute: tc.reqAttribute || "",
@@ -321,7 +321,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         status: tc.status,
         preconditions: tc.preconditions,
         steps: JSON.parse(tc.steps || "[]"),
-        pass_fail_criteria: tc.pass_fail_criteria,
+        description: tc.description,
         req_attribute: tc.req_attribute,
         kb_references: JSON.parse(tc.kb_references || "[]"),
         generated_by: tc.generated_by,

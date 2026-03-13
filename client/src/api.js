@@ -48,6 +48,8 @@ export const api = {
   updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
   getPrompt: (reqId, depth) => request(`/testcases/prompt?reqId=${encodeURIComponent(reqId)}&depth=${encodeURIComponent(depth || "standard")}`),
   importTestCases: (reqId, depth, tcs) => request("/testcases/import", { method: "POST", body: { reqId, depth, tcs } }),
+  refineTestCase: (tcId, feedback) => request(`/testcases/${tcId}/refine`, { method: "POST", body: { feedback } }),
+  refinePrompt: (tcId, feedback) => request(`/testcases/${tcId}/refine-prompt`, { method: "POST", body: { feedback } }),
   clearTestCases: () => request("/testcases", { method: "DELETE" }),
   exportTestCasesXlsx: () => {
     const a = document.createElement("a");

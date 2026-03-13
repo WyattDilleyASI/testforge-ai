@@ -298,6 +298,173 @@ router.delete("/", requireAuth, (req, res) => {
 });
 
 
+// POST /api/testcases/:tcId/refine — refine a single test case with user feedback via Claude
+router.post("/:tcId/refine", requireAuth, async (req, res) => {
+  const { feedback } = req.body;
+  if (!feedback) return res.status(400).json({ error: "feedback is required" });
+
+  const db = getDb();
+  const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
+  if (!tc) return res.status(404).json({ error: "Test case not found" });
+
+  // Get the linked requirement for context
+  const linkedReqIds = JSON.parse(tc.linked_req_ids || "[]");
+  let requirementContext = "";
+  if (linkedReqIds.length > 0) {
+    const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
+    if (requirement) {
+      const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
+      requirementContext = `\nORIGINAL REQUIREMENT CONTEXT:
+- ID: ${requirement.req_id}
+- Title: ${requirement.title}
+- Description: ${requirement.description}
+- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
+- Priority: ${requirement.priority}`;
+    }
+  }
+
+  // Build the existing TC as JSON for Claude
+  const existingTc = {
+    title: tc.title,
+    type: tc.type,
+    description: (() => { try { return JSON.parse(tc.description); } catch { return tc.description; } })(),
+    setup: (() => { try { return JSON.parse(tc.preconditions); } catch { return tc.preconditions; } })(),
+    steps: JSON.parse(tc.steps || "[]"),
+    reqAttribute: tc.req_attribute || "",
+  };
+
+  const prompt = `You are a senior QA engineer refining a software test case based on reviewer feedback.
+${requirementContext}
+
+EXISTING TEST CASE (${tc.tc_id}):
+${JSON.stringify(existingTc, null, 2)}
+
+REVIEWER FEEDBACK:
+${feedback}
+
+Refine the test case based on the feedback. Return the improved test case as a single JSON object with these fields:
+- title: string
+- type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
+- description: object with keys: objective (string), scope (string), assumptions (array of strings)
+- setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
+- steps: array of { step: string, expectedResult: string }
+- reqAttribute: which acceptance criterion or attribute this TC validates
+
+Respond ONLY with valid JSON object, no markdown, no preamble.`;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+        max_tokens: 4000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    const data = await response.json();
+    if (data.error) return res.status(500).json({ error: data.error.message || "Claude API error" });
+
+    if (data.usage) {
+      logTokenUsage(req.session.name, tc.tc_id, data.usage.input_tokens || 0, data.usage.output_tokens || 0);
+    }
+
+    const text = data.content?.map(c => c.text || "").join("") || "";
+    const refined = JSON.parse(text.replace(/```json|```/g, "").trim());
+
+    // Update the test case in DB
+    db.prepare(
+      "UPDATE test_cases SET title = ?, type = ?, description = ?, preconditions = ?, steps = ?, req_attribute = ?, status = 'Draft' WHERE tc_id = ?"
+    ).run(
+      refined.title || tc.title,
+      refined.type || tc.type,
+      refined.description ? JSON.stringify(refined.description) : tc.description,
+      refined.setup ? JSON.stringify(refined.setup) : tc.preconditions,
+      JSON.stringify(refined.steps || JSON.parse(tc.steps || "[]")),
+      refined.reqAttribute || tc.req_attribute,
+      tc.tc_id
+    );
+
+    logAudit(req.session.name, "TC_REFINED", `Refined ${tc.tc_id} with feedback: "${feedback.substring(0, 100)}"`);
+
+    // Return the updated TC
+    const updated = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(tc.tc_id);
+    res.json({
+      ...updated,
+      linked_req_ids: JSON.parse(updated.linked_req_ids || "[]"),
+      steps: JSON.parse(updated.steps || "[]"),
+      kb_references: JSON.parse(updated.kb_references || "[]"),
+      upstream_relationship: JSON.parse(updated.upstream_relationship || "[]"),
+    });
+  } catch (err) {
+    console.error("TC refinement error:", err);
+    res.status(500).json({ error: `Refinement failed: ${err.message}` });
+  }
+});
+
+// POST /api/testcases/:tcId/refine-prompt — build and return the refinement prompt for clipboard copy
+router.post("/:tcId/refine-prompt", requireAuth, (req, res) => {
+  const { feedback } = req.body;
+  if (!feedback) return res.status(400).json({ error: "feedback is required" });
+
+  const db = getDb();
+  const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
+  if (!tc) return res.status(404).json({ error: "Test case not found" });
+
+  const linkedReqIds = JSON.parse(tc.linked_req_ids || "[]");
+  let requirementContext = "";
+  if (linkedReqIds.length > 0) {
+    const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
+    if (requirement) {
+      const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
+      requirementContext = `\nORIGINAL REQUIREMENT CONTEXT:
+- ID: ${requirement.req_id}
+- Title: ${requirement.title}
+- Description: ${requirement.description}
+- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
+- Priority: ${requirement.priority}`;
+    }
+  }
+
+  const existingTc = {
+    title: tc.title,
+    type: tc.type,
+    description: (() => { try { return JSON.parse(tc.description); } catch { return tc.description; } })(),
+    setup: (() => { try { return JSON.parse(tc.preconditions); } catch { return tc.preconditions; } })(),
+    steps: JSON.parse(tc.steps || "[]"),
+    reqAttribute: tc.req_attribute || "",
+  };
+
+  const prompt = `You are a senior QA engineer refining a software test case based on reviewer feedback.
+${requirementContext}
+
+EXISTING TEST CASE (${tc.tc_id}):
+${JSON.stringify(existingTc, null, 2)}
+
+REVIEWER FEEDBACK:
+${feedback}
+
+Refine the test case based on the feedback. Return the improved test case as a single JSON object with these fields:
+- title: string
+- type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
+- description: object with keys: objective (string), scope (string), assumptions (array of strings)
+- setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
+- steps: array of { step: string, expectedResult: string }
+- reqAttribute: which acceptance criterion or attribute this TC validates
+
+Respond ONLY with valid JSON object, no markdown, no preamble.`;
+
+  res.json({ prompt, tcId: tc.tc_id });
+});
+
 // PUT /api/testcases/:tcId/status — update TC status (Draft → Reviewed / Rejected)
 router.put("/:tcId/status", requireAuth, (req, res) => {
   const { status } = req.body;
