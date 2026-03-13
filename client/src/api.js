@@ -37,10 +37,32 @@ export const api = {
   getTestCases: () => request("/testcases"),
   generateTestCases: (reqId, depth) => request("/testcases/generate", { method: "POST", body: { reqId, depth } }),
   updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
+  getPrompt: (reqId, depth) => request(`/testcases/prompt?reqId=${encodeURIComponent(reqId)}&depth=${encodeURIComponent(depth || "standard")}`),
+  importTestCases: (reqId, depth, tcs) => request("/testcases/import", { method: "POST", body: { reqId, depth, tcs } }),
+  clearTestCases: () => request("/testcases", { method: "DELETE" }),
+  exportTestCasesXlsx: () => {
+    const a = document.createElement("a");
+    a.href = `${BASE}/testcases/export/xlsx`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+  importTestCasesDoc: async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/testcases/import-doc`, { method: "POST", credentials: "include", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  },
 
   // Knowledge Base
   getKbEntries: () => request("/kb"),
   createKbEntry: (data) => request("/kb", { method: "POST", body: data }),
+
+  // Token Usage
+  getTokenUsage: () => request("/usage/tokens"),
 
   // Audit (Admin only)
   getAuditLog: () => request("/audit"),

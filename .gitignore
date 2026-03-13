@@ -1,5 +1,16 @@
+# Ignore all files
 node_modules/
-data/
 .env
+.env.example
 client/dist/
-*.db
+*.xlsx
+*.doc
+data/
+.claude/settings.local.json
+
+
+
+
+# Allowed files
+!index.html
+

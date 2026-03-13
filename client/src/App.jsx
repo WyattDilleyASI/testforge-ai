@@ -229,7 +229,7 @@ const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
 
 // ─── DASHBOARD ──────────────────────────────────────────────────────────────
 
-const DashboardView = ({ requirements, testCases, kbEntries }) => {
+const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage }) => {
   const covered = requirements.filter(r => testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
   const untested = requirements.filter(r => !testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
   const coveragePct = requirements.length ? Math.round((covered.length / requirements.length) * 100) : 0;
@@ -252,6 +252,17 @@ const DashboardView = ({ requirements, testCases, kbEntries }) => {
       <Stat label="TC Reviewed" value={reviewed} color="green" sub="Engineer-approved" reqId="TC-003a" />
       <Stat label="KB Entries" value={kbEntries.length} color="purple" sub={`${kbEntries.reduce((s, e) => s + (e.usage_count || 0), 0)} usages`} reqId="KB-001" />
     </div>
+    {tokenUsage && <div style={{ marginBottom: 24 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Claude API Usage</div>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <Stat label="Tokens Used" value={tokenUsage.total_tokens.toLocaleString()} color="accent" sub={`${tokenUsage.input_tokens.toLocaleString()} in · ${tokenUsage.output_tokens.toLocaleString()} out`} />
+        <Stat label="API Calls" value={tokenUsage.call_count} color="accent" sub="TC generation requests" />
+        {tokenUsage.budget !== null
+          ? <Stat label="Remaining Budget" value={tokenUsage.remaining.toLocaleString()} color={tokenUsage.remaining < tokenUsage.budget * 0.1 ? "red" : tokenUsage.remaining < tokenUsage.budget * 0.25 ? "amber" : "green"} sub={`of ${tokenUsage.budget.toLocaleString()} token budget`} />
+          : <Stat label="Budget" value="No limit set" color="textMuted" sub="Set TOKEN_BUDGET in .env" />
+        }
+      </div>
+    </div>}
     {untested.length > 0 && <Card><div style={{ fontSize: 12, fontWeight: 600, color: COLORS.amber, marginBottom: 12 }}>Untested Requirements</div>{untested.map(r => <div key={r.req_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${COLORS.border}` }}><ReqIdTag id={r.req_id} /><span style={{ fontSize: 13, color: COLORS.text, flex: 1 }}>{r.title}</span><Badge color="amber">{r.priority}</Badge></div>)}</Card>}
   </div>;
 };
@@ -369,6 +380,16 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const [apiError, setApiError] = useState(null);
   const [sessionTcIds, setSessionTcIds] = useState(null);
   const [viewMode, setViewMode] = useState("library");
+  const [copyState, setCopyState] = useState("idle"); // idle | copying | copied | error
+  const [showImport, setShowImport] = useState(false);
+  const [importJson, setImportJson] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [showHtmlImport, setShowHtmlImport] = useState(false);
+  const [htmlImportResult, setHtmlImportResult] = useState(null);
+  const [htmlImporting, setHtmlImporting] = useState(false);
+  const [htmlImportError, setHtmlImportError] = useState("");
+  const [clearing, setClearing] = useState(false);
 
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
@@ -389,9 +410,77 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
   };
 
-  return <div>
-    <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
-    <Card glow style={{ marginBottom: 24 }}>
+  const copyPrompt = async () => {
+    if (!selectedReqId) return;
+    setCopyState("copying");
+    try {
+      const data = await api.getPrompt(selectedReqId, depth);
+      await navigator.clipboard.writeText(data.prompt);
+      setCopyState("copied");
+      setTimeout(() => setCopyState("idle"), 2000);
+    } catch (err) { setCopyState("error"); setTimeout(() => setCopyState("idle"), 2000); }
+  };
+
+  const doImport = async () => {
+    if (!importJson.trim() || !selectedReqId) return;
+    setImportError(""); setImporting(true);
+    try {
+      const parsed = JSON.parse(importJson);
+      if (!Array.isArray(parsed)) throw new Error("Expected a JSON array");
+      const result = await api.importTestCases(selectedReqId, depth, parsed);
+      setSessionTcIds(result.map(tc => tc.tc_id));
+      setViewMode("session");
+      setShowImport(false); setImportJson("");
+      refresh();
+    } catch (err) { setImportError(err.message); }
+    finally { setImporting(false); }
+  };
+
+  const clearAll = async () => {
+    if (!window.confirm(`Delete all ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setClearing(true);
+    try { await api.clearTestCases(); setSessionTcIds(null); setViewMode("library"); refresh(); }
+    catch (err) { alert(`Failed: ${err.message}`); }
+    finally { setClearing(false); }
+  };
+
+  const doDocImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setHtmlImportError(""); setHtmlImportResult(null); setHtmlImporting(true);
+    try {
+      const result = await api.importTestCasesDoc(file);
+      setHtmlImportResult(result);
+      refresh();
+    } catch (err) { setHtmlImportError(err.message); }
+    finally { setHtmlImporting(false); e.target.value = ""; }
+  };
+
+  return <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+    <div style={{ marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button variant="secondary" small onClick={() => { setShowHtmlImport(v => !v); setHtmlImportResult(null); setHtmlImportError(""); }}>Import from JAMA DOC</Button>
+        <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>
+        <Button variant="danger" small onClick={clearAll} disabled={testCases.length === 0 || clearing}>{clearing ? "Clearing..." : "Clear All"}</Button>
+      </div>
+    </div>
+    {showHtmlImport && <Card style={{ marginBottom: 16, border: `1px solid ${COLORS.accent}33` }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Import JAMA Test Cases</div>
+      <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Upload a .docx (Verification Test Cases) or .doc (All Item Details) export from JAMA. Test cases will be imported with their Project ID, steps, description, and upstream relationships. Duplicates are skipped.</div>
+      <label style={{ display: "inline-block", cursor: htmlImporting ? "not-allowed" : "pointer" }}>
+        <input type="file" accept=".doc,.docx" onChange={doDocImport} disabled={htmlImporting} style={{ display: "none" }} />
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: mono, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}44`, cursor: "pointer", opacity: htmlImporting ? 0.5 : 1 }}>
+          {htmlImporting ? "Importing..." : "Choose DOC/DOCX file"}
+        </span>
+      </label>
+      {htmlImportError && <div style={{ marginTop: 8, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{htmlImportError}</div>}
+      {htmlImportResult && <div style={{ marginTop: 10, padding: "8px 12px", background: COLORS.greenDim, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.green }}>
+        Imported <strong>{htmlImportResult.imported}</strong> test case{htmlImportResult.imported !== 1 ? "s" : ""}{htmlImportResult.skipped > 0 ? ` · ${htmlImportResult.skipped} duplicate${htmlImportResult.skipped !== 1 ? "s" : ""} skipped` : ""}.
+      </div>}
+    </Card>}
+    <Card glow style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} style={{ minWidth: 280 }} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
@@ -400,6 +489,56 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
       </div>
       {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
       {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
+    </Card>
+
+    {/* Claude.ai manual workflow */}
+    <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase", marginBottom: 3 }}>No API Key? Use Claude.ai Manually</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted }}>Copy the prompt → paste into claude.ai → paste the JSON response back here</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId || copyState === "copying"}
+            onClick={copyPrompt}
+            style={{ borderColor: COLORS.purple + "66", color: copyState === "copied" ? COLORS.green : copyState === "error" ? COLORS.red : COLORS.purple }}
+          >
+            {copyState === "copying" ? "Fetching..." : copyState === "copied" ? "Copied!" : copyState === "error" ? "Failed" : "Copy Prompt"}
+          </Button>
+          <Button
+            variant="secondary"
+            small
+            disabled={!selectedReqId}
+            onClick={() => { setShowImport(!showImport); setImportError(""); }}
+            style={{ borderColor: COLORS.purple + "66", color: COLORS.purple }}
+          >
+            {showImport ? "Cancel Import" : "Import Response"}
+          </Button>
+        </div>
+      </div>
+
+      {showImport && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
+          Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
+        </div>
+        <textarea
+          value={importJson}
+          onChange={e => setImportJson(e.target.value)}
+          placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "description": { "objective": "...", "scope": "...", "assumptions": [] },\n    "setup": { "preconditions": [], "environment": [], "equipment": [], "testData": [] },\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "reqAttribute": "..."\n  }\n]'}
+          style={{ width: "100%", minHeight: 160, fontFamily: mono, fontSize: 11, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${importError ? COLORS.red : COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", outline: "none", boxSizing: "border-box" }}
+        />
+        {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
+        <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Button variant="secondary" small onClick={() => { setShowImport(false); setImportJson(""); setImportError(""); }}>Cancel</Button>
+          <Button small disabled={!importJson.trim() || importing} onClick={doImport}
+            style={{ background: COLORS.purple, color: COLORS.bg }}>
+            {importing ? "Saving..." : "Save Test Cases"}
+          </Button>
+        </div>
+      </div>}
     </Card>
     {testCases.length > 0 && <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
       <Button small variant={viewMode === "library" ? "primary" : "secondary"} onClick={() => setViewMode("library")}>Library ({testCases.length})</Button>
@@ -414,8 +553,9 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
           <div style={{ flex: 1, cursor: "pointer" }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, display: "flex", alignItems: "center", gap: 8 }}>{tc.title}{isUnreviewed(tc) && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 6px", borderRadius: 3, fontWeight: 700, textTransform: "uppercase" }}>Draft</span>}</div>
             <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>
-              {(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}
+              {tc.project_id && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Project ID: <span style={{ color: COLORS.accent }}>{tc.project_id}</span></span>}
+              {tc.upstream_relationship && tc.upstream_relationship.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Upstream: {tc.upstream_relationship.map(u => <span key={u.id} style={{ color: COLORS.purple, marginRight: 4 }}>{u.id}</span>)}</span>}
+              {(tc.linked_req_ids || []).length > 0 && <><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</>}
               <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
             </div>
           </div>
@@ -425,19 +565,55 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
             <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
           </div>
         </div>
-        {expandedTc === tc.tc_id && <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.border}` }}>
-          {isUnreviewed(tc) && <div style={{ marginBottom: 14, padding: "8px 12px", background: COLORS.amberDim, borderRadius: 6, fontSize: 10, color: COLORS.amber, fontFamily: mono }}>DRAFT — Review required</div>}
-          <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 8 }}>PRECONDITIONS</div>
-          <div style={{ fontSize: 12, color: COLORS.text, marginBottom: 14, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.preconditions}</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 8 }}>TEST STEPS</div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead><tr><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>#</th><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Step</th><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Expected</th></tr></thead>
-            <tbody>{(tc.steps || []).map((s, i) => <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}` }}><td style={{ padding: "8px 10px", color: COLORS.textMuted, fontFamily: mono }}>{i + 1}</td><td style={{ padding: "8px 10px", color: COLORS.text }}>{s.step}</td><td style={{ padding: "8px 10px", color: COLORS.green }}>{s.expectedResult}</td></tr>)}</tbody>
-          </table>
-          <div style={{ marginTop: 12 }}><span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>PASS/FAIL: </span><span style={{ fontSize: 12, color: COLORS.text }}>{tc.pass_fail_criteria}</span></div>
-        </div>}
+        {expandedTc === tc.tc_id && (() => {
+          let desc = null, setup = null;
+          try { desc = typeof tc.description === "string" && tc.description.startsWith("{") ? JSON.parse(tc.description) : null; } catch {}
+          try { setup = typeof tc.preconditions === "string" && tc.preconditions.startsWith("{") ? JSON.parse(tc.preconditions) : null; } catch {}
+          const SectionLabel = ({ children }) => <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>;
+          const BulletList = ({ items }) => items && items.length > 0 ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul> : null;
+          return <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.border}` }}>
+            {isUnreviewed(tc) && <div style={{ marginBottom: 14, padding: "8px 12px", background: COLORS.amberDim, borderRadius: 6, fontSize: 10, color: COLORS.amber, fontFamily: mono }}>DRAFT — Review required</div>}
+            {desc ? <>
+              <SectionLabel>Description</SectionLabel>
+              {desc.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.objective}</span></div>}
+              {desc.scope && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.scope}</span></div>}
+              {desc.assumptions && desc.assumptions.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BulletList items={desc.assumptions} /></>}
+            </> : tc.description ? <><SectionLabel>Description</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.description}</div></> : null}
+            {setup ? <>
+              <SectionLabel>Setup</SectionLabel>
+              {setup.preconditions && setup.preconditions.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Preconditions:</span><BulletList items={setup.preconditions} /></>}
+              {setup.environment && setup.environment.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Environment:</span><BulletList items={setup.environment} /></>}
+              {setup.equipment && setup.equipment.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Equipment:</span><BulletList items={setup.equipment} /></>}
+              {setup.testData && setup.testData.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Test Data:</span><BulletList items={setup.testData} /></>}
+            </> : tc.preconditions ? <><SectionLabel>Setup</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.preconditions}</div></> : null}
+            <SectionLabel>Test Steps</SectionLabel>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead><tr><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>#</th><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Step Action</th><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Expected Result</th></tr></thead>
+              <tbody>{(tc.steps || []).map((s, i) => {
+                const hasHtml = c => typeof c === "string" && c.includes("<img");
+                const renderCell = (content, color) => hasHtml(content)
+                  ? <span style={{ color }} dangerouslySetInnerHTML={{ __html: content }} />
+                  : <span style={{ color }}>{content}</span>;
+                return <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                  <td style={{ padding: "8px 10px", color: COLORS.textMuted, fontFamily: mono, verticalAlign: "top" }}>{i + 1}</td>
+                  <td style={{ padding: "8px 10px", verticalAlign: "top" }}>{renderCell(s.step, COLORS.text)}</td>
+                  <td style={{ padding: "8px 10px", verticalAlign: "top" }}>{renderCell(s.expectedResult, COLORS.green)}</td>
+                </tr>;
+              })}</tbody>
+            </table>
+            {tc.upstream_relationship && tc.upstream_relationship.length > 0 && <>
+              <SectionLabel>Upstream Relationships</SectionLabel>
+              {tc.upstream_relationship.map((u, i) => <div key={i} style={{ fontSize: 12, color: COLORS.text, marginBottom: 4, paddingLeft: 12, borderLeft: `2px solid ${COLORS.accent}44` }}>
+                <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color: COLORS.accent }}>{u.id}</span>
+                <span style={{ color: COLORS.textMuted, margin: "0 6px" }}>—</span>
+                <span>{u.name}</span>
+              </div>)}
+            </>}
+          </div>;
+        })()}
       </Card>)}
     </>}
+  </div>
   </div>;
 };
 
@@ -1526,6 +1702,7 @@ export default function App() {
   const [requirements, setRequirements] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [kbEntries, setKbEntries] = useState([]);
+  const [tokenUsage, setTokenUsage] = useState(null);
 
   const loadData = useCallback(async () => {
     try { setRequirements(await api.getRequirements()); }
@@ -1537,6 +1714,8 @@ export default function App() {
     catch (e) { console.error("Failed to load test cases:", e.message); }
     try { setKbEntries(await api.getKbEntries()); }
     catch (e) { console.error("Failed to load KB entries:", e.message); }
+    try { setTokenUsage(await api.getTokenUsage()); }
+    catch (e) { console.error("Failed to load token usage:", e.message); }
   }, []);
 
   useEffect(() => {
@@ -1571,7 +1750,7 @@ export default function App() {
     <style>{globalStyle}</style>
     <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} />
     <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
-      {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
+      {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
       {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
       {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
       {page === "traceability" && <TraceabilityView requirements={requirements} testCases={testCases} />}
