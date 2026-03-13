@@ -49,6 +49,17 @@ function initialize() {
       version INTEGER NOT NULL DEFAULT 1,
       source TEXT DEFAULT 'Manual Entry',
       module TEXT,
+      global_id TEXT,
+      requirement_text TEXT,
+      rationale TEXT,
+      requirement_type TEXT,
+      safety_level TEXT,
+      requirement_context TEXT DEFAULT '[]',
+      verification_method TEXT,
+      scheduled_release TEXT,
+      external_id TEXT,
+      tags TEXT DEFAULT '[]',
+      relationships TEXT DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -141,6 +152,18 @@ function initialize() {
   if (!tcCols.includes("upstream_relationship")) db.exec("ALTER TABLE test_cases ADD COLUMN upstream_relationship TEXT DEFAULT '[]'");
   if (tcCols.includes("pass_fail_criteria")) db.exec("ALTER TABLE test_cases RENAME COLUMN pass_fail_criteria TO description");
 
+  // Migration: add new requirement columns for JAMA import
+  const reqCols = db.prepare("PRAGMA table_info(requirements)").all().map(c => c.name);
+  const newReqCols = [
+    ["global_id", "TEXT"], ["requirement_text", "TEXT"], ["rationale", "TEXT"],
+    ["requirement_type", "TEXT"], ["safety_level", "TEXT"], ["requirement_context", "TEXT DEFAULT '[]'"],
+    ["verification_method", "TEXT"], ["scheduled_release", "TEXT"], ["external_id", "TEXT"],
+    ["tags", "TEXT DEFAULT '[]'"], ["relationships", "TEXT DEFAULT '[]'"],
+  ];
+  for (const [col, type] of newReqCols) {
+    if (!reqCols.includes(col)) db.exec(`ALTER TABLE requirements ADD COLUMN ${col} ${type}`);
+  }
+
   // Seed default admin if no users exist
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;
   if (userCount === 0) {
@@ -153,21 +176,7 @@ function initialize() {
     logAudit("System", "SYSTEM_INIT", "Default admin account created (username: admin)");
   }
 
-  // Seed sample requirements if none exist
-  const reqCount = db.prepare("SELECT COUNT(*) as count FROM requirements").get().count;
-  if (reqCount === 0) {
-    const seedReqs = [
-      { req_id: "RS-001", title: "Multi-format Requirement Ingestion", description: "The Tool shall accept requirements in plain text, structured markdown, JSON, CSV, and PDF formats.", acceptance_criteria: JSON.stringify(["System accepts .txt, .md, .json, .csv, and .pdf file uploads", "Parsed requirements populate the internal schema correctly", "Unsupported formats display a clear error message"]), priority: "High", status: "Approved", source: "FRD v1.2", module: "Requirement Ingestion" },
-      { req_id: "RS-005", title: "Ambiguous Requirement Detection", description: "The Tool shall flag ambiguous or untestable requirements and prompt for clarification.", acceptance_criteria: JSON.stringify(["Requirements without acceptance criteria are flagged", "Vague terms trigger warnings", "User is prompted to refine flagged requirements before TC generation"]), priority: "High", status: "Approved", source: "FRD v1.2", module: "Requirement Ingestion" },
-      { req_id: "TC-001", title: "Complete Test Case Structure", description: "The Tool shall generate test cases containing: TC ID, title, linked REQ ID(s), preconditions, test steps, expected results, and pass/fail criteria.", acceptance_criteria: JSON.stringify(["Every generated TC includes all required fields", "Linked REQ ID field is never empty", "Pass/fail criteria are binary and unambiguous"]), priority: "High", status: "Approved", source: "FRD v1.2", module: "Test Case Generation" },
-      { req_id: "JM-004", title: "Pre-Export Validation", description: "The Tool shall perform a pre-export validation to confirm that all exported TCs have at least one valid Jama REQ link before submission.", acceptance_criteria: JSON.stringify(["Export blocked if any TC lacks a valid REQ link", "Validation report lists all orphaned TCs", "User can resolve issues before re-attempting export"]), priority: "High", status: "Approved", source: "FRD v1.2", module: "Jama Integration" },
-      { req_id: "UM-003", title: "QA Engineer Role Permissions", description: "The QA Engineer role shall permit: ingesting and editing requirements, generating and editing test cases, adding and tagging KB entries, and viewing the Traceability Matrix and Coverage Dashboard.", acceptance_criteria: JSON.stringify(["QA Engineers can ingest, edit requirements and generate TCs", "QA Engineers cannot approve TCs for export or modify Jama settings", "QA Engineers cannot access user management functions"]), priority: "High", status: "Approved", source: "FRD v1.2", module: "User Management" },
-    ];
-    const insert = db.prepare("INSERT INTO requirements (req_id, title, description, acceptance_criteria, priority, status, source, module) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    for (const r of seedReqs) {
-      insert.run(r.req_id, r.title, r.description, r.acceptance_criteria, r.priority, r.status, r.source, r.module);
-    }
-  }
+  // (No seed requirements — requirements come from JAMA imports)
 
   // Seed sample KB entries if none exist
   const kbCount = db.prepare("SELECT COUNT(*) as count FROM kb_entries").get().count;
