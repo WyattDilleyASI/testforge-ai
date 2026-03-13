@@ -51,6 +51,7 @@ export const api = {
   refineTestCase: (tcId, feedback) => request(`/testcases/${tcId}/refine`, { method: "POST", body: { feedback } }),
   refinePrompt: (tcId, feedback) => request(`/testcases/${tcId}/refine-prompt`, { method: "POST", body: { feedback } }),
   clearTestCases: () => request("/testcases", { method: "DELETE" }),
+  clearRejectedTestCases: () => request("/testcases/rejected", { method: "DELETE" }),
   exportTestCasesXlsx: () => {
     const a = document.createElement("a");
     a.href = `${BASE}/testcases/export/xlsx`;

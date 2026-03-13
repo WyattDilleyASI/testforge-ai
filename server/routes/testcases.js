@@ -297,6 +297,15 @@ router.delete("/", requireAuth, (req, res) => {
   res.json({ ok: true, deleted: count });
 });
 
+// DELETE /api/testcases/rejected — delete all rejected test cases
+router.delete("/rejected", requireAuth, (req, res) => {
+  const db = getDb();
+  const count = db.prepare("SELECT COUNT(*) as count FROM test_cases WHERE status = 'Rejected'").get().count;
+  db.prepare("DELETE FROM test_cases WHERE status = 'Rejected'").run();
+  logAudit(req.session.name, "TC_CLEAR_REJECTED", `Deleted ${count} rejected test cases`);
+  res.json({ ok: true, deleted: count });
+});
+
 
 // POST /api/testcases/:tcId/refine — refine a single test case with user feedback via Claude
 router.post("/:tcId/refine", requireAuth, async (req, res) => {

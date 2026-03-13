@@ -21,7 +21,7 @@ router.get("/kb", requireAuth, (req, res) => {
 
 // POST /api/kb
 router.post("/kb", requireAuth, (req, res) => {
-  const { title, type, content, tags } = req.body;
+  const { title, type, content, tags, related_reqs } = req.body;
 
   if (!title || !content) return res.status(400).json({ error: "Title and content are required" });
 

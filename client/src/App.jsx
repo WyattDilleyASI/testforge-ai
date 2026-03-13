@@ -659,6 +659,13 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     finally { setClearing(false); }
   };
 
+  const rejectedCount = testCases.filter(tc => tc.status === "Rejected").length;
+  const clearRejected = async () => {
+    if (!window.confirm(`Delete ${rejectedCount} rejected test case${rejectedCount !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+    try { await api.clearRejectedTestCases(); refresh(); }
+    catch (err) { alert(`Failed: ${err.message}`); }
+  };
+
   const doDocImport = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -678,6 +685,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
       <div style={{ display: "flex", gap: 8 }}>
         <Button variant="secondary" small onClick={() => { setShowHtmlImport(v => !v); setHtmlImportResult(null); setHtmlImportError(""); }}>Import from JAMA DOC</Button>
         <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>
+        {rejectedCount > 0 && <Button variant="danger" small onClick={clearRejected}>Delete Rejected ({rejectedCount})</Button>}
         <Button variant="danger" small onClick={clearAll} disabled={testCases.length === 0 || clearing}>{clearing ? "Clearing..." : "Clear All"}</Button>
       </div>
     </div>
