@@ -21,34 +21,63 @@ router.get("/", requireAuth, (req, res) => {
   })));
 });
 
-// POST /api/testcases/generate — call Claude API server-side
-router.post("/generate", requireAuth, async (req, res) => {
-  const { reqId, depth } = req.body;
-  if (!reqId) return res.status(400).json({ error: "reqId is required" });
-
-  const db = getDb();
+// ─── Shared prompt builder ──────────────────────────────────────────────────
+function buildPrompt(db, reqId, depth) {
   const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
-  if (!requirement) return res.status(404).json({ error: "Requirement not found" });
+  if (!requirement) return null;
 
   const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
+  const reqContext = JSON.parse(requirement.requirement_context || "[]");
+  const tags = JSON.parse(requirement.tags || "[]");
+  const relationships = JSON.parse(requirement.relationships || "[]");
 
-  // Fetch relevant KB entries
+  // Fetch related upstream requirements
+  const relatedReqs = [];
+  for (const rel of relationships) {
+    if (rel.direction === "Upstream" || rel.group === "Requirement") {
+      const related = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(rel.id);
+      if (related) relatedReqs.push(related);
+    }
+  }
+
+  // Fetch ALL KB entries
   const allKb = db.prepare("SELECT * FROM kb_entries").all();
-  const relevantKb = allKb.filter(kb => {
-    const tags = JSON.parse(kb.tags || "[]");
-    return tags.includes(reqId);
-  });
+
+  // Build requirement context string
+  let contextStr = "";
+  if (reqContext.length > 0) {
+    contextStr = reqContext.map(c => `  - ${c.field}: ${c.items.join(", ")}`).join("\n");
+  }
+
+  // Build related requirements string
+  let relatedStr = "";
+  if (relatedReqs.length > 0) {
+    relatedStr = relatedReqs.map(r => {
+      const rCriteria = JSON.parse(r.acceptance_criteria || "[]");
+      return `  - ${r.req_id}: ${r.title}\n    Description: ${r.description || "N/A"}\n    Priority: ${r.priority}\n    Status: ${r.status}${rCriteria.length > 0 ? `\n    Acceptance Criteria: ${rCriteria.join("; ")}` : ""}`;
+    }).join("\n");
+  }
 
   const prompt = `You are a senior QA engineer generating software test case DRAFTS in JAMA format. These are starting points for engineer review — not finished test coverage.
 
 REQUIREMENT:
 - ID: ${requirement.req_id}
 - Title: ${requirement.title}
-- Description: ${requirement.description}
-- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
+- Description: ${requirement.description || "N/A"}
+- Rationale: ${requirement.rationale || "N/A"}
+- Requirement Type: ${requirement.requirement_type || "N/A"}
+- Safety Level: ${requirement.safety_level || "N/A"}
 - Priority: ${requirement.priority}
+- Status: ${requirement.status}
+- Verification Method: ${requirement.verification_method || "N/A"}
+- Scheduled Release: ${requirement.scheduled_release || "N/A"}
+- Acceptance Criteria: ${acceptanceCriteria.length > 0 ? acceptanceCriteria.join("; ") : "N/A"}
+- Tags: ${tags.length > 0 ? tags.join(", ") : "N/A"}
+${contextStr ? `- Requirement Context:\n${contextStr}` : ""}
 
-${relevantKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${relevantKb.map(kb => `- [${kb.kb_id}] ${kb.title}: ${kb.content}`).join("\n")}` : ""}
+${relatedReqs.length > 0 ? `RELATED REQUIREMENTS:\n${relatedStr}` : ""}
+
+${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${allKb.map(kb => `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`).join("\n")}` : ""}
 
 GENERATION DEPTH: ${depth || "standard"}
 - basic: 2-3 test cases covering happy path and one negative case
@@ -62,9 +91,23 @@ Generate test cases as a JSON array. Each test case must have:
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
 - reqAttribute: which acceptance criterion or attribute this TC validates
-${relevantKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this test case" : ""}
+${allKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this test case" : ""}
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
+
+  return { prompt, requirement, allKb };
+}
+
+// POST /api/testcases/generate — call Claude API server-side
+router.post("/generate", requireAuth, async (req, res) => {
+  const { reqId, depth } = req.body;
+  if (!reqId) return res.status(400).json({ error: "reqId is required" });
+
+  const db = getDb();
+  const result = buildPrompt(db, reqId, depth);
+  if (!result) return res.status(404).json({ error: "Requirement not found" });
+
+  const { prompt, requirement, allKb } = result;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
@@ -126,10 +169,11 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
     insertMany(tcsToInsert);
 
-    // Update KB usage counts
-    if (relevantKb.length > 0) {
+    // Update KB usage counts based on what the AI actually referenced
+    const referencedKbIds = new Set(tcsToInsert.flatMap(tc => JSON.parse(tc.kb_references || "[]")));
+    if (referencedKbIds.size > 0) {
       const updateKb = db.prepare("UPDATE kb_entries SET usage_count = usage_count + 1 WHERE kb_id = ?");
-      for (const kb of relevantKb) updateKb.run(kb.kb_id);
+      for (const kbId of referencedKbIds) updateKb.run(kbId);
     }
 
     logAudit(req.session.name, "TC_GENERATED", `Generated ${newTcs.length} draft TCs for ${reqId} (depth: ${depth || "standard"})`);
@@ -155,44 +199,10 @@ router.get("/prompt", requireAuth, (req, res) => {
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
   const db = getDb();
-  const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
-  if (!requirement) return res.status(404).json({ error: "Requirement not found" });
+  const result = buildPrompt(db, reqId, depth);
+  if (!result) return res.status(404).json({ error: "Requirement not found" });
 
-  const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
-  const allKb = db.prepare("SELECT * FROM kb_entries").all();
-  const relevantKb = allKb.filter(kb => {
-    const tags = JSON.parse(kb.tags || "[]");
-    return tags.includes(reqId);
-  });
-
-  const prompt = `You are a senior QA engineer generating software test case DRAFTS in JAMA format. These are starting points for engineer review — not finished test coverage.
-
-REQUIREMENT:
-- ID: ${requirement.req_id}
-- Title: ${requirement.title}
-- Description: ${requirement.description}
-- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
-- Priority: ${requirement.priority}
-
-${relevantKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${relevantKb.map(kb => `- [${kb.kb_id}] ${kb.title}: ${kb.content}`).join("\n")}` : ""}
-
-GENERATION DEPTH: ${depth || "standard"}
-- basic: 2-3 test cases covering happy path and one negative case
-- standard: 4-6 test cases covering happy path, negative, boundary conditions
-- comprehensive: 6-10 test cases covering happy path, negative, boundary, edge cases, error recovery
-
-Generate test cases as a JSON array. Each test case must have:
-- title: string
-- type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
-- description: object with keys: objective (string), scope (string), assumptions (array of strings)
-- setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
-- steps: array of { step: string, expectedResult: string }
-- reqAttribute: which acceptance criterion or attribute this TC validates
-${relevantKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this test case" : ""}
-
-Respond ONLY with valid JSON array, no markdown, no preamble.`;
-
-  res.json({ prompt, reqId, depth: depth || "standard" });
+  res.json({ prompt: result.prompt, reqId, depth: depth || "standard" });
 });
 
 // POST /api/testcases/import — save pre-generated TC JSON from Claude.ai (no API key needed)
