@@ -40,7 +40,7 @@ function buildPrompt(db, reqId, depth) {
     }
   }
 
-  // Fetch ALL KB entries
+  // Fetch ALL KB entries (including images)
   const allKb = db.prepare("SELECT * FROM kb_entries").all();
 
   // Build requirement context string
@@ -77,7 +77,10 @@ ${contextStr ? `- Requirement Context:\n${contextStr}` : ""}
 
 ${relatedReqs.length > 0 ? `RELATED REQUIREMENTS:\n${relatedStr}` : ""}
 
-${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${allKb.map(kb => `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`).join("\n")}` : ""}
+${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${allKb.map(kb => {
+    const imgCount = JSON.parse(kb.images || "[]").length;
+    return `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}${imgCount > 0 ? ` [${imgCount} UI reference image(s) attached below]` : ""}`;
+  }).join("\n")}` : ""}
 
 GENERATION DEPTH: ${depth || "standard"}
 - basic: 2-3 test cases covering happy path and one negative case
@@ -95,7 +98,16 @@ ${allKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this t
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
-  return { prompt, requirement, allKb };
+  // Collect all KB images for multimodal API calls
+  const kbImages = [];
+  for (const kb of allKb) {
+    const images = JSON.parse(kb.images || "[]");
+    for (const img of images) {
+      kbImages.push({ kb_id: kb.kb_id, name: img.name, media_type: img.media_type, data: img.data });
+    }
+  }
+
+  return { prompt, requirement, allKb, kbImages };
 }
 
 // POST /api/testcases/generate — call Claude API server-side
@@ -107,12 +119,23 @@ router.post("/generate", requireAuth, async (req, res) => {
   const result = buildPrompt(db, reqId, depth);
   if (!result) return res.status(404).json({ error: "Requirement not found" });
 
-  const { prompt, requirement, allKb } = result;
+  const { prompt, requirement, allKb, kbImages } = result;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
 
   try {
+    // Build multimodal content: text prompt + any KB images
+    const contentBlocks = [];
+    contentBlocks.push({ type: "text", text: prompt });
+    for (const img of kbImages) {
+      contentBlocks.push({ type: "text", text: `\n[KB Image: ${img.kb_id} — ${img.name}]` });
+      contentBlocks.push({
+        type: "image",
+        source: { type: "base64", media_type: img.media_type, data: img.data },
+      });
+    }
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -123,7 +146,7 @@ router.post("/generate", requireAuth, async (req, res) => {
       body: JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
         max_tokens: 4000,
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: kbImages.length > 0 ? contentBlocks : prompt }],
       }),
     });
 
@@ -202,7 +225,10 @@ router.get("/prompt", requireAuth, (req, res) => {
   const result = buildPrompt(db, reqId, depth);
   if (!result) return res.status(404).json({ error: "Requirement not found" });
 
-  res.json({ prompt: result.prompt, reqId, depth: depth || "standard" });
+  const imageNote = result.kbImages.length > 0
+    ? `\n\n--- NOTE: ${result.kbImages.length} KB image(s) are attached to this generation context (${result.kbImages.map(i => `${i.kb_id}: ${i.name}`).join(", ")}). When using Copy Prompt with Claude.ai, attach these images manually from the Knowledge Base for best results. ---`
+    : "";
+  res.json({ prompt: result.prompt + imageNote, reqId, depth: depth || "standard", imageCount: result.kbImages.length });
 });
 
 // POST /api/testcases/import — save pre-generated TC JSON from Claude.ai (no API key needed)

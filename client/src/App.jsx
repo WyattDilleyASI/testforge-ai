@@ -834,12 +834,30 @@ const KbView = ({ kbEntries, refresh }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", type: "Defect History", content: "", tags: "" });
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(null);
+  const [previewImg, setPreviewImg] = useState(null);
 
   const save = async () => {
     setError("");
     try {
       await api.createKbEntry({ title: form.title, type: form.type, content: form.content, tags: form.tags.split(",").map(t => t.trim()).filter(Boolean) });
       setShowAdd(false); setForm({ title: "", type: "Defect History", content: "", tags: "" }); refresh();
+    } catch (err) { setError(err.message); }
+  };
+
+  const handleImageUpload = async (kbId, files) => {
+    setUploading(kbId);
+    try {
+      await api.uploadKbImages(kbId, files);
+      refresh();
+    } catch (err) { setError(err.message); }
+    setUploading(null);
+  };
+
+  const handleDeleteImage = async (kbId, index) => {
+    try {
+      await api.deleteKbImage(kbId, index);
+      refresh();
     } catch (err) { setError(err.message); }
   };
 
@@ -850,13 +868,57 @@ const KbView = ({ kbEntries, refresh }) => {
     </div>
     {showAdd && <Card glow style={{ marginBottom: 20 }}>
       <Input label="Title" value={form.title} onChange={v => setForm(p => ({ ...p, title: v }))} style={{ marginBottom: 12 }} />
-      <Select label="Type" value={form.type} onChange={v => setForm(p => ({ ...p, type: v }))} style={{ marginBottom: 12 }} options={["Defect History", "System Behavior", "Environment Constraint", "Business Rule", "Test Data Guideline"].map(t => ({ value: t, label: t }))} />
+      <Select label="Type" value={form.type} onChange={v => setForm(p => ({ ...p, type: v }))} style={{ marginBottom: 12 }} options={["Defect History", "System Behavior", "Environment Constraint", "Business Rule", "Test Data Guideline", "UI Reference"].map(t => ({ value: t, label: t }))} />
       <Input label="Content" value={form.content} onChange={v => setForm(p => ({ ...p, content: v }))} textarea style={{ marginBottom: 12 }} />
       <Input label="Tagged REQ IDs (comma-separated)" value={form.tags} onChange={v => setForm(p => ({ ...p, tags: v }))} mono style={{ marginBottom: 14 }} />
       <ErrorBanner msg={error} />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button><Button onClick={save} disabled={!form.title || !form.content}>Save</Button></div>
     </Card>}
-    {kbEntries.map(e => <Card key={e.kb_id} style={{ marginBottom: 10 }}><div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}><span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.purple, background: COLORS.purpleDim, padding: "2px 8px", borderRadius: 4 }}>{e.kb_id}</span><div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>{e.title}</div><div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>{e.content}</div><div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}><Badge color="purple">{e.type}</Badge>{(e.tags || []).map(t => <ReqIdTag key={t} id={t} />)}<span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, marginLeft: 8 }}>Used {e.usage_count || 0}×</span></div></div></div></Card>)}
+    <ErrorBanner msg={error && !showAdd ? error : ""} />
+    {kbEntries.map(e => <Card key={e.kb_id} style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.purple, background: COLORS.purpleDim, padding: "2px 8px", borderRadius: 4 }}>{e.kb_id}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>{e.title}</div>
+          <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>{e.content}</div>
+          {(e.images || []).length > 0 && <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            {e.images.map((img, i) => <div key={i} style={{ position: "relative", display: "inline-block" }}>
+              <img
+                src={`data:${img.media_type};base64,${img.data}`}
+                alt={img.name}
+                style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}
+                onClick={() => setPreviewImg(img)}
+                title={img.name}
+              />
+              <button
+                onClick={() => handleDeleteImage(e.kb_id, i)}
+                style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: COLORS.red || "#ef4444", color: "#fff", border: "none", cursor: "pointer", fontSize: 10, lineHeight: "18px", padding: 0, fontWeight: 700 }}
+                title="Remove image"
+              >&times;</button>
+            </div>)}
+          </div>}
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Badge color="purple">{e.type}</Badge>
+            {(e.tags || []).map(t => <ReqIdTag key={t} id={t} />)}
+            <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, marginLeft: 8 }}>Used {e.usage_count || 0}×</span>
+            <span style={{ fontSize: 10, color: COLORS.textMuted, marginLeft: 4 }}>| {(e.images || []).length} image(s)</span>
+            <label style={{ fontSize: 11, color: COLORS.accent, cursor: "pointer", marginLeft: 8, fontWeight: 600 }}>
+              {uploading === e.kb_id ? "Uploading..." : "+ Add Images"}
+              <input type="file" accept="image/*" multiple style={{ display: "none" }}
+                onChange={ev => { if (ev.target.files.length) handleImageUpload(e.kb_id, ev.target.files); ev.target.value = ""; }}
+                disabled={uploading === e.kb_id}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+    </Card>)}
+    {previewImg && <div onClick={() => setPreviewImg(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, cursor: "pointer" }}>
+      <div style={{ maxWidth: "90vw", maxHeight: "90vh" }}>
+        <img src={`data:${previewImg.media_type};base64,${previewImg.data}`} alt={previewImg.name} style={{ maxWidth: "90vw", maxHeight: "85vh", borderRadius: 8 }} />
+        <div style={{ textAlign: "center", color: "#fff", marginTop: 8, fontSize: 13 }}>{previewImg.name}</div>
+      </div>
+    </div>}
   </div>;
 };
 

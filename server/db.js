@@ -90,6 +90,7 @@ function initialize() {
       type TEXT NOT NULL,
       content TEXT NOT NULL,
       tags TEXT DEFAULT '[]',
+      images TEXT DEFAULT '[]',
       usage_count INTEGER NOT NULL DEFAULT 0,
       created_by TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -163,6 +164,10 @@ function initialize() {
   for (const [col, type] of newReqCols) {
     if (!reqCols.includes(col)) db.exec(`ALTER TABLE requirements ADD COLUMN ${col} ${type}`);
   }
+
+  // Migration: add images column to kb_entries if missing
+  const kbCols = db.prepare("PRAGMA table_info(kb_entries)").all().map(c => c.name);
+  if (!kbCols.includes("images")) db.exec("ALTER TABLE kb_entries ADD COLUMN images TEXT DEFAULT '[]'");
 
   // Seed default admin if no users exist
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;
