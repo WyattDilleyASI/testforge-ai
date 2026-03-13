@@ -1,16 +1,106 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { api } from "./api";
 
-// ─── CONSTANTS ──────────────────────────────────────────────────────────────
+// ─── THEMES ─────────────────────────────────────────────────────────────────
 
-const COLORS = {
-  bg: "#0B0E14", surface: "#121821", surfaceRaised: "#1A2233",
-  border: "#243044", text: "#C8D6E5", textMuted: "#7A8BA3",
-  textBright: "#EFF4F8", accent: "#22D3EE", accentDim: "rgba(34,211,238,0.12)",
-  accentGlow: "rgba(34,211,238,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
-  red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
-  amberDim: "rgba(251,191,36,0.12)", purple: "#A78BFA", purpleDim: "rgba(167,139,250,0.12)",
+const THEMES = {
+  midnight: {
+    name: "Midnight", emoji: "🌙",
+    bg: "#0B0E14", surface: "#121821", surfaceRaised: "#1A2233",
+    border: "#243044", text: "#C8D6E5", textMuted: "#7A8BA3",
+    textBright: "#EFF4F8", accent: "#22D3EE", accentDim: "rgba(34,211,238,0.12)",
+    accentGlow: "rgba(34,211,238,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
+    red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
+    amberDim: "rgba(251,191,36,0.12)", purple: "#A78BFA", purpleDim: "rgba(167,139,250,0.12)",
+  },
+  cherry: {
+    name: "Cherry Blossom", emoji: "🌸",
+    bg: "#FFF5F7", surface: "#FFF0F3", surfaceRaised: "#FFFFFF",
+    border: "#F5C6D0", text: "#5C3D4E", textMuted: "#9E7389",
+    textBright: "#2D1B25", accent: "#E8457C", accentDim: "rgba(232,69,124,0.10)",
+    accentGlow: "rgba(232,69,124,0.20)", green: "#38A169", greenDim: "rgba(56,161,105,0.10)",
+    red: "#E53E3E", redDim: "rgba(229,62,62,0.10)", amber: "#D69E2E",
+    amberDim: "rgba(214,158,46,0.10)", purple: "#9F7AEA", purpleDim: "rgba(159,122,234,0.10)",
+  },
+  wacky: {
+    name: "Wacky", emoji: "🤪",
+    bg: "#1A0033", surface: "#2D004D", surfaceRaised: "#3D0066",
+    border: "#FF6600", text: "#00FF99", textMuted: "#FFD700",
+    textBright: "#FF00FF", accent: "#00FFFF", accentDim: "rgba(0,255,255,0.15)",
+    accentGlow: "rgba(0,255,255,0.35)", green: "#39FF14", greenDim: "rgba(57,255,20,0.15)",
+    red: "#FF1493", redDim: "rgba(255,20,147,0.15)", amber: "#FFD700",
+    amberDim: "rgba(255,215,0,0.15)", purple: "#BF00FF", purpleDim: "rgba(191,0,255,0.15)",
+  },
+  eyebleed: {
+    name: "Eye Bleed", emoji: "💀",
+    bg: "#FF0000", surface: "#00FF00", surfaceRaised: "#FFFF00",
+    border: "#FF00FF", text: "#0000FF", textMuted: "#FF6600",
+    textBright: "#FFFFFF", accent: "#00FFFF", accentDim: "rgba(0,255,255,0.30)",
+    accentGlow: "rgba(255,0,255,0.50)", green: "#FF1493", greenDim: "rgba(255,20,147,0.25)",
+    red: "#00FF00", redDim: "rgba(0,255,0,0.25)", amber: "#FF00FF",
+    amberDim: "rgba(255,0,255,0.25)", purple: "#FFFF00", purpleDim: "rgba(255,255,0,0.25)",
+  },
+  forest: {
+    name: "Forest", emoji: "🌲",
+    bg: "#0A1F0A", surface: "#122712", surfaceRaised: "#1A331A",
+    border: "#2D5A2D", text: "#B8D4B8", textMuted: "#6B946B",
+    textBright: "#E8F5E8", accent: "#4ADE80", accentDim: "rgba(74,222,128,0.12)",
+    accentGlow: "rgba(74,222,128,0.25)", green: "#22C55E", greenDim: "rgba(34,197,94,0.12)",
+    red: "#FB7185", redDim: "rgba(251,113,133,0.12)", amber: "#FACC15",
+    amberDim: "rgba(250,204,21,0.12)", purple: "#C084FC", purpleDim: "rgba(192,132,252,0.12)",
+  },
+  ocean: {
+    name: "Ocean", emoji: "🌊",
+    bg: "#0A192F", surface: "#0D2137", surfaceRaised: "#112B45",
+    border: "#1E4976", text: "#A8C8E8", textMuted: "#5E8AB4",
+    textBright: "#E0F0FF", accent: "#38BDF8", accentDim: "rgba(56,189,248,0.12)",
+    accentGlow: "rgba(56,189,248,0.25)", green: "#2DD4BF", greenDim: "rgba(45,212,191,0.12)",
+    red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FDE68A",
+    amberDim: "rgba(253,230,138,0.12)", purple: "#818CF8", purpleDim: "rgba(129,140,248,0.12)",
+  },
+  sunset: {
+    name: "Sunset", emoji: "🌅",
+    bg: "#1A0A0A", surface: "#261210", surfaceRaised: "#331A16",
+    border: "#5C3028", text: "#E8C8B8", textMuted: "#B47A64",
+    textBright: "#FFF0E8", accent: "#FB923C", accentDim: "rgba(251,146,60,0.12)",
+    accentGlow: "rgba(251,146,60,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
+    red: "#EF4444", redDim: "rgba(239,68,68,0.12)", amber: "#FBBF24",
+    amberDim: "rgba(251,191,36,0.12)", purple: "#E879F9", purpleDim: "rgba(232,121,249,0.12)",
+  },
+  lavender: {
+    name: "Lavender", emoji: "💜",
+    bg: "#F5F0FF", surface: "#EDE5FF", surfaceRaised: "#FFFFFF",
+    border: "#D4C4F0", text: "#4A3668", textMuted: "#8B72AA",
+    textBright: "#1E0A3C", accent: "#8B5CF6", accentDim: "rgba(139,92,246,0.10)",
+    accentGlow: "rgba(139,92,246,0.20)", green: "#10B981", greenDim: "rgba(16,185,129,0.10)",
+    red: "#EF4444", redDim: "rgba(239,68,68,0.10)", amber: "#F59E0B",
+    amberDim: "rgba(245,158,11,0.10)", purple: "#7C3AED", purpleDim: "rgba(124,58,237,0.10)",
+  },
+  retro: {
+    name: "Retro Terminal", emoji: "📟",
+    bg: "#0C0C0C", surface: "#1A1A1A", surfaceRaised: "#222222",
+    border: "#333333", text: "#33FF33", textMuted: "#1A991A",
+    textBright: "#66FF66", accent: "#33FF33", accentDim: "rgba(51,255,51,0.10)",
+    accentGlow: "rgba(51,255,51,0.25)", green: "#33FF33", greenDim: "rgba(51,255,51,0.12)",
+    red: "#FF3333", redDim: "rgba(255,51,51,0.12)", amber: "#FFCC00",
+    amberDim: "rgba(255,204,0,0.12)", purple: "#CC66FF", purpleDim: "rgba(204,102,255,0.12)",
+  },
+  nord: {
+    name: "Nord", emoji: "❄️",
+    bg: "#2E3440", surface: "#3B4252", surfaceRaised: "#434C5E",
+    border: "#4C566A", text: "#D8DEE9", textMuted: "#8FBCBB",
+    textBright: "#ECEFF4", accent: "#88C0D0", accentDim: "rgba(136,192,208,0.12)",
+    accentGlow: "rgba(136,192,208,0.25)", green: "#A3BE8C", greenDim: "rgba(163,190,140,0.12)",
+    red: "#BF616A", redDim: "rgba(191,97,106,0.12)", amber: "#EBCB8B",
+    amberDim: "rgba(235,203,139,0.12)", purple: "#B48EAD", purpleDim: "rgba(180,142,173,0.12)",
+  },
 };
+
+const ThemeContext = createContext(THEMES.midnight);
+const useTheme = () => useContext(ThemeContext);
+
+// Legacy alias so existing component code keeps working
+const COLORS = THEMES.midnight;
 const font = "'DM Sans', 'Segoe UI', system-ui, sans-serif";
 const mono = "'JetBrains Mono', 'Fira Code', monospace";
 const DRAFT_DISCLAIMER = "These test cases are AI-generated drafts and represent a suggested starting point only. QA Engineer review, augmentation, and approval are required before use.";
@@ -24,54 +114,60 @@ const ROLE_PERMISSIONS = {
 // ─── UTILITY COMPONENTS ─────────────────────────────────────────────────────
 
 const Badge = ({ color = "accent", children, style }) => {
-  const c = COLORS[color] || color;
-  const dim = COLORS[color + "Dim"] || "rgba(255,255,255,0.08)";
+  const T = useTheme();
+  const c = T[color] || color;
+  const dim = T[color + "Dim"] || "rgba(255,255,255,0.08)";
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, letterSpacing: "0.04em", textTransform: "uppercase", color: c, background: dim, border: `1px solid ${c}22`, whiteSpace: "nowrap", ...style }}>{children}</span>;
 };
 
 const Button = ({ variant = "primary", children, onClick, disabled, style, small }) => {
+  const T = useTheme();
   const base = { fontFamily: font, fontSize: small ? 12 : 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", borderRadius: 6, padding: small ? "5px 12px" : "9px 20px", transition: "all 0.2s", opacity: disabled ? 0.4 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
-  const variants = { primary: { ...base, background: COLORS.accent, color: COLORS.bg }, secondary: { ...base, background: COLORS.surfaceRaised, color: COLORS.text, border: `1px solid ${COLORS.border}` }, danger: { ...base, background: COLORS.redDim, color: COLORS.red, border: `1px solid ${COLORS.red}33` }, ghost: { ...base, background: "transparent", color: COLORS.textMuted } };
+  const variants = { primary: { ...base, background: T.accent, color: T.bg }, secondary: { ...base, background: T.surfaceRaised, color: T.text, border: `1px solid ${T.border}` }, danger: { ...base, background: T.redDim, color: T.red, border: `1px solid ${T.red}33` }, ghost: { ...base, background: "transparent", color: T.textMuted } };
   return <button style={{ ...variants[variant], ...style }} onClick={onClick} disabled={disabled}>{children}</button>;
 };
 
-const Card = ({ children, style, glow, ...rest }) => <div style={{ background: COLORS.surfaceRaised, border: `1px solid ${glow ? COLORS.accent + "44" : COLORS.border}`, borderRadius: 10, padding: 20, boxShadow: glow ? `0 0 20px ${COLORS.accentGlow}` : "0 2px 8px rgba(0,0,0,0.3)", ...style }} {...rest}>{children}</div>;
+const Card = ({ children, style, glow, ...rest }) => { const T = useTheme(); return <div style={{ background: T.surfaceRaised, border: `1px solid ${glow ? T.accent + "44" : T.border}`, borderRadius: 10, padding: 20, boxShadow: glow ? `0 0 20px ${T.accentGlow}` : "0 2px 8px rgba(0,0,0,0.3)", ...style }} {...rest}>{children}</div>; };
 
-const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    {textarea ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", minHeight: 80, outline: "none", opacity: disabled ? 0.5 : 1 }} />
-    : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
-  </div>
-);
+const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => {
+  const T = useTheme();
+  return <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
+    {label && <label style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
+    {textarea ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", minHeight: 80, outline: "none", opacity: disabled ? 0.5 : 1 }} />
+    : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
+  </div>;
+};
 
-const PasswordInput = ({ label, value, onChange, placeholder, style, onKeyDown }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    <input type="password" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none" }} />
-  </div>
-);
+const PasswordInput = ({ label, value, onChange, placeholder, style, onKeyDown }) => {
+  const T = useTheme();
+  return <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
+    {label && <label style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
+    <input type="password" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={{ fontFamily: font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", outline: "none" }} />
+  </div>;
+};
 
-const Select = ({ label, value, onChange, options, style, disabled }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-  </div>
-);
+const Select = ({ label, value, onChange, options, style, disabled }) => {
+  const T = useTheme();
+  return <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
+    {label && <label style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
+    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ fontFamily: font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+  </div>;
+};
 
-const ReqIdTag = ({ id }) => <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.accent, background: COLORS.accentDim, padding: "2px 8px", borderRadius: 4, border: `1px solid ${COLORS.accent}33` }}>{id}</span>;
+const ReqIdTag = ({ id }) => { const T = useTheme(); return <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: T.accent, background: T.accentDim, padding: "2px 8px", borderRadius: 4, border: `1px solid ${T.accent}33` }}>{id}</span>; };
 
-const Spinner = () => <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.accent }}><div style={{ width: 18, height: 18, border: `2px solid ${COLORS.border}`, borderTopColor: COLORS.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontFamily: mono }}>Generating drafts via Claude API...</span><style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style></div>;
+const Spinner = () => { const T = useTheme(); return <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.accent }}><div style={{ width: 18, height: 18, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontFamily: mono }}>Generating drafts via Claude API...</span><style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style></div>; };
 
-const EmptyState = ({ icon, title, subtitle }) => <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60, color: COLORS.textMuted, textAlign: "center" }}><span style={{ fontSize: 36, marginBottom: 12, opacity: 0.4 }}>{icon}</span><span style={{ fontSize: 15, fontWeight: 600, color: COLORS.text, marginBottom: 4 }}>{title}</span><span style={{ fontSize: 13 }}>{subtitle}</span></div>;
+const EmptyState = ({ icon, title, subtitle }) => { const T = useTheme(); return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60, color: T.textMuted, textAlign: "center" }}><span style={{ fontSize: 36, marginBottom: 12, opacity: 0.4 }}>{icon}</span><span style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 4 }}>{title}</span><span style={{ fontSize: 13 }}>{subtitle}</span></div>; };
 
-const DraftDisclaimer = ({ style }) => <div style={{ padding: "10px 14px", background: "rgba(251,191,36,0.08)", borderRadius: 6, border: `1px solid ${COLORS.amber}33`, fontSize: 11, color: COLORS.amber, lineHeight: 1.5, ...style }}><span style={{ fontFamily: mono, fontWeight: 700, marginRight: 6, fontSize: 10, textTransform: "uppercase" }}>TC-003a DRAFT</span>{DRAFT_DISCLAIMER}</div>;
+const DraftDisclaimer = ({ style }) => { const T = useTheme(); return <div style={{ padding: "10px 14px", background: "rgba(251,191,36,0.08)", borderRadius: 6, border: `1px solid ${T.amber}33`, fontSize: 11, color: T.amber, lineHeight: 1.5, ...style }}><span style={{ fontFamily: mono, fontWeight: 700, marginRight: 6, fontSize: 10, textTransform: "uppercase" }}>TC-003a DRAFT</span>{DRAFT_DISCLAIMER}</div>; };
 
-const ErrorBanner = ({ msg }) => msg ? <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.redDim, borderRadius: 6, border: `1px solid ${COLORS.red}33`, fontSize: 12, color: COLORS.red }}>{msg}</div> : null;
+const ErrorBanner = ({ msg }) => { const T = useTheme(); return msg ? <div style={{ marginBottom: 16, padding: "8px 12px", background: T.redDim, borderRadius: 6, border: `1px solid ${T.red}33`, fontSize: 12, color: T.red }}>{msg}</div> : null; };
 
 // ─── LOGIN SCREEN ───────────────────────────────────────────────────────────
 
 const LoginScreen = ({ onLogin }) => {
+  const T = useTheme();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -87,22 +183,22 @@ const LoginScreen = ({ onLogin }) => {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, fontFamily: font }}>
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } } input:focus { border-color: ${COLORS.accent} !important; box-shadow: 0 0 0 2px ${COLORS.accentDim}; outline: none; } button:hover:not(:disabled) { filter: brightness(1.15); }`}</style>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: font }}>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } } input:focus { border-color: ${T.accent} !important; box-shadow: 0 0 0 2px ${T.accentDim}; outline: none; } button:hover:not(:disabled) { filter: brightness(1.15); }`}</style>
       <div style={{ animation: "fadeIn 0.4s ease-out", width: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <span style={{ fontSize: 40, color: COLORS.accent, display: "block", marginBottom: 8 }}>◈</span>
-          <span style={{ fontSize: 22, fontWeight: 800, color: COLORS.textBright }}>TestForge AI</span>
-          <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, marginTop: 6, textTransform: "uppercase", letterSpacing: "0.08em" }}>AI-Powered Test Creation Tool v1.2</div>
+          <span style={{ fontSize: 40, color: T.accent, display: "block", marginBottom: 8 }}>◈</span>
+          <span style={{ fontSize: 22, fontWeight: 800, color: T.textBright }}>TestForge AI</span>
+          <div style={{ fontSize: 10, fontFamily: mono, color: T.textMuted, marginTop: 6, textTransform: "uppercase", letterSpacing: "0.08em" }}>AI-Powered Test Creation Tool v1.2</div>
         </div>
         <Card glow style={{ padding: 28 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Sign In</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 20 }}>Enter your credentials to access the Tool</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: T.textBright, marginBottom: 4 }}>Sign In</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 20 }}>Enter your credentials to access the Tool</div>
           <Input label="Username" value={username} onChange={setUsername} placeholder="Enter username" style={{ marginBottom: 14 }} />
           <PasswordInput label="Password" value={password} onChange={setPassword} placeholder="Enter password" onKeyDown={e => e.key === "Enter" && handleLogin()} style={{ marginBottom: 20 }} />
           <ErrorBanner msg={error} />
           <Button onClick={handleLogin} disabled={!username || !password || loading} style={{ width: "100%", justifyContent: "center" }}>{loading ? "Signing in..." : "Sign In"}</Button>
-          <div style={{ marginTop: 16, fontSize: 10, color: COLORS.textMuted, textAlign: "center", fontFamily: mono }}>UM-008: Account locks after 5 failed attempts</div>
+          <div style={{ marginTop: 16, fontSize: 10, color: T.textMuted, textAlign: "center", fontFamily: mono }}>UM-008: Account locks after 5 failed attempts</div>
         </Card>
       </div>
     </div>
@@ -112,6 +208,7 @@ const LoginScreen = ({ onLogin }) => {
 // ─── PASSWORD CHANGE SCREEN ─────────────────────────────────────────────────
 
 const PasswordChangeScreen = ({ userId, userName, isOtp, onComplete }) => {
+  const T = useTheme();
   const [newPass, setNewPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [error, setError] = useState("");
@@ -130,17 +227,17 @@ const PasswordChangeScreen = ({ userId, userName, isOtp, onComplete }) => {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, fontFamily: font }}>
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } } input:focus { border-color: ${COLORS.accent} !important; box-shadow: 0 0 0 2px ${COLORS.accentDim}; outline: none; } button:hover:not(:disabled) { filter: brightness(1.15); }`}</style>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: font }}>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } } input:focus { border-color: ${T.accent} !important; box-shadow: 0 0 0 2px ${T.accentDim}; outline: none; } button:hover:not(:disabled) { filter: brightness(1.15); }`}</style>
       <div style={{ animation: "fadeIn 0.4s ease-out", width: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <span style={{ fontSize: 40, color: COLORS.accent, display: "block", marginBottom: 8 }}>◈</span>
-          <span style={{ fontSize: 22, fontWeight: 800, color: COLORS.textBright }}>TestForge AI</span>
+          <span style={{ fontSize: 40, color: T.accent, display: "block", marginBottom: 8 }}>◈</span>
+          <span style={{ fontSize: 22, fontWeight: 800, color: T.textBright }}>TestForge AI</span>
         </div>
         <Card glow style={{ padding: 28 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>{isOtp ? "Create Your Password" : "Change Default Password"}</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Welcome, {userName}.</div>
-          <div style={{ padding: "8px 12px", background: COLORS.amberDim, borderRadius: 6, border: `1px solid ${COLORS.amber}33`, fontSize: 11, color: COLORS.amber, marginBottom: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: T.textBright, marginBottom: 4 }}>{isOtp ? "Create Your Password" : "Change Default Password"}</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>Welcome, {userName}.</div>
+          <div style={{ padding: "8px 12px", background: T.amberDim, borderRadius: 6, border: `1px solid ${T.amber}33`, fontSize: 11, color: T.amber, marginBottom: 20 }}>
             {isOtp ? "You signed in with a one-time password. Please create your own password to continue." : "This is your first login. Please change the default password to continue."}
           </div>
           <PasswordInput label="New Password" value={newPass} onChange={setNewPass} placeholder="Create a password" style={{ marginBottom: 14 }} />
@@ -175,25 +272,25 @@ const NAV_ITEMS = [
   { key: "settings", label: "Settings & MCP", icon: "⚙", reqs: "MCP", adminOnly: true },
 ];
 
-const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
-  <div style={{ width: 250, minHeight: "100vh", background: COLORS.surface, borderRight: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", fontFamily: font, flexShrink: 0 }}>
-    <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${COLORS.border}` }}>
+const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentTheme, onThemeChange }) => {
+  const T = useTheme();
+  return <div style={{ width: 250, minHeight: "100vh", background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", fontFamily: font, flexShrink: 0 }}>
+    <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${T.border}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 20, color: COLORS.accent }}>◈</span>
-        <span style={{ fontSize: 15, fontWeight: 700, color: COLORS.textBright }}>TestForge AI</span>
+        <span style={{ fontSize: 20, color: T.accent }}>◈</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: T.textBright }}>TestForge AI</span>
       </div>
-      <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.2</div>
+      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.2</div>
     </div>
-    <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS.green, flexShrink: 0 }} />
+    <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: COLORS.textBright, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
-        <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>@{currentUser.username} · {currentUser.role}</div>
+        <div style={{ fontSize: 12, color: T.textBright, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
+        <div style={{ fontSize: 10, fontFamily: mono, color: T.textMuted }}>@{currentUser.username} · {currentUser.role}</div>
       </div>
-      <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 10, fontFamily: mono, padding: "4px 8px", borderRadius: 4 }}>Sign Out</button>
+      <button onClick={onLogout} style={{ background: "none", border: "none", color: T.textMuted, cursor: "pointer", fontSize: 10, fontFamily: mono, padding: "4px 8px", borderRadius: 4 }}>Sign Out</button>
     </div>
     <nav style={{ padding: "12px 10px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-      {/* ── KEY CHANGE: filter out adminOnly items for non-Admin users ── */}
       {NAV_ITEMS
         .filter(item => !item.adminOnly || currentUser.role === "Admin")
         .map(item => {
@@ -208,28 +305,40 @@ const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
                 cursor: "pointer", textAlign: "left", fontFamily: font,
                 fontSize: 13,
                 fontWeight: active === item.key ? 600 : 400,
-                color: active === item.key ? COLORS.textBright : d ? COLORS.textMuted + "88" : COLORS.textMuted,
-                background: active === item.key ? COLORS.accentDim : "transparent",
-                borderLeft: active === item.key ? `2px solid ${COLORS.accent}` : "2px solid transparent",
+                color: active === item.key ? T.textBright : d ? T.textMuted + "88" : T.textMuted,
+                background: active === item.key ? T.accentDim : "transparent",
+                borderLeft: active === item.key ? `2px solid ${T.accent}` : "2px solid transparent",
                 fontStyle: d ? "italic" : "normal",
               }}
             >
               <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center" }}>{item.icon}</span>
               <div>
                 <div>{item.label}</div>
-                <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div>
+                <div style={{ fontSize: 9, fontFamily: mono, color: T.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div>
               </div>
             </button>
           );
         })}
     </nav>
-    <div style={{ padding: "14px 16px", borderTop: `1px solid ${COLORS.border}`, fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>FRD v1.2 — 39 active REQs</div>
-  </div>
-);
+    <div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}` }}>
+      <div style={{ fontSize: 9, fontFamily: mono, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Theme</div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {Object.entries(THEMES).map(([key, t]) => (
+          <button key={key} onClick={() => onThemeChange(key)} title={t.name} style={{
+            padding: "3px 8px", borderRadius: 4, border: currentTheme === key ? `1px solid ${T.accent}` : `1px solid ${T.border}`,
+            background: currentTheme === key ? T.accentDim : "transparent", cursor: "pointer", fontSize: 12,
+          }}>{t.emoji}</button>
+        ))}
+      </div>
+    </div>
+    <div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 10, color: T.textMuted, fontFamily: mono }}>FRD v1.2 — 39 active REQs</div>
+  </div>;
+};
 
 // ─── DASHBOARD ──────────────────────────────────────────────────────────────
 
 const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage }) => {
+  const COLORS = useTheme();
   const covered = requirements.filter(r => testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
   const untested = requirements.filter(r => !testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
   const coveragePct = requirements.length ? Math.round((covered.length / requirements.length) * 100) : 0;
@@ -270,6 +379,7 @@ const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage }) => {
 // ─── REQUIREMENTS ───────────────────────────────────────────────────────────
 
 const RequirementsView = ({ requirements, refresh, currentUser }) => {
+  const COLORS = useTheme();
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
   const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
@@ -373,6 +483,7 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
 // ─── TEST CASES ─────────────────────────────────────────────────────────────
 
 const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
+  const COLORS = useTheme();
   const [selectedReqId, setSelectedReqId] = useState("");
   const [depth, setDepth] = useState("standard");
   const [generating, setGenerating] = useState(false);
@@ -619,7 +730,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
 
 // ─── TRACEABILITY MATRIX ────────────────────────────────────────────────────
 
-const TraceabilityView = ({ requirements, testCases }) => <div>
+const TraceabilityView = ({ requirements, testCases }) => { const COLORS = useTheme(); return <div>
   <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Traceability Matrix</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-007</p></div>
   <Card style={{ overflow: "auto" }}>
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -636,11 +747,12 @@ const TraceabilityView = ({ requirements, testCases }) => <div>
       })}</tbody>
     </table>
   </Card>
-</div>;
+</div>; };
 
 // ─── KNOWLEDGE BASE ─────────────────────────────────────────────────────────
 
 const KbView = ({ kbEntries, refresh }) => {
+  const COLORS = useTheme();
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", type: "Defect History", content: "", tags: "" });
   const [error, setError] = useState("");
@@ -673,6 +785,7 @@ const KbView = ({ kbEntries, refresh }) => {
 // ─── USER MANAGEMENT ────────────────────────────────────────────────────────
 
 const UserManagementView = ({ currentUser, refreshAll }) => {
+  const COLORS = useTheme();
   const [users, setUsers] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -764,6 +877,7 @@ const UserManagementView = ({ currentUser, refreshAll }) => {
 // ─── JAMA CONNECT ───────────────────────────────────────────────────────────
 
 const JamaView = ({ testCases, requirements, currentUser }) => {
+  const COLORS = useTheme();
   const [exportLog, setExportLog] = useState([]);
   const [config, setConfig] = useState({ url: "https://your-org.jamacloud.com", project: "AI-Test-Tool" });
   const isManager = currentUser.role === "QA Manager" || currentUser.role === "Admin";
@@ -800,7 +914,7 @@ const JamaView = ({ testCases, requirements, currentUser }) => {
 
 // ─── DEFERRED ───────────────────────────────────────────────────────────────
 
-const DeferredView = () => <div>
+const DeferredView = () => { const COLORS = useTheme(); return <div>
   <div style={{ marginBottom: 28 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Deferred to v2</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>FRD v1.2 Section 9</p></div>
   {[{ title: "Adaptive Learning Engine", sub: "AL-001 – AL-008", desc: "Descoped from v1 to keep the tool focused on assistive generation." },
     { title: "Confluence KB Import", sub: "KB-007", desc: "Manual entry only in v1. v2 implements Confluence REST API import." },
@@ -809,11 +923,12 @@ const DeferredView = () => <div>
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><Badge color="amber">DEFERRED</Badge><span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright }}>{item.title}</span><span style={{ fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>{item.sub}</span></div>
     <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.7 }}>{item.desc}</div>
   </Card>)}
-</div>;
+</div>; };
 
 // ─── SETTINGS & MCP ─────────────────────────────────────────────────────────
 
 const SettingsView = ({ currentUser }) => {
+  const COLORS = useTheme();
   const [tokens, setTokens] = useState([]);
   const [tokenName, setTokenName] = useState("");
   const [bridgePath, setBridgePath] = useState("");
@@ -1434,6 +1549,7 @@ Paste the URL above and add the Authorization header.`,
 // ─── MCP SERVER SETTINGS ────────────────────────────────────────────────────
 
 const McpSettingsView = ({ currentUser }) => {
+  const COLORS = useTheme();
   const [servers, setServers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -1698,11 +1814,19 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [pendingPw, setPendingPw] = useState(null);
   const [page, setPage] = useState("dashboard");
+  const [themeName, setThemeName] = useState(() => localStorage.getItem("tf-theme") || "midnight");
 
   const [requirements, setRequirements] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [kbEntries, setKbEntries] = useState([]);
   const [tokenUsage, setTokenUsage] = useState(null);
+
+  const activeTheme = THEMES[themeName] || THEMES.midnight;
+
+  const handleThemeChange = (key) => {
+    setThemeName(key);
+    localStorage.setItem("tf-theme", key);
+  };
 
   const loadData = useCallback(async () => {
     try { setRequirements(await api.getRequirements()); }
@@ -1740,26 +1864,28 @@ export default function App() {
     setCurrentUser(null); setAuthState("login"); setPage("dashboard");
   };
 
-  if (authState === "loading") return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, color: COLORS.accent, fontFamily: mono }}>Loading...</div>;
-  if (authState === "login") return <LoginScreen onLogin={handleLogin} />;
-  if (authState === "changePassword" && pendingPw) return <PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} />;
+  if (authState === "loading") return <ThemeContext.Provider value={activeTheme}><div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: activeTheme.bg, color: activeTheme.accent, fontFamily: mono }}>Loading...</div></ThemeContext.Provider>;
+  if (authState === "login") return <ThemeContext.Provider value={activeTheme}><LoginScreen onLogin={handleLogin} /></ThemeContext.Provider>;
+  if (authState === "changePassword" && pendingPw) return <ThemeContext.Provider value={activeTheme}><PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} /></ThemeContext.Provider>;
 
-  const globalStyle = `input:focus, textarea:focus, select:focus { border-color: ${COLORS.accent} !important; box-shadow: 0 0 0 2px ${COLORS.accentDim}; } button:hover:not(:disabled) { filter: brightness(1.15); }`;
+  const globalStyle = `input:focus, textarea:focus, select:focus { border-color: ${activeTheme.accent} !important; box-shadow: 0 0 0 2px ${activeTheme.accentDim}; } button:hover:not(:disabled) { filter: brightness(1.15); }`;
 
-  return <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, fontFamily: font, color: COLORS.text }}>
-    <style>{globalStyle}</style>
-    <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} />
-    <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
-      {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
-      {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
-      {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
-      {page === "traceability" && <TraceabilityView requirements={requirements} testCases={testCases} />}
-      {page === "kb" && <KbView kbEntries={kbEntries} refresh={loadData} />}
-      {page === "users" && <UserManagementView currentUser={currentUser} refreshAll={loadData} />}
-      {page === "jama" && <JamaView testCases={testCases} requirements={requirements} currentUser={currentUser} />}
-      {page === "mcp" && <McpSettingsView currentUser={currentUser} />}
-      {page === "deferred" && <DeferredView />}
-      {page === "settings" && <SettingsView currentUser={currentUser} />}
-    </main>
-  </div>;
+  return <ThemeContext.Provider value={activeTheme}>
+    <div style={{ display: "flex", minHeight: "100vh", background: activeTheme.bg, fontFamily: font, color: activeTheme.text }}>
+      <style>{globalStyle}</style>
+      <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
+      <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
+        {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
+        {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
+        {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
+        {page === "traceability" && <TraceabilityView requirements={requirements} testCases={testCases} />}
+        {page === "kb" && <KbView kbEntries={kbEntries} refresh={loadData} />}
+        {page === "users" && <UserManagementView currentUser={currentUser} refreshAll={loadData} />}
+        {page === "jama" && <JamaView testCases={testCases} requirements={requirements} currentUser={currentUser} />}
+        {page === "mcp" && <McpSettingsView currentUser={currentUser} />}
+        {page === "deferred" && <DeferredView />}
+        {page === "settings" && <SettingsView currentUser={currentUser} />}
+      </main>
+    </div>
+  </ThemeContext.Provider>;
 }
