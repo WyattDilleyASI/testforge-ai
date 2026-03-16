@@ -61,7 +61,7 @@ async function createMcpServer(user) {
 
   const server = new _McpServer({
     name: "testforge-ai",
-    version: "1.2.0",
+    version: "1.4.0",
   });
 
   // ════════════════════════════════════════════════════════════════════════
@@ -363,14 +363,19 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         );
       }
 
-      const result = rows.map(kb => ({
-        kb_id: kb.kb_id,
-        title: kb.title,
-        type: kb.type,
-        content: kb.content,
-        tags: JSON.parse(kb.tags || "[]"),
-        usage_count: kb.usage_count,
-      }));
+      const result = rows.map(kb => {
+        const images = JSON.parse(kb.images || "[]");
+        return {
+          kb_id: kb.kb_id,
+          title: kb.title,
+          type: kb.type,
+          content: kb.content,
+          tags: JSON.parse(kb.tags || "[]"),
+          usage_count: kb.usage_count,
+          image_count: images.length,
+          image_names: images.map(img => img.name),
+        };
+      });
 
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
@@ -392,17 +397,28 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       content: z.string().describe("Detailed content of the entry"),
       tags: z.array(z.string()).optional()
         .describe("Requirement IDs to associate with this entry (e.g. ['RS-001', 'TC-003'])"),
+      images: z.array(z.object({
+        name: z.string().describe("Image filename, e.g. 'screenshot.png'"),
+        media_type: z.string().describe("MIME type, e.g. 'image/png', 'image/jpeg'"),
+        data: z.string().describe("Base64-encoded image data"),
+      })).optional().describe("Images to attach to this KB entry (base64-encoded)"),
     },
-    async ({ title, type, content, tags }) => {
+    async ({ title, type, content, tags, images }) => {
       const kbId = nextKbId();
-      getDb().prepare(
-        "INSERT INTO kb_entries (kb_id, title, type, content, tags, created_by) VALUES (?, ?, ?, ?, ?, ?)"
-      ).run(kbId, title, type, content, JSON.stringify(tags || []), `${user.name} (via MCP)`);
+      const imageData = (images || []).map(img => ({
+        name: img.name,
+        media_type: img.media_type,
+        data: img.data,
+      }));
 
-      logAudit(user.name, "KB_CREATED_MCP", `Created KB entry ${kbId}: ${title} (via MCP)`);
+      getDb().prepare(
+        "INSERT INTO kb_entries (kb_id, title, type, content, tags, images, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      ).run(kbId, title, type, content, JSON.stringify(tags || []), JSON.stringify(imageData), `${user.name} (via MCP)`);
+
+      logAudit(user.name, "KB_CREATED_MCP", `Created KB entry ${kbId}: ${title}${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""} (via MCP)`);
 
       return {
-        content: [{ type: "text", text: `✓ Created KB entry ${kbId}: "${title}" [${type}]` }],
+        content: [{ type: "text", text: `✓ Created KB entry ${kbId}: "${title}" [${type}]${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""}` }],
       };
     }
   );
@@ -446,6 +462,284 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
 
       return {
         content: [{ type: "text", text: `✓ Created requirement ${req_id}: "${title}"` }],
+      };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
+  // TOOL: update_requirement
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "update_requirement",
+    "Update an existing requirement's fields. Only provided fields are updated — omitted fields remain unchanged. Use this to refine descriptions, update acceptance criteria, change priority/status, or add tags.",
+    {
+      req_id: z.string().describe("The requirement ID to update, e.g. RS-001"),
+      title: z.string().optional().describe("Updated title"),
+      description: z.string().optional().describe("Updated description"),
+      acceptance_criteria: z.array(z.string()).optional()
+        .describe("Updated acceptance criteria (replaces existing)"),
+      priority: z.enum(["High", "Medium", "Low"]).optional().describe("Updated priority"),
+      status: z.enum(["Draft", "Review", "Approved", "Rejected"]).optional()
+        .describe("Updated status"),
+      module: z.string().optional().describe("Updated module grouping"),
+      tags: z.array(z.string()).optional()
+        .describe("Updated tags (replaces existing)"),
+      rationale: z.string().optional().describe("Updated rationale"),
+      verification_method: z.string().optional().describe("Updated verification method"),
+    },
+    async ({ req_id, title, description, acceptance_criteria, priority, status, module, tags, rationale, verification_method }) => {
+      const db = getDb();
+      const existing = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(req_id);
+      if (!existing) {
+        return { content: [{ type: "text", text: `Requirement '${req_id}' not found.` }] };
+      }
+
+      const updates = [];
+      const fields = {
+        title: title ?? existing.title,
+        description: description ?? existing.description,
+        acceptance_criteria: acceptance_criteria ? JSON.stringify(acceptance_criteria) : existing.acceptance_criteria,
+        priority: priority ?? existing.priority,
+        status: status ?? existing.status,
+        module: module ?? existing.module,
+        tags: tags ? JSON.stringify(tags) : existing.tags,
+        rationale: rationale ?? existing.rationale,
+        verification_method: verification_method ?? existing.verification_method,
+      };
+
+      if (title !== undefined) updates.push("title");
+      if (description !== undefined) updates.push("description");
+      if (acceptance_criteria !== undefined) updates.push("acceptance_criteria");
+      if (priority !== undefined) updates.push("priority");
+      if (status !== undefined) updates.push("status");
+      if (module !== undefined) updates.push("module");
+      if (tags !== undefined) updates.push("tags");
+      if (rationale !== undefined) updates.push("rationale");
+      if (verification_method !== undefined) updates.push("verification_method");
+
+      if (updates.length === 0) {
+        return { content: [{ type: "text", text: `No fields provided to update for ${req_id}.` }] };
+      }
+
+      db.prepare(`
+        UPDATE requirements SET title = ?, description = ?, acceptance_criteria = ?,
+          priority = ?, status = ?, module = ?, tags = ?, rationale = ?,
+          verification_method = ?, updated_at = datetime('now')
+        WHERE req_id = ?
+      `).run(
+        fields.title, fields.description, fields.acceptance_criteria,
+        fields.priority, fields.status, fields.module, fields.tags,
+        fields.rationale, fields.verification_method, req_id
+      );
+
+      logAudit(user.name, "REQ_UPDATED_MCP", `Updated ${req_id}: ${updates.join(", ")} (via MCP)`);
+
+      return {
+        content: [{ type: "text", text: `Updated ${req_id}: ${updates.join(", ")}` }],
+      };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
+  // TOOL: update_test_case
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "update_test_case",
+    "Update an existing test case's fields. Only provided fields are updated — omitted fields remain unchanged. Use this to refine steps, update descriptions, change type, or modify setup conditions. Status is automatically reset to Draft when content changes.",
+    {
+      tc_id: z.string().describe("The test case ID to update, e.g. TC-RS-001-001"),
+      title: z.string().optional().describe("Updated title"),
+      type: z.enum(["Happy Path", "Negative", "Boundary", "Edge Case"]).optional()
+        .describe("Updated test type"),
+      description: z.object({
+        objective: z.string().optional(),
+        scope: z.string().optional(),
+        assumptions: z.array(z.string()).optional(),
+      }).optional().describe("Updated description object"),
+      setup: z.object({
+        preconditions: z.array(z.string()).optional(),
+        environment: z.array(z.string()).optional(),
+        equipment: z.array(z.string()).optional(),
+        testData: z.array(z.string()).optional(),
+      }).optional().describe("Updated setup/preconditions object"),
+      steps: z.array(z.object({
+        step: z.string().describe("Action to perform"),
+        expectedResult: z.string().describe("What should happen"),
+      })).optional().describe("Updated test steps (replaces existing)"),
+      req_attribute: z.string().optional()
+        .describe("Updated acceptance criterion this TC validates"),
+    },
+    async ({ tc_id, title, type, description, setup, steps, req_attribute }) => {
+      const db = getDb();
+      const existing = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(tc_id);
+      if (!existing) {
+        return { content: [{ type: "text", text: `Test case '${tc_id}' not found.` }] };
+      }
+
+      const updates = [];
+      if (title !== undefined) updates.push("title");
+      if (type !== undefined) updates.push("type");
+      if (description !== undefined) updates.push("description");
+      if (setup !== undefined) updates.push("setup");
+      if (steps !== undefined) updates.push("steps");
+      if (req_attribute !== undefined) updates.push("req_attribute");
+
+      if (updates.length === 0) {
+        return { content: [{ type: "text", text: `No fields provided to update for ${tc_id}.` }] };
+      }
+
+      db.prepare(`
+        UPDATE test_cases SET title = ?, type = ?, description = ?,
+          preconditions = ?, steps = ?, req_attribute = ?, status = 'Draft'
+        WHERE tc_id = ?
+      `).run(
+        title ?? existing.title,
+        type ?? existing.type,
+        description ? JSON.stringify(description) : existing.description,
+        setup ? JSON.stringify(setup) : existing.preconditions,
+        steps ? JSON.stringify(steps) : existing.steps,
+        req_attribute ?? existing.req_attribute,
+        tc_id
+      );
+
+      logAudit(user.name, "TC_UPDATED_MCP", `Updated ${tc_id}: ${updates.join(", ")} (via MCP)`);
+
+      return {
+        content: [{ type: "text", text: `Updated ${tc_id}: ${updates.join(", ")} (status reset to Draft)` }],
+      };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
+  // TOOL: update_kb_entry
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "update_kb_entry",
+    "Update an existing knowledge base entry. Only provided fields are updated — omitted fields remain unchanged. Use this to edit content, change tags, update related requirements, or modify the entry type.",
+    {
+      kb_id: z.string().describe("The KB entry ID to update, e.g. KB-E001"),
+      title: z.string().optional().describe("Updated title"),
+      type: z.enum([
+        "Defect History", "System Behavior", "Environment Constraint",
+        "Business Rule", "Test Data Guideline", "UI Reference",
+      ]).optional().describe("Updated category"),
+      content: z.string().optional().describe("Updated content"),
+      tags: z.array(z.string()).optional()
+        .describe("Updated tags (replaces existing)"),
+      related_reqs: z.array(z.string()).optional()
+        .describe("Updated related requirement IDs (replaces existing)"),
+    },
+    async ({ kb_id, title, type, content, tags, related_reqs }) => {
+      const db = getDb();
+      const existing = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
+      if (!existing) {
+        return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
+      }
+
+      const updates = [];
+      if (title !== undefined) updates.push("title");
+      if (type !== undefined) updates.push("type");
+      if (content !== undefined) updates.push("content");
+      if (tags !== undefined) updates.push("tags");
+      if (related_reqs !== undefined) updates.push("related_reqs");
+
+      if (updates.length === 0) {
+        return { content: [{ type: "text", text: `No fields provided to update for ${kb_id}.` }] };
+      }
+
+      db.prepare(`
+        UPDATE kb_entries SET title = ?, type = ?, content = ?, tags = ?, related_reqs = ?
+        WHERE kb_id = ?
+      `).run(
+        title ?? existing.title,
+        type ?? existing.type,
+        content ?? existing.content,
+        tags ? JSON.stringify(tags) : existing.tags,
+        related_reqs ? JSON.stringify(related_reqs) : existing.related_reqs,
+        kb_id
+      );
+
+      logAudit(user.name, "KB_UPDATED_MCP", `Updated ${kb_id}: ${updates.join(", ")} (via MCP)`);
+
+      return {
+        content: [{ type: "text", text: `Updated ${kb_id}: ${updates.join(", ")}` }],
+      };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
+  // TOOL: add_kb_images
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "add_kb_images",
+    "Add one or more images to an existing knowledge base entry. Images are stored as base64-encoded data. Use this to attach screenshots, diagrams, or UI references to KB entries.",
+    {
+      kb_id: z.string().describe("The KB entry ID to add images to, e.g. KB-E001"),
+      images: z.array(z.object({
+        name: z.string().describe("Image filename, e.g. 'screenshot.png'"),
+        media_type: z.string().describe("MIME type, e.g. 'image/png', 'image/jpeg'"),
+        data: z.string().describe("Base64-encoded image data"),
+      })).min(1).describe("Images to add (base64-encoded)"),
+    },
+    async ({ kb_id, images }) => {
+      const db = getDb();
+      const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
+      if (!entry) {
+        return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
+      }
+
+      const existing = JSON.parse(entry.images || "[]");
+      const newImages = images.map(img => ({
+        name: img.name,
+        media_type: img.media_type,
+        data: img.data,
+      }));
+
+      const updated = [...existing, ...newImages];
+      db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(updated), kb_id);
+
+      logAudit(user.name, "KB_IMAGE_ADDED_MCP", `Added ${newImages.length} image(s) to ${kb_id} (via MCP)`);
+
+      return {
+        content: [{ type: "text", text: `✓ Added ${newImages.length} image(s) to ${kb_id}. Total images: ${updated.length}` }],
+      };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
+  // TOOL: remove_kb_image
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "remove_kb_image",
+    "Remove an image from a knowledge base entry by its index. Use search_knowledge_base or get the entry first to see available images and their indices.",
+    {
+      kb_id: z.string().describe("The KB entry ID, e.g. KB-E001"),
+      index: z.number().int().min(0).describe("Zero-based index of the image to remove"),
+    },
+    async ({ kb_id, index }) => {
+      const db = getDb();
+      const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
+      if (!entry) {
+        return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
+      }
+
+      const images = JSON.parse(entry.images || "[]");
+      if (index < 0 || index >= images.length) {
+        return { content: [{ type: "text", text: `Invalid image index ${index}. Entry has ${images.length} image(s) (indices 0-${images.length - 1}).` }] };
+      }
+
+      const removed = images.splice(index, 1);
+      db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(images), kb_id);
+
+      logAudit(user.name, "KB_IMAGE_REMOVED_MCP", `Removed image "${removed[0].name}" from ${kb_id} (via MCP)`);
+
+      return {
+        content: [{ type: "text", text: `✓ Removed image "${removed[0].name}" from ${kb_id}. Remaining images: ${images.length}` }],
       };
     }
   );
