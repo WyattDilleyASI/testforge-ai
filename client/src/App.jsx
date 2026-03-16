@@ -584,6 +584,8 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineError, setRefineError] = useState("");
   const [refineCopyState, setRefineCopyState] = useState("idle");
+  const [tcSelectMode, setTcSelectMode] = useState(false);
+  const [selectedTcIds, setSelectedTcIds] = useState(new Set());
 
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
@@ -666,6 +668,10 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     catch (err) { alert(`Failed: ${err.message}`); }
   };
 
+  const toggleTcSelect = (tcId) => setSelectedTcIds(prev => { const next = new Set(prev); next.has(tcId) ? next.delete(tcId) : next.add(tcId); return next; });
+  const selectAllTcs = () => setSelectedTcIds(prev => prev.size === visibleTcs.length ? new Set() : new Set(visibleTcs.map(tc => tc.tc_id)));
+  const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); setTcSelectMode(false); setSelectedTcIds(new Set()); };
+
   const doDocImport = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -681,10 +687,16 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   return <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
     <div style={{ flex: 1, minWidth: 0 }}>
     <div style={{ marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
+      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>{testCases.length} test cases{tcSelectMode && selectedTcIds.size > 0 ? ` · ${selectedTcIds.size} selected` : ""}</p></div>
       <div style={{ display: "flex", gap: 8 }}>
         <Button variant="secondary" small onClick={() => { setShowHtmlImport(v => !v); setHtmlImportResult(null); setHtmlImportError(""); }}>Import from JAMA DOC</Button>
-        <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>
+        {!tcSelectMode && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>}
+        {!tcSelectMode && testCases.length > 0 && <Button variant="secondary" small onClick={() => { setTcSelectMode(true); setSelectedTcIds(new Set()); }}>Select</Button>}
+        {tcSelectMode && <>
+          <Button variant="secondary" small onClick={selectAllTcs}>{selectedTcIds.size === visibleTcs.length ? "Deselect All" : "Select All"}</Button>
+          <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
+          <Button variant="ghost" small onClick={() => { setTcSelectMode(false); setSelectedTcIds(new Set()); }}>Cancel</Button>
+        </>}
         {rejectedCount > 0 && <Button variant="danger" small onClick={clearRejected}>Delete Rejected ({rejectedCount})</Button>}
         <Button variant="danger" small onClick={clearAll} disabled={testCases.length === 0 || clearing}>{clearing ? "Clearing..." : "Clear All"}</Button>
       </div>
@@ -770,8 +782,9 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     </div>}
     {visibleTcs.length === 0 ? <EmptyState icon="◨" title="No Test Cases" subtitle="Generate drafts above" /> : <>
       {visibleTcs.some(isUnreviewed) && <DraftDisclaimer style={{ marginBottom: 16 }} />}
-      {visibleTcs.map(tc => <Card key={tc.tc_id} style={{ marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }} onClick={() => setExpandedTc(expandedTc === tc.tc_id ? null : tc.tc_id)}>
+      {visibleTcs.map(tc => <Card key={tc.tc_id} style={{ marginBottom: 10, border: tcSelectMode && selectedTcIds.has(tc.tc_id) ? `1px solid ${COLORS.accent}` : undefined }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }} onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : setExpandedTc(expandedTc === tc.tc_id ? null : tc.tc_id)}>
+          {tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
           <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}>{tc.tc_id}</span>
           <div style={{ flex: 1, cursor: "pointer" }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, display: "flex", alignItems: "center", gap: 8 }}>{tc.title}{isUnreviewed(tc) && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 6px", borderRadius: 3, fontWeight: 700, textTransform: "uppercase" }}>Draft</span>}</div>

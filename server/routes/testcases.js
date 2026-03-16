@@ -3,8 +3,22 @@ const multer = require("multer");
 const XLSX = require("xlsx");
 const cheerio = require("cheerio");
 const mammoth = require("mammoth");
+const sharp = require("sharp");
 const { getDb, logAudit, logTokenUsage } = require("../db");
 const { requireAuth } = require("../auth");
+
+const MAX_IMAGE_DIM = 1568; // Claude API max for multi-image requests (safe under 2000px limit)
+
+async function resizeImageIfNeeded(base64Data, mediaType) {
+  const buf = Buffer.from(base64Data, "base64");
+  const metadata = await sharp(buf).metadata();
+  if (metadata.width <= MAX_IMAGE_DIM && metadata.height <= MAX_IMAGE_DIM) return base64Data;
+  const resized = await sharp(buf)
+    .resize({ width: MAX_IMAGE_DIM, height: MAX_IMAGE_DIM, fit: "inside", withoutEnlargement: true })
+    .toFormat(mediaType === "image/png" ? "png" : "jpeg")
+    .toBuffer();
+  return resized.toString("base64");
+}
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -127,14 +141,15 @@ router.post("/generate", requireAuth, async (req, res) => {
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
 
   try {
-    // Build multimodal content: text prompt + any KB images
+    // Build multimodal content: text prompt + any KB images (resized to fit API limits)
     const contentBlocks = [];
     contentBlocks.push({ type: "text", text: prompt });
     for (const img of kbImages) {
+      const resizedData = await resizeImageIfNeeded(img.data, img.media_type);
       contentBlocks.push({ type: "text", text: `\n[KB Image: ${img.kb_id} — ${img.name}]` });
       contentBlocks.push({
         type: "image",
-        source: { type: "base64", media_type: img.media_type, data: img.data },
+        source: { type: "base64", media_type: img.media_type, data: resizedData },
       });
     }
 
@@ -504,10 +519,18 @@ function stripHtmlForXlsx(str) {
     .trim();
 }
 
-// GET /api/testcases/export/xlsx — export all test cases in JAMA xlsx format
+// GET /api/testcases/export/xlsx — export test cases in JAMA xlsx format (optionally filtered by ?ids=TC-001,TC-002)
 router.get("/export/xlsx", requireAuth, (req, res) => {
   const db = getDb();
-  const testCases = db.prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+  let testCases;
+  if (req.query.ids) {
+    const ids = req.query.ids.split(",").map(id => id.trim()).filter(Boolean);
+    if (ids.length === 0) return res.status(400).json({ error: "No valid IDs provided" });
+    const placeholders = ids.map(() => "?").join(",");
+    testCases = db.prepare(`SELECT * FROM test_cases WHERE tc_id IN (${placeholders}) ORDER BY rowid`).all(...ids);
+  } else {
+    testCases = db.prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+  }
   const requirements = db.prepare("SELECT * FROM requirements").all();
   const reqMap = {};
   for (const r of requirements) reqMap[r.req_id] = r;

@@ -52,9 +52,10 @@ export const api = {
   refinePrompt: (tcId, feedback) => request(`/testcases/${tcId}/refine-prompt`, { method: "POST", body: { feedback } }),
   clearTestCases: () => request("/testcases", { method: "DELETE" }),
   clearRejectedTestCases: () => request("/testcases/rejected", { method: "DELETE" }),
-  exportTestCasesXlsx: () => {
+  exportTestCasesXlsx: (tcIds) => {
     const a = document.createElement("a");
-    a.href = `${BASE}/testcases/export/xlsx`;
+    const params = tcIds && tcIds.length > 0 ? `?ids=${tcIds.join(",")}` : "";
+    a.href = `${BASE}/testcases/export/xlsx${params}`;
     a.download = "";
     document.body.appendChild(a);
     a.click();
