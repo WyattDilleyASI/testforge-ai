@@ -146,6 +146,11 @@ function initialize() {
       input_tokens INTEGER NOT NULL DEFAULT 0,
       output_tokens INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT ''
+    );
   `);
 
   // Migration: add project_id column if missing (for existing DBs)
@@ -253,7 +258,23 @@ function logTokenUsage(userName, reqId, inputTokens, outputTokens) {
   getDb().prepare("INSERT INTO token_usage (user_name, req_id, input_tokens, output_tokens) VALUES (?, ?, ?, ?)").run(userName, reqId || null, inputTokens, outputTokens);
 }
 
+function getSetting(key) {
+  const row = getDb().prepare("SELECT value FROM app_settings WHERE key = ?").get(key);
+  return row ? row.value : "";
+}
+
+function setSetting(key, value) {
+  getDb().prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+}
+
+function getProductContext() {
+  return {
+    product_context: getSetting("product_context"),
+    key_terms: getSetting("key_terms"),
+  };
+}
+
 module.exports = {
   getDb, initialize, logAudit, logTokenUsage, generateOtp, nextUserId, nextKbId,
-  getMcpSettings, getMcpSettingById, getMcpEnabledServers
+  getMcpSettings, getMcpSettingById, getMcpEnabledServers, getSetting, setSetting, getProductContext
 };

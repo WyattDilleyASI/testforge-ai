@@ -35,8 +35,50 @@ router.get("/", requireAuth, (req, res) => {
   })));
 });
 
+// ─── Focus area definitions ─────────────────────────────────────────────────
+const FOCUS_PROMPTS = {
+  safety_critical: `SAFETY-CRITICAL FOCUS:
+- Perform failure mode analysis: for each function described in the requirement, identify what happens if it fails, produces incorrect output, or executes at the wrong time.
+- Generate test cases that verify safe states are reached after failures — the system must fail gracefully.
+- Every test case must trace directly to a specific acceptance criterion or safety requirement.
+- Include worst-case scenario tests: what is the most dangerous possible outcome if this requirement is not met?
+- Add verify-before-proceed steps: confirm preconditions are actually met before executing the main action.
+- Expected results must include specific safety-relevant observable outcomes (e.g., "system enters fault state within 100ms", not "system handles error").`,
+
+  ui_ux_validation: `UI/UX VALIDATION FOCUS:
+- Reference specific UI elements by name (buttons, fields, dialogs, screens) as described in the requirement or visible in attached KB images.
+- Validate complete user flows end-to-end: navigation → input → action → feedback → resulting state.
+- Test visual state changes: loading indicators, success/error messages, disabled/enabled states, focus behavior.
+- Verify accessibility considerations: keyboard navigation, screen reader compatibility, color contrast where applicable.
+- Include tests for responsive or degraded UI states if the requirement implies multi-device or multi-resolution support.
+- Expected results should describe what the user sees and experiences, not just backend state.`,
+
+  boundary_analysis: `BOUNDARY ANALYSIS FOCUS:
+- Identify every input, parameter, or configurable value mentioned in the requirement and test at its boundaries.
+- For numeric values: test minimum, maximum, one below minimum, one above maximum, zero, negative (if applicable).
+- For string/text inputs: test empty string, single character, maximum length, one over maximum length, special characters.
+- For collections/lists: test empty, single item, maximum items, one over maximum.
+- For time-based values: test at zero, at timeout threshold, just before and just after deadlines.
+- Each boundary test case must specify the exact input value being tested and the expected outcome at that boundary.`,
+
+  error_recovery: `ERROR RECOVERY FOCUS:
+- For each operation in the requirement, generate tests that verify behavior when that operation fails partway through.
+- Test graceful degradation: what functionality remains when a dependency is unavailable?
+- Verify error messages are specific, actionable, and user-appropriate (not stack traces or generic "error occurred").
+- Test retry and rollback behavior: if an operation fails, can it be retried? Is state consistent after failure?
+- Test timeout handling: what happens when operations take longer than expected?
+- Include tests for concurrent failure scenarios if the requirement involves multiple interacting components.`,
+
+  regression: `REGRESSION FOCUS:
+- Carefully review the Defect History and Lessons Learned entries in the Knowledge Base context below.
+- For each past defect, generate at least one test case that would specifically detect that defect if it were reintroduced.
+- Focus on the root cause of each defect, not just the symptom — test the underlying condition that led to the failure.
+- If KB entries describe workarounds that were applied, test that the proper fix works without the workaround.
+- Pay special attention to integration points and edge cases mentioned in past defect reports.`,
+};
+
 // ─── Shared prompt builder ──────────────────────────────────────────────────
-function buildPrompt(db, reqId, depth) {
+function buildPrompt(db, reqId, depth, focuses = []) {
   const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
   if (!requirement) return null;
 
@@ -60,9 +102,29 @@ function buildPrompt(db, reqId, depth) {
     contextStr = reqContext.map(c => `  - ${c.field}: ${c.items.join(", ")}`).join("\n");
   }
 
-  const prompt = `You are a senior QA engineer generating software test case DRAFTS in JAMA format. These are starting points for engineer review — not finished test coverage.
+  // Build system prompt — constant instructions + active focus areas
+  const focusSections = focuses
+    .filter(f => FOCUS_PROMPTS[f])
+    .map(f => FOCUS_PROMPTS[f])
+    .join("\n\n");
 
-REQUIREMENT:
+  const systemPrompt = `You are a senior QA engineer generating software test case drafts in JAMA format. These are starting points for engineer review — not finished test coverage.
+
+QUALITY STANDARDS:
+- Each test step must be independently actionable by a manual tester with no prior knowledge of the system.
+- Expected results must be objectively verifiable — specific and measurable, not vague (e.g., "displays error code E-201 within 2 seconds" not "works correctly").
+- Steps should reference specific UI elements, fields, API endpoints, or system components mentioned in the requirement.
+- Each acceptance criterion in the requirement MUST have at least one test case that validates it. Set reqAttribute to the specific criterion being tested.
+- Every test case must validate something distinct — no duplicate coverage across test cases.
+
+ANTI-PATTERNS TO AVOID:
+- Do NOT generate generic test cases that could apply to any requirement — every test must be specific to THIS requirement.
+- Do NOT restate the requirement description as a test step.
+- Do NOT use vague expected results like "system behaves as expected" or "works correctly".
+- Do NOT include setup steps that are already covered in preconditions.
+${focusSections ? `\n${focusSections}` : ""}`;
+
+  const prompt = `REQUIREMENT:
 - ID: ${requirement.req_id}
 - Title: ${requirement.title}
 - Description: ${requirement.description || "N/A"}
@@ -78,10 +140,15 @@ REQUIREMENT:
 ${contextStr ? `- Requirement Context:\n${contextStr}` : ""}
 
 ${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT (entries matching this requirement by tag or direct relation):\n${allKb.map(kb => {
-    const imgCount = JSON.parse(kb.images || "[]").length;
-    const kbTags = JSON.parse(kb.tags || "[]");
-    const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
-    return `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}${kbTags.length > 0 ? ` [Tags: ${kbTags.join(", ")}]` : ""}${kbRelReqs.length > 0 ? ` [Related Reqs: ${kbRelReqs.join(", ")}]` : ""}${imgCount > 0 ? ` [${imgCount} UI reference image(s) attached below]` : ""}`;
+    const images = JSON.parse(kb.images || "[]");
+    const describedImages = images.filter(img => img.description);
+    const undescribedCount = images.filter(img => !img.description).length;
+    let entry = `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`;
+    if (describedImages.length > 0) {
+      entry += `\n  UI References:\n${describedImages.map(img => `    [${img.name}]\n${img.description.split("\n").map(l => `    ${l}`).join("\n")}`).join("\n")}`;
+    }
+    if (undescribedCount > 0) entry += `\n  [${undescribedCount} additional image(s) attached below]`;
+    return entry;
   }).join("\n")}` : ""}
 
 GENERATION DEPTH: ${depth || "standard"}
@@ -100,28 +167,30 @@ ${allKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this t
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
-  // Collect KB images only from matched entries
+  // Only send raw images that don't have text descriptions (fallback for undescribed images)
   const kbImages = [];
   for (const kb of allKb) {
     const images = JSON.parse(kb.images || "[]");
     for (const img of images) {
-      kbImages.push({ kb_id: kb.kb_id, name: img.name, media_type: img.media_type, data: img.data });
+      if (!img.description) {
+        kbImages.push({ kb_id: kb.kb_id, name: img.name, media_type: img.media_type, data: img.data });
+      }
     }
   }
 
-  return { prompt, requirement, allKb, kbImages };
+  return { prompt, systemPrompt, requirement, allKb, kbImages };
 }
 
 // POST /api/testcases/generate — call Claude API server-side
 router.post("/generate", requireAuth, async (req, res) => {
-  const { reqId, depth } = req.body;
+  const { reqId, depth, focuses } = req.body;
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
   const db = getDb();
-  const result = buildPrompt(db, reqId, depth);
+  const result = buildPrompt(db, reqId, depth, focuses || []);
   if (!result) return res.status(404).json({ error: "Requirement not found" });
 
-  const { prompt, requirement, allKb, kbImages } = result;
+  const { prompt, systemPrompt, requirement, allKb, kbImages } = result;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
@@ -149,6 +218,7 @@ router.post("/generate", requireAuth, async (req, res) => {
       body: JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
         max_tokens: 4000,
+        system: systemPrompt,
         messages: [{ role: "user", content: kbImages.length > 0 ? contentBlocks : prompt }],
       }),
     });
@@ -221,17 +291,19 @@ router.post("/generate", requireAuth, async (req, res) => {
 
 // GET /api/testcases/prompt — build and return the generation prompt without calling Claude
 router.get("/prompt", requireAuth, (req, res) => {
-  const { reqId, depth } = req.query;
+  const { reqId, depth, focuses } = req.query;
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
+  const focusArray = focuses ? focuses.split(",").filter(Boolean) : [];
   const db = getDb();
-  const result = buildPrompt(db, reqId, depth);
+  const result = buildPrompt(db, reqId, depth, focusArray);
   if (!result) return res.status(404).json({ error: "Requirement not found" });
 
   const imageNote = result.kbImages.length > 0
     ? `\n\n--- NOTE: ${result.kbImages.length} KB image(s) are attached to this generation context (${result.kbImages.map(i => `${i.kb_id}: ${i.name}`).join(", ")}). When using Copy Prompt with Claude.ai, attach these images manually from the Knowledge Base for best results. ---`
     : "";
-  res.json({ prompt: result.prompt + imageNote, reqId, depth: depth || "standard", imageCount: result.kbImages.length });
+  const fullPrompt = `${result.systemPrompt}\n\n---\n\n${result.prompt}${imageNote}`;
+  res.json({ prompt: fullPrompt, reqId, depth: depth || "standard", imageCount: result.kbImages.length });
 });
 
 // POST /api/testcases/import — save pre-generated TC JSON from Claude.ai (no API key needed)

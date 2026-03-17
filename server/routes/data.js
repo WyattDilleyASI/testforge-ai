@@ -1,7 +1,60 @@
 const express = require("express");
 const multer = require("multer");
-const { getDb, logAudit, nextKbId } = require("../db");
+const sharp = require("sharp");
+const { getDb, logAudit, nextKbId, getProductContext, setSetting } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
+
+const IMAGE_DESCRIBE_PROMPT = `Describe this UI screenshot in a structured format for a QA engineer writing test cases. Be concise but thorough.
+
+Screen: [Name of the screen or dialog]
+Purpose: [What this screen is used for, in one sentence]
+Key Elements:
+- [Element name]: [Type (button, field, dropdown, table, etc.)] — [Current state or behavior]
+Navigation: [How a user reaches this screen, and where they can go from here]
+Notable States: [Any visible states, selections, errors, disabled elements, or data shown]`;
+
+const MAX_DESCRIBE_DIM = 1568;
+
+async function describeImage(base64Data, mediaType) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
+  // Resize if needed
+  const buf = Buffer.from(base64Data, "base64");
+  const metadata = await sharp(buf).metadata();
+  let imgData = base64Data;
+  if (metadata.width > MAX_DESCRIBE_DIM || metadata.height > MAX_DESCRIBE_DIM) {
+    const resized = await sharp(buf)
+      .resize({ width: MAX_DESCRIBE_DIM, height: MAX_DESCRIBE_DIM, fit: "inside", withoutEnlargement: true })
+      .toFormat(mediaType === "image/png" ? "png" : "jpeg")
+      .toBuffer();
+    imgData = resized.toString("base64");
+  }
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: IMAGE_DESCRIBE_PROMPT },
+          { type: "image", source: { type: "base64", media_type: mediaType, data: imgData } },
+        ],
+      }],
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) return null;
+  return data.content?.map(c => c.text || "").join("") || null;
+}
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -33,8 +86,8 @@ router.post("/kb", requireAuth, (req, res) => {
   res.json({ ok: true, kb_id: kbId });
 });
 
-// POST /api/kb/:kbId/images — upload images to a KB entry
-router.post("/kb/:kbId/images", requireAuth, upload.array("images", 10), (req, res) => {
+// POST /api/kb/:kbId/images — upload images to a KB entry, auto-generate descriptions
+router.post("/kb/:kbId/images", requireAuth, upload.array("images", 10), async (req, res) => {
   if (!req.files || req.files.length === 0) return res.status(400).json({ error: "No images uploaded" });
 
   const db = getDb();
@@ -46,13 +99,24 @@ router.post("/kb/:kbId/images", requireAuth, upload.array("images", 10), (req, r
     name: f.originalname,
     media_type: f.mimetype,
     data: f.buffer.toString("base64"),
+    description: null,
   }));
+
+  // Auto-generate descriptions in parallel
+  const describeResults = await Promise.allSettled(
+    newImages.map(img => describeImage(img.data, img.media_type))
+  );
+  for (let i = 0; i < newImages.length; i++) {
+    if (describeResults[i].status === "fulfilled" && describeResults[i].value) {
+      newImages[i].description = describeResults[i].value;
+    }
+  }
 
   const updated = [...existing, ...newImages];
   db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(updated), req.params.kbId);
 
   logAudit(req.session.name, "KB_IMAGE_ADDED", `Added ${newImages.length} image(s) to ${req.params.kbId}`);
-  res.json({ ok: true, imageCount: updated.length });
+  res.json({ ok: true, imageCount: updated.length, images: updated.map(img => ({ name: img.name, description: img.description || null })) });
 });
 
 // DELETE /api/kb/:kbId/images/:index — remove an image from a KB entry
@@ -70,6 +134,47 @@ router.delete("/kb/:kbId/images/:index", requireAuth, (req, res) => {
 
   logAudit(req.session.name, "KB_IMAGE_REMOVED", `Removed image "${removed[0].name}" from ${req.params.kbId}`);
   res.json({ ok: true, imageCount: images.length });
+});
+
+// PUT /api/kb/:kbId/images/:index/description — edit an image description
+router.put("/kb/:kbId/images/:index/description", requireAuth, (req, res) => {
+  const { description } = req.body;
+  if (typeof description !== "string") return res.status(400).json({ error: "description is required" });
+
+  const db = getDb();
+  const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
+  if (!entry) return res.status(404).json({ error: "KB entry not found" });
+
+  const images = JSON.parse(entry.images || "[]");
+  const idx = parseInt(req.params.index);
+  if (idx < 0 || idx >= images.length) return res.status(400).json({ error: "Invalid image index" });
+
+  images[idx].description = description;
+  db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(images), req.params.kbId);
+
+  logAudit(req.session.name, "KB_IMAGE_DESC_EDITED", `Edited description for image ${idx} in ${req.params.kbId}`);
+  res.json({ ok: true });
+});
+
+// POST /api/kb/:kbId/images/:index/describe — regenerate an image description via Claude
+router.post("/kb/:kbId/images/:index/describe", requireAuth, async (req, res) => {
+  const db = getDb();
+  const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
+  if (!entry) return res.status(404).json({ error: "KB entry not found" });
+
+  const images = JSON.parse(entry.images || "[]");
+  const idx = parseInt(req.params.index);
+  if (idx < 0 || idx >= images.length) return res.status(400).json({ error: "Invalid image index" });
+
+  const img = images[idx];
+  const description = await describeImage(img.data, img.media_type);
+  if (!description) return res.status(500).json({ error: "Failed to generate description. Check ANTHROPIC_API_KEY." });
+
+  images[idx].description = description;
+  db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(images), req.params.kbId);
+
+  logAudit(req.session.name, "KB_IMAGE_DESC_GENERATED", `Regenerated description for image ${idx} in ${req.params.kbId}`);
+  res.json({ ok: true, description });
 });
 
 // PUT /api/kb/:kbId — update KB entry tags and/or related requirements

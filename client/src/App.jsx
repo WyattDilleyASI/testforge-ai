@@ -564,6 +564,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const COLORS = useTheme();
   const [selectedReqId, setSelectedReqId] = useState("");
   const [depth, setDepth] = useState("standard");
+  const [focuses, setFocuses] = useState(new Set());
   const [generating, setGenerating] = useState(false);
   const [expandedTc, setExpandedTc] = useState(null);
   const [apiError, setApiError] = useState(null);
@@ -590,11 +591,14 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
 
+  const toggleFocus = (f) => setFocuses(prev => { const next = new Set(prev); next.has(f) ? next.delete(f) : next.add(f); return next; });
+  const focusArray = [...focuses];
+
   const generate = async () => {
     if (!selectedReqId) return;
     setGenerating(true); setApiError(null);
     try {
-      const newTcs = await api.generateTestCases(selectedReqId, depth);
+      const newTcs = await api.generateTestCases(selectedReqId, depth, focusArray);
       setSessionTcIds(newTcs.map(tc => tc.tc_id));
       setViewMode("session");
       refresh();
@@ -631,7 +635,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     if (!selectedReqId) return;
     setCopyState("copying");
     try {
-      const data = await api.getPrompt(selectedReqId, depth);
+      const data = await api.getPrompt(selectedReqId, depth, focusArray);
       await navigator.clipboard.writeText(data.prompt);
       setCopyState("copied");
       setTimeout(() => setCopyState("idle"), 2000);
@@ -721,6 +725,26 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
         <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} style={{ minWidth: 280 }} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
         <Select label="Depth" value={depth} onChange={setDepth} style={{ minWidth: 180 }} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
         <Button onClick={generate} disabled={!selectedReqId || generating}>{generating ? "Generating..." : "Generate Drafts"}</Button>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Test Focus</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {[
+            { key: "safety_critical", label: "Safety Critical" },
+            { key: "ui_ux_validation", label: "UI/UX Validation" },
+            { key: "boundary_analysis", label: "Boundary Analysis" },
+            { key: "error_recovery", label: "Error Recovery" },
+            { key: "regression", label: "Regression" },
+          ].map(f => {
+            const active = focuses.has(f.key);
+            return <span key={f.key} onClick={() => toggleFocus(f.key)} style={{
+              padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, cursor: "pointer", userSelect: "none",
+              background: active ? COLORS.accentDim : COLORS.surface,
+              color: active ? COLORS.accent : COLORS.textMuted,
+              border: `1px solid ${active ? COLORS.accent + "66" : COLORS.border}`,
+            }}>{f.label}</span>;
+          })}
+        </div>
       </div>
       {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
       {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
@@ -911,6 +935,11 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
   const [editingTags, setEditingTags] = useState(null); // kb_id being edited
   const [tagInput, setTagInput] = useState("");
   const [editingReqs, setEditingReqs] = useState(null); // kb_id for related reqs editing
+  const [editingDesc, setEditingDesc] = useState(null); // { kbId, index }
+  const [descDraft, setDescDraft] = useState("");
+  const [descSaving, setDescSaving] = useState(false);
+  const [descRegenerating, setDescRegenerating] = useState(null); // "kbId-index"
+  const [expandedDescs, setExpandedDescs] = useState(new Set()); // "kbId-index" keys
 
   const save = async () => {
     setError("");
@@ -993,6 +1022,26 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
     } catch (err) { setError(err.message); }
   };
 
+  const saveImageDescription = async (kbId, index) => {
+    setDescSaving(true);
+    try {
+      await api.updateImageDescription(kbId, index, descDraft);
+      setEditingDesc(null); setDescDraft("");
+      refresh();
+    } catch (err) { setError(err.message); }
+    setDescSaving(false);
+  };
+
+  const regenerateDescription = async (kbId, index) => {
+    const key = `${kbId}-${index}`;
+    setDescRegenerating(key);
+    try {
+      await api.regenerateImageDescription(kbId, index);
+      refresh();
+    } catch (err) { setError(err.message); }
+    setDescRegenerating(null);
+  };
+
   const removeRelatedReq = async (kbId, reqId) => {
     const entry = kbEntries.find(e => e.kb_id === kbId);
     if (!entry) return;
@@ -1065,21 +1114,55 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>{e.title}</div>
           <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>{e.content}</div>
-          {(e.images || []).length > 0 && <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            {e.images.map((img, i) => <div key={i} style={{ position: "relative", display: "inline-block" }}>
-              <img
-                src={`data:${img.media_type};base64,${img.data}`}
-                alt={img.name}
-                style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}
-                onClick={() => setPreviewImg(img)}
-                title={img.name}
-              />
-              <button
-                onClick={() => handleDeleteImage(e.kb_id, i)}
-                style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: COLORS.red || "#ef4444", color: "#fff", border: "none", cursor: "pointer", fontSize: 10, lineHeight: "18px", padding: 0, fontWeight: 700 }}
-                title="Remove image"
-              >&times;</button>
-            </div>)}
+          {(e.images || []).length > 0 && <div style={{ marginTop: 10 }}>
+            {e.images.map((img, i) => {
+              const isEditing = editingDesc && editingDesc.kbId === e.kb_id && editingDesc.index === i;
+              const regenKey = `${e.kb_id}-${i}`;
+              return <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, padding: 8, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <img
+                    src={`data:${img.media_type};base64,${img.data}`}
+                    alt={img.name}
+                    style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}
+                    onClick={() => setPreviewImg(img)}
+                    title={img.name}
+                  />
+                  <button
+                    onClick={() => handleDeleteImage(e.kb_id, i)}
+                    style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: COLORS.red || "#ef4444", color: "#fff", border: "none", cursor: "pointer", fontSize: 10, lineHeight: "18px", padding: 0, fontWeight: 700 }}
+                    title="Remove image"
+                  >&times;</button>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, marginBottom: 4 }}>{img.name}</div>
+                  {isEditing ? <div>
+                    <textarea
+                      value={descDraft}
+                      onChange={ev => setDescDraft(ev.target.value)}
+                      style={{ width: "100%", minHeight: 80, fontSize: 11, fontFamily: mono, padding: 8, background: COLORS.surfaceRaised, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 4, resize: "vertical", boxSizing: "border-box" }}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                      <Button small onClick={() => saveImageDescription(e.kb_id, i)} disabled={descSaving}>{descSaving ? "Saving..." : "Save"}</Button>
+                      <Button small variant="ghost" onClick={() => { setEditingDesc(null); setDescDraft(""); }}>Cancel</Button>
+                    </div>
+                  </div> : <div>
+                    {img.description ? <>
+                      <div onClick={() => setExpandedDescs(prev => { const next = new Set(prev); next.has(regenKey) ? next.delete(regenKey) : next.add(regenKey); return next; })} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", fontWeight: 600, userSelect: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ display: "inline-block", transform: expandedDescs.has(regenKey) ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>&#9654;</span>
+                        Description
+                      </div>
+                      {expandedDescs.has(regenKey) && <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.5, whiteSpace: "pre-wrap", marginTop: 4, paddingLeft: 14 }}>{img.description}</div>}
+                    </> : <div style={{ fontSize: 11, color: COLORS.textMuted, fontStyle: "italic" }}>No description generated</div>}
+                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                      <span onClick={() => { setEditingDesc({ kbId: e.kb_id, index: i }); setDescDraft(img.description || ""); }} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", fontWeight: 600 }}>Edit</span>
+                      <span onClick={() => regenerateDescription(e.kb_id, i)} style={{ fontSize: 10, color: COLORS.purple, cursor: descRegenerating === regenKey ? "not-allowed" : "pointer", fontWeight: 600, opacity: descRegenerating === regenKey ? 0.5 : 1 }}>
+                        {descRegenerating === regenKey ? "Generating..." : img.description ? "Regenerate" : "Generate Description"}
+                      </span>
+                    </div>
+                  </div>}
+                </div>
+              </div>;
+            })}
           </div>}
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
             <Badge color="purple">{e.type}</Badge>
