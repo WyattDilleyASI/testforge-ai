@@ -251,25 +251,15 @@ const PasswordChangeScreen = ({ userId, userName, isOtp, onComplete }) => {
 };
 
 // ─── NAVIGATION ─────────────────────────────────────────────────────────────
-//
-// Replace your existing NAV_ITEMS array and Sidebar component with these.
-// Changes:
-//   1. "MCP Servers" now has  adminOnly: true  — hidden for non-Admins
-//   2. Removed the duplicate "Settings & MCP" entry
-//   3. Sidebar .filter() skips adminOnly items for non-Admin users
-//
 
 const NAV_ITEMS = [
-  { key: "dashboard", label: "Coverage Dashboard", icon: "◫", reqs: "RS-007" },
-  { key: "requirements", label: "Requirements", icon: "◧", reqs: "RS-001 – RS-006" },
-  { key: "testcases", label: "Test Cases", icon: "◨", reqs: "TC-001 – TC-009" },
-  { key: "traceability", label: "Traceability Matrix", icon: "◩", reqs: "TC-007" },
-  { key: "kb", label: "Knowledge Base", icon: "◪", reqs: "KB-001 – KB-006" },
-  { key: "users", label: "User Management", icon: "◯", reqs: "UM-001 – UM-009" },
-  { key: "jama", label: "Jama Connect", icon: "◭", reqs: "JM-001 – JM-009" },
-  { key: "mcp", label: "MCP Servers", icon: "◆", reqs: "Admin Config", adminOnly: true },
-  { key: "deferred", label: "Deferred to v2", icon: "◬", reqs: "AL-xxx · KB-007" },
-  { key: "settings", label: "Settings & MCP", icon: "⚙", reqs: "MCP", adminOnly: true },
+  { key: "dashboard",     label: "Coverage Dashboard",   icon: "◫", reqs: "RS-007" },
+  { key: "requirements",  label: "Requirements",         icon: "◧", reqs: "RS-001 – RS-006" },
+  { key: "testcases",     label: "Test Cases",           icon: "◨", reqs: "TC-001 – TC-009" },
+  { key: "traceability",  label: "Traceability Matrix",  icon: "◩", reqs: "TC-007" },
+  { key: "kb",            label: "Knowledge Base",       icon: "◪", reqs: "KB-001 – KB-006" },
+  { key: "settings",      label: "Settings",             icon: "⚙", reqs: "UM · JM · MCP" },
+  { key: "deferred",      label: "Deferred to v2",       icon: "◬", reqs: "AL-xxx · KB-007" },
 ];
 
 const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentTheme, onThemeChange }) => {
@@ -1282,7 +1272,7 @@ const DeferredView = () => { const COLORS = useTheme(); return <div>
 
 // ─── SETTINGS & MCP ─────────────────────────────────────────────────────────
 
-const SettingsView = ({ currentUser }) => {
+const McpTokensView = ({ currentUser }) => {
   const COLORS = useTheme();
   const [tokens, setTokens] = useState([]);
   const [tokenName, setTokenName] = useState("");
@@ -1903,7 +1893,7 @@ Paste the URL above and add the Authorization header.`,
 
 // ─── MCP SERVER SETTINGS ────────────────────────────────────────────────────
 
-const McpSettingsView = ({ currentUser }) => {
+const McpServerConfigView = ({ currentUser }) => {
   const COLORS = useTheme();
   const [servers, setServers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -2162,6 +2152,268 @@ const McpSettingsView = ({ currentUser }) => {
   );
 };
 
+// ─── SETTINGS (Unified wrapper) ─────────────────────────────────────────────
+//
+// Replaces the old standalone UsersView, JamaView, and SettingsView (MCP)
+// nav items with a single Settings page containing a vertical sub-nav.
+//
+// Sub-sections:
+//   - User Preferences  → All authenticated users (Themes, Language)
+//   - User Management   → Admin only (existing UsersView code)
+//   - MCP Server Setup  → Admin only (existing MCP SettingsView code)
+//   - Jama Connect      → Admin only (existing JamaView code)
+//
+// Props expected:
+//   currentUser, currentTheme, onThemeChange,
+//   + any props the child views need (requirements, testCases, kbEntries, etc.)
+//
+
+const SETTINGS_SECTIONS = [
+  { key: "preferences", label: "User Preferences", icon: "◎", adminOnly: false },
+  { key: "users",       label: "User Management",  icon: "◯", adminOnly: true },
+  { key: "mcp",         label: "MCP Server Setup",  icon: "◆", adminOnly: true },
+  { key: "jama",        label: "Jama Connect",      icon: "◭", adminOnly: true },
+];
+
+const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requirements, testCases, kbEntries }) => {
+  const COLORS = useTheme();
+  const [activeSection, setActiveSection] = useState("preferences");
+  const isAdmin = currentUser.role === "Admin";
+
+  // Filter sections by role
+  const visibleSections = SETTINGS_SECTIONS.filter(s => !s.adminOnly || isAdmin);
+
+  // If the active section becomes hidden (e.g. role change), reset to preferences
+  useEffect(() => {
+    if (!visibleSections.find(s => s.key === activeSection)) {
+      setActiveSection("preferences");
+    }
+  }, [isAdmin, activeSection]);
+
+  // ── Sub-nav renderer ──────────────────────────────────────────────────
+
+  const SubNav = () => (
+    <div style={{
+      width: 200,
+      minWidth: 200,
+      borderRight: `1px solid ${COLORS.border}`,
+      padding: "12px 8px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 2,
+    }}>
+      <div style={{
+        fontSize: 11,
+        fontWeight: 600,
+        color: COLORS.textMuted,
+        textTransform: "uppercase",
+        letterSpacing: "0.06em",
+        padding: "8px 12px 12px",
+        fontFamily: mono,
+      }}>
+        Settings
+      </div>
+
+      {visibleSections.map(section => {
+        const isActive = activeSection === section.key;
+        return (
+          <button
+            key={section.key}
+            onClick={() => setActiveSection(section.key)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 12px",
+              borderRadius: 7,
+              border: "none",
+              cursor: "pointer",
+              textAlign: "left",
+              fontFamily: font,
+              fontSize: 13,
+              fontWeight: isActive ? 600 : 400,
+              color: isActive ? COLORS.accent : COLORS.text,
+              background: isActive ? COLORS.accentDim : "transparent",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => {
+              if (!isActive) e.currentTarget.style.background = COLORS.hover;
+            }}
+            onMouseLeave={e => {
+              if (!isActive) e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <span style={{ fontSize: 14, opacity: isActive ? 1 : 0.5, width: 20, textAlign: "center" }}>
+              {section.icon}
+            </span>
+            <span>{section.label}</span>
+            {section.adminOnly && (
+              <span style={{
+                marginLeft: "auto",
+                fontSize: 9,
+                fontFamily: mono,
+                color: COLORS.amber,
+                background: COLORS.amberDim,
+                padding: "1px 6px",
+                borderRadius: 4,
+                fontWeight: 600,
+              }}>
+                ADMIN
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // ── Panel renderer ────────────────────────────────────────────────────
+
+  const renderPanel = () => {
+    switch (activeSection) {
+      case "preferences":
+        return (
+          <UserPreferencesPanel
+            currentTheme={currentTheme}
+            onThemeChange={onThemeChange}
+          />
+        );
+      case "users":
+        return <UserManagementView currentUser={currentUser} />;
+      case "mcp":
+        return <McpTokensView currentUser={currentUser} />;
+      case "jama":
+        return (
+          <JamaView
+            currentUser={currentUser}
+            requirements={requirements}
+            testCases={testCases}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  // ── Layout ────────────────────────────────────────────────────────────
+
+  return (
+    <div style={{
+      display: "flex",
+      height: "100%",
+      minHeight: "calc(100vh - 60px)",
+    }}>
+      <SubNav />
+      <div style={{
+        flex: 1,
+        padding: 24,
+        overflowY: "auto",
+      }}>
+        {renderPanel()}
+      </div>
+    </div>
+  );
+};
+
+
+// ─── USER PREFERENCES PANEL ─────────────────────────────────────────────────
+//
+// Visible to all users. Contains Themes and Language (placeholder).
+//
+
+const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
+  const COLORS = useTheme();
+
+  return (
+    <div>
+      {/* ── Themes ── */}
+      <div style={{ marginBottom: 28 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>
+          User Preferences
+        </h2>
+        <p style={{
+          fontSize: 12,
+          color: COLORS.textMuted,
+          margin: "6px 0 0",
+          fontFamily: mono,
+        }}>
+          Personalization settings
+        </p>
+      </div>
+
+      <Card>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>
+          Theme
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+          Choose your preferred interface appearance.
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {Object.entries(THEMES).map(([key, t]) => (
+            <button
+              key={key}
+              onClick={() => onThemeChange(key)}
+              style={{
+                padding: "14px 16px",
+                borderRadius: 8,
+                border: `1.5px solid ${currentTheme === key ? COLORS.accent : COLORS.border}`,
+                background: currentTheme === key ? COLORS.accentDim : COLORS.surface,
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "all 0.15s ease",
+                minWidth: 120,
+              }}
+            >
+              <div style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: currentTheme === key ? COLORS.accent : COLORS.textBright,
+                marginBottom: 4,
+              }}>
+                {t.emoji} {t.name}
+              </div>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* ── Language (placeholder) ── */}
+      <Card style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>
+          Language
+        </div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+          Interface language preference.
+        </div>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 16px",
+          background: COLORS.bg,
+          borderRadius: 8,
+          border: `1px solid ${COLORS.border}`,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>
+            English (US)
+          </span>
+          <span style={{
+            marginLeft: "auto",
+            fontSize: 10,
+            fontFamily: mono,
+            color: COLORS.textMuted,
+            background: COLORS.surface,
+            padding: "2px 8px",
+            borderRadius: 4,
+          }}>
+            ONLY AVAILABLE LANGUAGE
+          </span>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -2235,11 +2487,8 @@ export default function App() {
         {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
         {page === "traceability" && <TraceabilityView requirements={requirements} testCases={testCases} />}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
-        {page === "users" && <UserManagementView currentUser={currentUser} refreshAll={loadData} />}
-        {page === "jama" && <JamaView testCases={testCases} requirements={requirements} currentUser={currentUser} />}
-        {page === "mcp" && <McpSettingsView currentUser={currentUser} />}
         {page === "deferred" && <DeferredView />}
-        {page === "settings" && <SettingsView currentUser={currentUser} />}
+        {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
       </main>
     </div>
   </ThemeContext.Provider>;
