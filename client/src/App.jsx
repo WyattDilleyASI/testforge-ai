@@ -151,7 +151,80 @@ hyperdrive: {
   _cycleSpeed: "0.4s",
   _hyperdriveBg: true,
 },
-  
+
+// ── SOLARIZED ───────────────────────────────────────────────────────────────
+// The classic developer color scheme. Warm, muted tones with a dark blue-gray base. Very easy on the eyes for long sessions.
+solarized: {
+  name: "Solarized Dark", emoji: "🔆",
+  bg: "#002B36", surface: "#073642", surfaceRaised: "#0A3F4C",
+  border: "#586E75", text: "#839496", textMuted: "#657B83",
+  textBright: "#FDF6E3", accent: "#268BD2", accentDim: "rgba(38,139,210,0.12)",
+  accentGlow: "rgba(38,139,210,0.25)", green: "#859900", greenDim: "rgba(133,153,0,0.12)",
+  red: "#DC322F", redDim: "rgba(220,50,47,0.12)", amber: "#B58900",
+  amberDim: "rgba(181,137,0,0.12)", purple: "#6C71C4", purpleDim: "rgba(108,113,196,0.12)",
+  hover: "rgba(38,139,210,0.06)",
+},
+
+// ── CATPPUCCIN ───────────────────────────────────────────────────────────────
+// A pastel-toned dark theme that's gotten very popular. Cozy and soft without being a light theme.
+catppuccin: {
+  name: "Catppuccin", emoji: "🐱",
+  bg: "#1E1E2E", surface: "#242437", surfaceRaised: "#313244",
+  border: "#45475A", text: "#CDD6F4", textMuted: "#7F849C",
+  textBright: "#F5E0DC", accent: "#CBA6F7", accentDim: "rgba(203,166,247,0.12)",
+  accentGlow: "rgba(203,166,247,0.25)", green: "#A6E3A1", greenDim: "rgba(166,227,161,0.12)",
+  red: "#F38BA8", redDim: "rgba(243,139,168,0.12)", amber: "#F9E2AF",
+  amberDim: "rgba(249,226,175,0.12)", purple: "#B4BEFE", purpleDim: "rgba(180,190,254,0.12)",
+  hover: "rgba(203,166,247,0.06)",
+},
+
+// ── KONAMI ───────────────────────────────────────────────────────────────
+// Typing ↑↑↓↓←→←→BA fliprs the UI upside down.
+konami: {
+  name: "Classified", emoji: "🔓",
+  _hidden: true,
+  _upsideDown: true,
+  bg: "#0C0C0C", surface: "#1A1A1A", surfaceRaised: "#222222",
+  border: "#FF0000", text: "#FF3333", textMuted: "#993333",
+  textBright: "#FFFFFF", accent: "#FF0000", accentDim: "rgba(255,0,0,0.12)",
+  accentGlow: "rgba(255,0,0,0.30)", green: "#FF0000", greenDim: "rgba(255,0,0,0.12)",
+  red: "#FF0000", redDim: "rgba(255,0,0,0.12)", amber: "#FF3300",
+  amberDim: "rgba(255,51,0,0.12)", purple: "#FF0066", purpleDim: "rgba(255,0,102,0.12)",
+  hover: "rgba(255,0,0,0.06)",
+},
+
+// ── AFTERDARK ───────────────────────────────────────────────────────────────
+// Typing "afterdark" → starfield background.
+afterdark: {
+  name: "After Dark", emoji: "🌌",
+  _hidden: true,
+  _starfield: true,
+  bg: "#000008", surface: "#080816", surfaceRaised: "#101024",
+  border: "#1E1E3A", text: "#A0A0CC", textMuted: "#6060AA",
+  textBright: "#E0E0FF", accent: "#FFD700", accentDim: "rgba(255,215,0,0.12)",
+  accentGlow: "rgba(255,215,0,0.25)", green: "#66FF66", greenDim: "rgba(102,255,102,0.12)",
+  red: "#FF6666", redDim: "rgba(255,102,102,0.12)", amber: "#FFD700",
+  amberDim: "rgba(255,215,0,0.12)", purple: "#CC88FF", purpleDim: "rgba(204,136,255,0.12)",
+  hover: "rgba(255,215,0,0.06)",
+},
+
+// ── MATRIX ───────────────────────────────────────────────────────────────
+// Type "matrix" → falling green characters.
+matrix: {
+  name: "Matrix", emoji: "💊",
+  _hidden: true,
+  _matrixRain: true,
+  bg: "#000800", surface: "#001200", surfaceRaised: "#001A00",
+  border: "#003300", text: "#00CC00", textMuted: "#008800",
+  textBright: "#00FF41", accent: "#00FF41", accentDim: "rgba(0,255,65,0.12)",
+  accentGlow: "rgba(0,255,65,0.30)", green: "#00FF41", greenDim: "rgba(0,255,65,0.12)",
+  red: "#FF0000", redDim: "rgba(255,0,0,0.12)", amber: "#00FF41",
+  amberDim: "rgba(0,255,65,0.12)", purple: "#00CC00", purpleDim: "rgba(0,204,0,0.12)",
+  hover: "rgba(0,255,65,0.06)",
+},
+
+
+
 };
 
 const ThemeContext = createContext(THEMES.midnight);
@@ -622,6 +695,215 @@ const RequirementsView = ({ requirements, refresh, currentUser }) => {
       </Card>;
     })}
   </div>;
+};
+
+const EasterEggToast = ({ message, onDone }) => {
+  const T = useTheme();
+  useEffect(() => {
+    const timer = setTimeout(onDone, 4000);
+    return () => clearTimeout(timer);
+  }, [onDone]);
+
+  return (
+    <div style={{
+      position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)",
+      zIndex: 99999, padding: "12px 24px", borderRadius: 8,
+      background: T.accent, color: T.bg, fontFamily: font,
+      fontSize: 14, fontWeight: 700, boxShadow: `0 4px 24px ${T.accentGlow}`,
+      animation: "toastIn 0.3s ease-out",
+    }}>
+      {message}
+      <style>{`
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+const EasterEggResetButton = ({ onReset }) => {
+  const T = useTheme();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <button
+      onClick={onReset}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: "fixed",
+        bottom: 20,
+        right: 20,
+        zIndex: 99999,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "10px 18px",
+        borderRadius: 8,
+        border: `1px solid ${T.accent}66`,
+        background: hovered ? T.accent : T.surface,
+        color: hovered ? T.bg : T.textBright,
+        fontFamily: font,
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: "pointer",
+        boxShadow: `0 4px 16px rgba(0,0,0,0.4), 0 0 12px ${T.accentGlow}`,
+        transition: "all 0.2s ease",
+        // Flip it back upright if the UI is upside down
+        ...(T._upsideDown ? { transform: "rotate(180deg)" } : {}),
+      }}
+    >
+      <span style={{ fontSize: 16 }}>↩️</span>
+      <span>Reset Theme</span>
+      <span style={{
+        fontSize: 10,
+        fontFamily: mono,
+        opacity: 0.7,
+        padding: "2px 6px",
+        background: hovered ? `${T.bg}33` : `${T.accent}22`,
+        borderRadius: 4,
+      }}>
+        ESC
+      </span>
+    </button>
+  );
+};
+
+const StarfieldCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    const stars = [];
+    const STAR_COUNT = 200;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    // Initialize stars at random positions with depth
+    for (let i = 0; i < STAR_COUNT; i++) {
+      stars.push({
+        x: Math.random() * canvas.width - canvas.width / 2,
+        y: Math.random() * canvas.height - canvas.height / 2,
+        z: Math.random() * canvas.width,
+      });
+    }
+
+    const draw = () => {
+      ctx.fillStyle = "rgba(0, 0, 8, 0.15)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      for (const star of stars) {
+        star.z -= 1.5;
+        if (star.z <= 0) {
+          star.x = Math.random() * canvas.width - cx;
+          star.y = Math.random() * canvas.height - cy;
+          star.z = canvas.width;
+        }
+        const sx = (star.x / star.z) * cx + cx;
+        const sy = (star.y / star.z) * cy + cy;
+        const r = Math.max(0, (1 - star.z / canvas.width) * 2.5);
+        const brightness = Math.max(0, (1 - star.z / canvas.width));
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
+        ctx.fill();
+      }
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+const MatrixRainCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    const fontSize = 14;
+    const chars = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF";
+    let columns, drops;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      columns = Math.floor(canvas.width / fontSize);
+      drops = new Array(columns).fill(1);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const draw = () => {
+      ctx.fillStyle = "rgba(0, 8, 0, 0.05)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#00FF41";
+      ctx.font = `${fontSize}px monospace`;
+
+      for (let i = 0; i < columns; i++) {
+        const char = chars[Math.floor(Math.random() * chars.length)];
+        const x = i * fontSize;
+        const y = drops[i] * fontSize;
+
+        // Bright head character
+        ctx.fillStyle = "#AAFFAA";
+        ctx.fillText(char, x, y);
+
+        // Dimmer trail
+        ctx.fillStyle = "#00FF41";
+        if (y > fontSize) {
+          const trailChar = chars[Math.floor(Math.random() * chars.length)];
+          ctx.globalAlpha = 0.6;
+          ctx.fillText(trailChar, x, y - fontSize);
+          ctx.globalAlpha = 1.0;
+        }
+
+        if (y > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i]++;
+      }
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
 };
 
 // ─── TEST CASES ─────────────────────────────────────────────────────────────
@@ -2425,7 +2707,7 @@ const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
           Choose your preferred interface appearance.
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {Object.entries(THEMES).map(([key, t]) => (
+         {Object.entries(THEMES).filter(([, t]) => !t._hidden).map(([key, t]) => (
             <button
               key={key}
               onClick={() => onThemeChange(key)}
@@ -2506,10 +2788,56 @@ export default function App() {
 
   const activeTheme = THEMES[themeName] || THEMES.midnight;
 
+  const [easterEggToast, setEasterEggToast] = useState(null);
+  const [preEasterEggTheme, setPreEasterEggTheme] = useState(null);
+
   const handleThemeChange = (key) => {
     setThemeName(key);
     localStorage.setItem("tf-theme", key);
   };
+
+  // Easter egg keyboard listener
+useEffect(() => {
+  let buffer = "";
+  const KONAMI = "ArrowUpArrowUpArrowDownArrowDownArrowLeftArrowRightArrowLeftArrowRightba";
+  const TRIGGERS = {
+    afterdark: { theme: "afterdark", message: "🌌 After Dark activated — enjoy the stars" },
+    matrix:    { theme: "matrix",    message: "💊 You took the red pill..." },
+  };
+
+  const handleKey = (e) => {
+    // Escape key resets to previous theme
+    if (e.key === "Escape" && preEasterEggTheme) {
+      handleThemeChange(preEasterEggTheme);
+      setPreEasterEggTheme(null);
+      setEasterEggToast("↩️ Theme restored");
+      return;
+    }
+
+    buffer += e.key;
+
+    if (buffer.endsWith(KONAMI)) {
+      if (!activeTheme._hidden) setPreEasterEggTheme(themeName);
+      handleThemeChange("konami");
+      setEasterEggToast("🔓 CLASSIFIED — Konami Code accepted");
+      buffer = "";
+      return;
+    }
+    for (const [trigger, config] of Object.entries(TRIGGERS)) {
+      if (buffer.toLowerCase().endsWith(trigger)) {
+        if (!activeTheme._hidden) setPreEasterEggTheme(themeName);
+        handleThemeChange(config.theme);
+        setEasterEggToast(config.message);
+        buffer = "";
+        return;
+      }
+    }
+    if (buffer.length > 100) buffer = buffer.slice(-50);
+  };
+
+  window.addEventListener("keydown", handleKey);
+  return () => window.removeEventListener("keydown", handleKey);
+}, [preEasterEggTheme, themeName, activeTheme._hidden]);
 
   const loadData = useCallback(async () => {
     try { setRequirements(await api.getRequirements()); }
@@ -2552,42 +2880,68 @@ export default function App() {
   if (authState === "changePassword" && pendingPw) return <ThemeContext.Provider value={activeTheme}><PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} /></ThemeContext.Provider>;
 
   const isCycling = !!activeTheme._cycleSpeed;
-const isAero = activeTheme._aero || false;
+  const isAero = activeTheme._aero || false;
 
-const globalStyle = `
-  input:focus, textarea:focus, select:focus {
-    border-color: ${activeTheme.accent} !important;
-    box-shadow: 0 0 0 2px ${activeTheme.accentDim};
-  }
-  button:hover:not(:disabled) { filter: brightness(1.15); }
+  const globalStyle = `
+    input:focus, textarea:focus, select:focus {
+      border-color: ${activeTheme.accent} !important;
+      box-shadow: 0 0 0 2px ${activeTheme.accentDim};
+    }
+    button:hover:not(:disabled) { filter: brightness(1.15); }
 
-  ${isCycling ? `
-  @keyframes chromawave {
-    0%   { filter: hue-rotate(0deg); }
-    100% { filter: hue-rotate(360deg); }
-  }
-  ` : ""}
+    ${isCycling ? `
+    @keyframes chromawave {
+      0%   { filter: hue-rotate(0deg); }
+      100% { filter: hue-rotate(360deg); }
+    }
+    @keyframes hyperdriveBg {
+      0%   { background-color: #FF0044; }
+      16%  { background-color: #FF8800; }
+      33%  { background-color: #FFFF00; }
+      50%  { background-color: #00FF66; }
+      66%  { background-color: #0088FF; }
+      83%  { background-color: #AA00FF; }
+      100% { background-color: #FF0044; }
+    }
+    ` : ""}
 
-  ${isAero ? `
-  @keyframes aeroShimmer {
-    0%   { background-position: 0% 50%; }
-    50%  { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-  }
-  ` : ""}
-`;
+    ${isAero ? `
+    @keyframes aeroShimmer {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
+  `;
 
   return <ThemeContext.Provider value={activeTheme}>
-    <div style={{display: "flex", minHeight: "100vh", background: activeTheme.bg, fontFamily: font, color: activeTheme.text,
-  // Chromawave: rotate hue across the entire UI
-  ...(isCycling ? {
-  animation: `chromawave ${activeTheme._cycleSpeed} linear infinite${activeTheme._hyperdriveBg ? `, hyperdriveBg ${activeTheme._cycleSpeed} linear infinite` : ""}`,
+    <div style={{
+      display: "flex",
+      minHeight: "100vh",
+      background: activeTheme.bg,
+      fontFamily: font,
+      color: activeTheme.text,
+      ...(isCycling ? {
+        animation: `chromawave ${activeTheme._cycleSpeed} linear infinite${activeTheme._hyperdriveBg ? `, hyperdriveBg ${activeTheme._cycleSpeed} linear infinite` : ""}`,
       } : {}),
-  // Frutiger Aero: slow-moving gradient background
-  ...(isAero ? {background: "linear-gradient(135deg, #E8F4FD 0%, #D5F0E8 35%, #EAF0FA 70%, #F0F8FF 100%)",backgroundSize: "200% 200%",
-    animation: "aeroShimmer 12s ease-in-out infinite",} : {}),
-}}>
+      ...(isAero ? {
+        background: "linear-gradient(135deg, #E8F4FD 0%, #D5F0E8 35%, #EAF0FA 70%, #F0F8FF 100%)",
+        backgroundSize: "200% 200%",
+        animation: "aeroShimmer 12s ease-in-out infinite",
+      } : {}),
+      ...(activeTheme._upsideDown ? {
+        transform: "rotate(180deg)",
+      } : {}),
+    }}>
       <style>{globalStyle}</style>
+      {activeTheme._starfield && <StarfieldCanvas />}
+      {activeTheme._matrixRain && <MatrixRainCanvas />}
+      {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
+      {activeTheme._hidden && <EasterEggResetButton onReset={() => {
+        handleThemeChange(preEasterEggTheme || "midnight");
+        setPreEasterEggTheme(null);
+        setEasterEggToast("↩️ Theme restored");
+      }} />}
       <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
       <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
@@ -2597,7 +2951,7 @@ const globalStyle = `
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
-    </main>
+      </main>
     </div>
   </ThemeContext.Provider>;
 }
