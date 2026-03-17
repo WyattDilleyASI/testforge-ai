@@ -10,6 +10,7 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-change-this-in-production}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+      - SERVER_ENCRYPTION_KEY=${SERVER_ENCRYPTION_KEY}
     volumes:
       - testforge-data:/app/data
     restart: unless-stopped
