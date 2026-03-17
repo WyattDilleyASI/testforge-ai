@@ -1,25 +1,74 @@
-# ◈ TestForge AI — Test Creation Tool v1.2
+# ◈ TestForge AI — AI-Powered Test Case Generation Tool
 
-AI-powered test case generation with full requirement traceability, built to the FRD v1.2 specification.
+**v1.2** — Accelerating QA through intelligent automation with full requirement traceability.
 
+TestForge AI ingests requirements, leverages a Knowledge Base of historical defects and business rules, and generates structured draft test cases via the Claude API — giving QA engineers a starting point, not a finished product. Every generated test case traces back to specific requirement IDs, ensuring complete coverage visibility from ingestion through export.
 
-## Quick Start
+---
 
-## Branch Strategy
-    Merge into Branch ***
-    After Review we will merge into main-stg
+## Table of Contents
 
-### Option A: Run Directly (Node.js)
+- [Quick Start (Docker)](#quick-start-docker)
+- [Alternative: Run Directly (Node.js)](#alternative-run-directly-nodejs)
+- [Default Credentials](#default-credentials)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Core Capabilities](#core-capabilities)
+- [Authentication & RBAC](#authentication--rbac)
+- [MCP Integration](#mcp-integration)
+- [API Reference](#api-reference)
+- [FRD Traceability](#frd-traceability)
+- [Security](#security)
+- [Development](#development)
+- [Remote Access & Production Hardening](#remote-access--production-hardening)
+
+---
+
+## Quick Start (Docker)
+
+Docker is the recommended way to run TestForge. The entire stack — Express API, React SPA, and SQLite — runs in a single container with a persistent named volume for data.
 
 ```bash
-# 1. Clone/download and enter the directory
+# 1. Clone the repository
+git clone https://github.com/<your-org>/testforge-ai.git
 cd testforge-ai
 
-# 2. Copy and configure environment
+# 2. Configure environment
 cp .env.example .env
 # Edit .env — add your ANTHROPIC_API_KEY, SESSION_SECRET, and SERVER_ENCRYPTION_KEY
 
-# 3. Install everything and build the frontend
+# 3. Build and run
+docker-compose up -d --build
+```
+
+Open **http://localhost:3000** — that's it.
+
+### What Docker gives you
+
+- **Persistent volume** (`testforge-data`) — SQLite database survives container restarts and rebuilds
+- **Environment injection** — API keys and secrets passed via environment variables, never baked into the image
+- **Auto-restart** — `restart: unless-stopped` keeps the service running through host reboots and crashes
+- **Single container** — no database server or reverse proxy required for internal use
+- **Configurable port** — default `3000:3000`, easily placed behind nginx, Traefik, or a cloud load balancer
+
+> **Note:** Docker rebuilds wipe the container filesystem. Because the SQLite database lives on a named volume, your data persists — but MCP tokens stored only in the container's memory context (e.g. active sessions) will reset. Plan accordingly for deployment workflows.
+
+---
+
+## Alternative: Run Directly (Node.js)
+
+If you prefer running without Docker (local development, etc.):
+
+```bash
+# 1. Clone and enter the directory
+git clone https://github.com/<your-org>/testforge-ai.git
+cd testforge-ai
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env — add your ANTHROPIC_API_KEY, SESSION_SECRET, and SERVER_ENCRYPTION_KEY
+
+# 3. Install dependencies and build the frontend
 npm install
 cd client && npm install && npm run build && cd ..
 
@@ -27,53 +76,253 @@ cd client && npm install && npm run build && cd ..
 npm start
 ```
 
-Open **http://localhost:3000** and log in with:
-- Username: `admin`
-- Password: `admin`
-- You will be prompted to change the password on first login.
+Open **http://localhost:3000**.
 
-### Option B: Docker (Recommended for Teams)
+---
+
+## Default Credentials
+
+| Username | Password | Notes |
+|----------|----------|-------|
+| `admin` | `admin` | You will be prompted to change the password on first login |
+
+---
+
+## Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | **Yes** | — | Claude API key for test case generation |
+| `SESSION_SECRET` | **Yes** | dev fallback | Session encryption secret — change in production |
+| `SERVER_ENCRYPTION_KEY` | Recommended | — | AES-256-GCM key for MCP auth token encryption at rest |
+| `PORT` | No | `3000` | Server port |
+| `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Model used for generation |
+| `DB_PATH` | No | `./data/testforge.db` | SQLite database file path |
+
+**Generate an encryption key:**
 
 ```bash
-# 1. Copy and configure environment
-cp .env.example .env
-# Edit .env — add your ANTHROPIC_API_KEY, SESSION_SECRET, and SERVER_ENCRYPTION_KEY
-
-# 2. Build and run
-docker-compose up -d --build
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Open **http://localhost:3000**.
+---
 
 ## Architecture
 
 ```
 testforge-ai/
 ├── server/
-│   ├── index.js          Express server (serves API + static frontend)
-│   ├── db.js             SQLite database layer (schema, seeds, helpers)
-│   ├── auth.js           Authentication middleware (session-based)
-│   ├── crypto.js          AES-256-GCM encryption for MCP auth tokens
+│   ├── index.js            Express server (serves API + static frontend)
+│   ├── db.js               SQLite database layer (schema, seeds, helpers)
+│   ├── auth.js             Authentication middleware (session-based)
+│   ├── crypto.js           AES-256-GCM encryption for MCP auth tokens
+│   ├── mcp.js              MCP server (9 tools for Claude Desktop/Code/Web)
 │   └── routes/
-│       ├── auth.js       Login, logout, password change
-│       ├── users.js      User CRUD, role changes, OTP reset
-│       ├── requirements.js  Requirement ingestion and editing
-│       ├── testcases.js  TC generation via Claude API, status updates
-│       ├── mcp.js        MCP server configuration (Admin only)
-│       └── data.js       Knowledge Base, audit log, Jama export
+│       ├── auth.js         Login, logout, password change
+│       ├── users.js        User CRUD, role changes, OTP reset
+│       ├── requirements.js Requirement ingestion and editing
+│       ├── testcases.js    TC generation via Claude API, status updates
+│       ├── mcp.js          MCP server configuration (Admin only)
+│       └── data.js         Knowledge Base, audit log, Jama export
 ├── client/
 │   ├── src/
-│   │   ├── App.jsx       Full React frontend
-│   │   ├── api.js        API client helper
-│   │   └── main.jsx      Entry point
+│   │   ├── App.jsx         Full React frontend (single-file SPA)
+│   │   ├── api.js          API client helper
+│   │   └── main.jsx        Entry point
 │   ├── index.html
-│   └── vite.config.js    Build config with dev proxy
-├── data/                 SQLite databases (auto-created)
-├── .env.example          Environment template
-├── Dockerfile            Container build
-├── docker-compose.yml    One-command deployment
-└── package.json          Server dependencies
+│   └── vite.config.js      Build config with dev proxy
+├── mcp-bridge.mjs          Stdio-to-SSE bridge for Claude Desktop
+├── data/                   SQLite databases (auto-created)
+├── .env.example            Environment template
+├── Dockerfile              Container build (Node 20 Alpine)
+├── docker-compose.yml      One-command deployment
+└── package.json            Server dependencies
 ```
+
+**Stack:** Node.js/Express · React 18 (Vite) · SQLite (better-sqlite3, WAL mode) · Claude API (`@anthropic-ai/sdk`) · MCP SDK (`@modelcontextprotocol/sdk`) · Docker
+
+---
+
+## Core Capabilities
+
+### Requirement Ingestion (RS-001 – RS-007)
+
+Ingest requirements via plain text, markdown, JSON, CSV, or PDF. The system parses acceptance criteria into individual testable statements and flags ambiguous or untestable requirements for clarification.
+
+### AI Test Case Generation (TC-001 – TC-009)
+
+Select a requirement, choose generation depth (basic / standard / comprehensive), and generate 2–10 draft test cases via the Claude API. Each test case includes a structured ID, title, linked requirement IDs, preconditions, steps, expected results, and pass/fail criteria. All AI-generated test cases are marked **DRAFT** with a disclaimer — engineers review, augment, then approve.
+
+### Knowledge Base–Informed Generation (KB-001 – KB-006)
+
+Tag Knowledge Base entries (defect history, business rules, environment constraints) to requirement IDs. During generation, relevant KB context is injected into the Claude prompt, producing test cases informed by organizational memory.
+
+### Review, Approve & Export (TC-003a, JM-001 – JM-009)
+
+Only reviewed test cases with valid requirement links pass pre-export validation (JM-004) for Jama Connect sync. The export pipeline includes a simulation mode and full audit logging.
+
+---
+
+## Authentication & RBAC
+
+TestForge uses session-based authentication with a three-tier role model:
+
+| Role | Capabilities |
+|------|-------------|
+| **Admin** | Full system access — user management, MCP settings, audit log, all mutations |
+| **QA Manager** | Requirement and test case management, Jama export, KB management |
+| **QA Engineer** | Requirement viewing, test case generation and review, KB viewing |
+
+**Authentication flow:**
+
+1. **Default admin** — `admin` / `admin`, must change password on first login
+2. **New users** — Admin creates account → OTP generated → user signs in → prompted to set own password
+3. **Password reset** — Admin issues a new OTP for any user
+4. **Account lockout** — 5 failed login attempts locks the account (UM-008); Admin unlock required
+5. **Session timeout** — 60-minute session expiry (UM-009)
+
+---
+
+## MCP Integration
+
+TestForge exposes a Model Context Protocol (MCP) server so that **Claude calls TestForge** — no API key management on the client side. Claude Desktop, Claude Code, and Claude Web can interact with requirements, test cases, and the knowledge base directly.
+
+### MCP Tools (9 available)
+
+The MCP server (`server/mcp.js`) exposes tools for listing/searching requirements, listing/creating test cases, managing knowledge base entries, and checking coverage — all scoped to the authenticated user.
+
+### Connecting Claude Desktop
+
+TestForge uses a **stdio-to-SSE bridge** (`mcp-bridge.mjs`) for Claude Desktop compatibility. The full setup flow is managed through the admin UI under **Settings & MCP**:
+
+1. **Download `mcp-bridge.mjs`** from the Settings page (or copy it from the repo root)
+2. **Create an MCP token** — enter a name and the full path to `mcp-bridge.mjs` on your machine
+3. **Install the config** — use the auto-install terminal command (PowerShell/bash) or download the `claude_desktop_config.json` file directly
+4. **Restart Claude Desktop** — fully quit (system tray → Quit), reopen, and verify under Settings → Developer
+
+**Claude Desktop config format (stdio):**
+
+```json
+{
+  "mcpServers": {
+    "testforge": {
+      "command": "node",
+      "args": ["/full/path/to/mcp-bridge.mjs"],
+      "env": {
+        "MCP_TOKEN": "tfmcp_your_token_here",
+        "TESTFORGE_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+### Connecting Claude Code
+
+```bash
+claude mcp add testforge \
+  --transport sse \
+  --url http://localhost:3000/mcp/sse \
+  --header "Authorization: Bearer tfmcp_your_token_here"
+```
+
+### Connecting Claude Web
+
+In Claude.ai → Settings → Connected Apps → Add MCP Server:
+
+```
+URL:     http://localhost:3000/mcp/sse
+Header:  Authorization: Bearer tfmcp_your_token_here
+```
+
+### MCP Access Control
+
+| Role | Permissions |
+|------|------------|
+| Admin | Full CRUD on MCP servers, test connections, toggle enabled/disabled, token management |
+| QA Manager | View configured servers (read-only) |
+| QA Engineer | View configured servers (read-only) |
+
+### Auth Token Encryption
+
+MCP auth tokens are encrypted at rest using AES-256-GCM via `server/crypto.js`. This requires the `SERVER_ENCRYPTION_KEY` environment variable. If the key is not set, tokens are stored unencrypted and a warning is logged.
+
+### Known Considerations
+
+- **Claude Desktop config path varies by install type:** Standard installer uses `%APPDATA%\Claude\`, Windows Store (MSIX) redirects to `%LOCALAPPDATA%\Packages\AnthropicPBC.Claude_<hash>\LocalCache\Roaming\Claude\`. The universal method is Settings → Developer → Edit Config inside Claude Desktop.
+- **Absolute paths are more reliable** than PATH resolution in the MSIX version of Claude Desktop.
+- **Docker rebuilds invalidate MCP tokens** — create new tokens after rebuilding the container if the database volume was not preserved.
+- **The bridge script includes reconnect-with-backoff** (exponential, up to 30 retries) to survive container rebuilds and network interruptions.
+
+---
+
+## API Reference
+
+All endpoints require authentication (session cookie) unless noted.
+
+### Auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/login` | Sign in |
+| `POST` | `/api/auth/change-password` | Set new password |
+| `POST` | `/api/auth/logout` | Sign out |
+| `GET` | `/api/auth/me` | Current session |
+
+### Users (Admin only for mutations)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/users` | List all users |
+| `POST` | `/api/users` | Create user (returns OTP) |
+| `PUT` | `/api/users/:id/role` | Change role |
+| `PUT` | `/api/users/:id/status` | Activate/deactivate |
+| `PUT` | `/api/users/:id/reset-password` | Issue new OTP |
+| `PUT` | `/api/users/:id/unlock` | Reset failed attempts |
+
+### Requirements
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/requirements` | List all |
+| `POST` | `/api/requirements` | Create |
+| `PUT` | `/api/requirements/:reqId` | Update |
+| `DELETE` | `/api/requirements/:reqId` | Delete (Admin/Manager only) |
+
+### Test Cases
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/testcases` | List all |
+| `POST` | `/api/testcases/generate` | Generate via Claude API |
+| `PUT` | `/api/testcases/:tcId/status` | Update status |
+
+### Knowledge Base
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/kb` | List all entries |
+| `POST` | `/api/kb` | Create entry |
+
+### MCP Settings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/mcp/settings` | List all MCP servers (all authenticated users) |
+| `POST` | `/api/mcp/settings` | Add MCP server (Admin only) |
+| `PUT` | `/api/mcp/settings/:id` | Update MCP server (Admin only) |
+| `DELETE` | `/api/mcp/settings/:id` | Remove MCP server (Admin only) |
+| `POST` | `/api/mcp/settings/:id/test` | Test connection (Admin only, 5s timeout) |
+| `PUT` | `/api/mcp/settings/:id/toggle` | Quick enable/disable (Admin only) |
+
+### MCP Transport
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/mcp/sse` | SSE endpoint for MCP connections |
+| `POST` | `/mcp/messages` | JSON-RPC message relay |
+
+### Audit & Jama
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/audit` | Audit log (Admin only) |
+| `GET` | `/api/jama/log` | Export log |
+| `POST` | `/api/jama/export` | Simulate Jama export (Manager+) |
+
+---
 
 ## FRD Traceability
 
@@ -89,127 +338,22 @@ Every feature maps to specific FRD v1.2 requirement IDs:
 | MCP Server Config | Admin Config | Admin-only CRUD, connection testing, token encryption |
 | Deferred (v2) | AL-001 – AL-008, KB-007 | Documented in Deferred view |
 
-## Authentication Flow
+---
 
-1. **Default admin** — `admin` / `admin`, must change password on first login
-2. **New users** — Admin creates account → OTP generated → user signs in → prompted to set own password
-3. **Password reset** — Admin issues new OTP for any user
-4. **Account lockout** — 5 failed attempts locks the account (UM-008)
-5. **Session timeout** — 60 minutes (UM-009)
+## Security
 
-## MCP Server Configuration
+TestForge implements defense-in-depth across every layer:
 
-MCP (Model Context Protocol) server connections are managed through the admin UI and stored in the database. Only Admin users can create, edit, delete, or test MCP server connections. All authenticated users can view the configured servers (read-only).
+- **Password encryption** — bcrypt (cost factor 10); OTPs generated with a 54-character alphanumeric pool; plaintext passwords never stored or logged
+- **Session security** — sessions encrypted with `SESSION_SECRET`, stored server-side in SQLite via `connect-sqlite3`; cookies are `httpOnly` and `sameSite: lax`
+- **Helmet.js headers** — HTTP security headers (X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security, etc.) applied globally
+- **RBAC enforcement** — three-tier role model with server-side middleware checks on every mutation; role escalation prevented at the API layer
+- **Account lockout** — 5 failed login attempts locks the account; Admin unlock required; failed attempts logged to the audit trail
+- **API key isolation** — Anthropic API key stored server-side only, never sent to the browser; all Claude API calls happen on the Express backend
+- **MCP token encryption** — AES-256-GCM at rest via `SERVER_ENCRYPTION_KEY`
+- **Audit trail** — every login, password change, role change, TC generation, MCP config change, and export logged with timestamp, user, action, and status
 
-### Access Control
-
-| Role | Permissions |
-|------|------------|
-| Admin | Full CRUD on MCP servers, test connections, toggle enabled/disabled |
-| QA Manager | View configured servers (read-only) |
-| QA Engineer | View configured servers (read-only) |
-
-### Auth Token Encryption
-
-MCP server auth tokens are encrypted at rest using AES-256-GCM via `server/crypto.js`. This requires a `SERVER_ENCRYPTION_KEY` environment variable. If the key is not set, tokens are stored unencrypted and a warning is logged to the console.
-
-To generate an encryption key:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-### Database Tables
-
-The MCP feature adds two tables to the SQLite database:
-
-- **`mcp_settings`** — Stores server name, URL, auth type, encrypted auth token, enabled state, and metadata
-- **`mcp_tokens`** — Stores per-user MCP access tokens with a foreign key to the users table
-
-Both tables are created automatically on server start via `CREATE TABLE IF NOT EXISTS`.
-
-## API Endpoints
-
-All endpoints require authentication (session cookie) unless noted.
-
-### Auth
-- `POST /api/auth/login` — Sign in
-- `POST /api/auth/change-password` — Set new password
-- `POST /api/auth/logout` — Sign out
-- `GET /api/auth/me` — Current session
-
-### Users (Admin only for mutations)
-- `GET /api/users` — List all users
-- `POST /api/users` — Create user (returns OTP)
-- `PUT /api/users/:id/role` — Change role
-- `PUT /api/users/:id/status` — Activate/deactivate
-- `PUT /api/users/:id/reset-password` — Issue new OTP
-- `PUT /api/users/:id/unlock` — Reset failed attempts
-
-### Requirements
-- `GET /api/requirements` — List all
-- `POST /api/requirements` — Create
-- `PUT /api/requirements/:reqId` — Update
-- `DELETE /api/requirements/:reqId` — Delete (Admin/Manager only)
-
-### Test Cases
-- `GET /api/testcases` — List all
-- `POST /api/testcases/generate` — Generate via Claude API
-- `PUT /api/testcases/:tcId/status` — Update status
-
-### Knowledge Base
-- `GET /api/kb` — List all
-- `POST /api/kb` — Create entry
-
-### MCP Settings
-- `GET /api/mcp/settings` — List all MCP servers (all authenticated users)
-- `POST /api/mcp/settings` — Add MCP server (Admin only)
-- `PUT /api/mcp/settings/:id` — Update MCP server (Admin only)
-- `DELETE /api/mcp/settings/:id` — Remove MCP server (Admin only)
-- `POST /api/mcp/settings/:id/test` — Test connection (Admin only, 5s timeout)
-- `PUT /api/mcp/settings/:id/toggle` — Quick enable/disable (Admin only)
-
-### Audit & Jama
-- `GET /api/audit` — Audit log (Admin only)
-- `GET /api/jama/log` — Export log
-- `POST /api/jama/export` — Simulate Jama export (Manager+)
-
-## Development
-
-```bash
-# Terminal 1: Start server with auto-reload
-npm run dev
-
-# Terminal 2: Start Vite dev server with hot reload
-cd client && npm run dev
-```
-
-The Vite dev server runs on port 5173 and proxies `/api` requests to port 3000.
-
-## Configuration
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | — | Claude API key for TC generation |
-| `SESSION_SECRET` | Yes | dev fallback | Session encryption secret |
-| `SERVER_ENCRYPTION_KEY` | Recommended | — | AES-256-GCM key for MCP auth token encryption at rest. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `PORT` | No | 3000 | Server port |
-| `ANTHROPIC_MODEL` | No | claude-sonnet-4-20250514 | Model for generation |
-| `DB_PATH` | No | ./data/testforge.db | SQLite database path |
-
-## Remote Access
-
-To make TestForge accessible from a remote server:
-
-1. **Firewall** — Open port 3000 (e.g. `sudo ufw allow 3000/tcp`) and configure cloud security groups if applicable
-2. **Reverse proxy (recommended)** — Put Nginx or Caddy in front for SSL/TLS termination and domain handling
-3. **Session security** — Add `secure: true` to the session cookie config in `server/index.js` when behind HTTPS
-4. **CORS** — Lock down `cors({ origin: true })` in `server/index.js` to your specific domain
-5. **Secrets** — Ensure `SESSION_SECRET` and `SERVER_ENCRYPTION_KEY` are strong random values, and that `.env` is never committed
-
-## Audit Trail
-
-All MCP configuration changes are logged to the audit trail with the following action types:
+### Audit Action Types
 
 | Action | Trigger |
 |--------|---------|
@@ -218,3 +362,45 @@ All MCP configuration changes are logged to the audit trail with the following a
 | `MCP_DELETED` | Server removed |
 | `MCP_TEST` | Connection test attempted (logs status or failure) |
 | `MCP_TOGGLED` | Server enabled or disabled |
+
+---
+
+## Development
+
+```bash
+# Terminal 1 — Start the Express server with auto-reload
+npm run dev
+
+# Terminal 2 — Start the Vite dev server with hot reload
+cd client && npm run dev
+```
+
+The Vite dev server runs on port **5173** and proxies `/api` requests to port **3000**.
+
+### Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm start` | Start the production server |
+| `npm run dev` | Start with `--watch` for auto-reload |
+| `npm run build:client` | Install client deps and build the React SPA |
+| `npm run setup` | Full install (server + client + build) |
+
+---
+
+## Remote Access & Production Hardening
+
+To make TestForge accessible from a remote server:
+
+1. **Firewall** — open port 3000 (e.g. `sudo ufw allow 3000/tcp`) and configure cloud security groups if applicable
+2. **Reverse proxy (recommended)** — put Nginx or Caddy in front for SSL/TLS termination and domain handling
+3. **Session security** — add `secure: true` to the session cookie config in `server/index.js` when behind HTTPS
+4. **CORS** — lock down `cors({ origin: true })` in `server/index.js` to your specific domain
+5. **Secrets** — ensure `SESSION_SECRET` and `SERVER_ENCRYPTION_KEY` are strong random values, and that `.env` is never committed
+6. **Default password** — change the `admin` password immediately after first deployment
+
+---
+
+## License
+
+Internal tool — see your organization's licensing policy.
