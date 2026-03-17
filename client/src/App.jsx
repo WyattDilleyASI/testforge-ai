@@ -310,17 +310,6 @@ const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentTheme, onTh
           );
         })}
     </nav>
-    <div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}` }}>
-      <div style={{ fontSize: 9, fontFamily: mono, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Theme</div>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        {Object.entries(THEMES).map(([key, t]) => (
-          <button key={key} onClick={() => onThemeChange(key)} title={t.name} style={{
-            padding: "3px 8px", borderRadius: 4, border: currentTheme === key ? `1px solid ${T.accent}` : `1px solid ${T.border}`,
-            background: currentTheme === key ? T.accentDim : "transparent", cursor: "pointer", fontSize: 12,
-          }}>{t.emoji}</button>
-        ))}
-      </div>
-    </div>
     <div style={{ padding: "10px 16px", borderTop: `1px solid ${T.border}`, fontSize: 10, color: T.textMuted, fontFamily: mono }}>FRD v1.2 — 39 active REQs</div>
   </div>;
 };
@@ -2489,7 +2478,7 @@ export default function App() {
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
-      </main>
+    </main>
     </div>
   </ThemeContext.Provider>;
 }
