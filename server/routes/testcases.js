@@ -43,33 +43,21 @@ function buildPrompt(db, reqId, depth) {
   const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
   const reqContext = JSON.parse(requirement.requirement_context || "[]");
   const tags = JSON.parse(requirement.tags || "[]");
-  const relationships = JSON.parse(requirement.relationships || "[]");
 
-  // Fetch related upstream requirements
-  const relatedReqs = [];
-  for (const rel of relationships) {
-    if (rel.direction === "Upstream" || rel.group === "Requirement") {
-      const related = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(rel.id);
-      if (related) relatedReqs.push(related);
-    }
-  }
-
-  // Fetch ALL KB entries (including images)
-  const allKb = db.prepare("SELECT * FROM kb_entries").all();
+  // Fetch KB entries that share a tag with this requirement or list it in related_reqs
+  const allKbRows = db.prepare("SELECT * FROM kb_entries").all();
+  const allKb = allKbRows.filter(kb => {
+    const kbTags = JSON.parse(kb.tags || "[]");
+    const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
+    const hasMatchingTag = kbTags.some(t => tags.includes(t));
+    const isDirectlyRelated = kbRelReqs.includes(reqId);
+    return hasMatchingTag || isDirectlyRelated;
+  });
 
   // Build requirement context string
   let contextStr = "";
   if (reqContext.length > 0) {
     contextStr = reqContext.map(c => `  - ${c.field}: ${c.items.join(", ")}`).join("\n");
-  }
-
-  // Build related requirements string
-  let relatedStr = "";
-  if (relatedReqs.length > 0) {
-    relatedStr = relatedReqs.map(r => {
-      const rCriteria = JSON.parse(r.acceptance_criteria || "[]");
-      return `  - ${r.req_id}: ${r.title}\n    Description: ${r.description || "N/A"}\n    Priority: ${r.priority}\n    Status: ${r.status}${rCriteria.length > 0 ? `\n    Acceptance Criteria: ${rCriteria.join("; ")}` : ""}`;
-    }).join("\n");
   }
 
   const prompt = `You are a senior QA engineer generating software test case DRAFTS in JAMA format. These are starting points for engineer review — not finished test coverage.
@@ -89,9 +77,7 @@ REQUIREMENT:
 - Tags: ${tags.length > 0 ? tags.join(", ") : "N/A"}
 ${contextStr ? `- Requirement Context:\n${contextStr}` : ""}
 
-${relatedReqs.length > 0 ? `RELATED REQUIREMENTS:\n${relatedStr}` : ""}
-
-${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT:\n${allKb.map(kb => {
+${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT (entries matching this requirement by tag or direct relation):\n${allKb.map(kb => {
     const imgCount = JSON.parse(kb.images || "[]").length;
     const kbTags = JSON.parse(kb.tags || "[]");
     const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
@@ -114,7 +100,7 @@ ${allKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this t
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
-  // Collect all KB images for multimodal API calls
+  // Collect KB images only from matched entries
   const kbImages = [];
   for (const kb of allKb) {
     const images = JSON.parse(kb.images || "[]");
