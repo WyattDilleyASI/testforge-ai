@@ -94,6 +94,64 @@ const THEMES = {
     red: "#BF616A", redDim: "rgba(191,97,106,0.12)", amber: "#EBCB8B",
     amberDim: "rgba(235,203,139,0.12)", purple: "#B48EAD", purpleDim: "rgba(180,142,173,0.12)",
   },
+  // ── LIGHT ────────────────────────────────────────────────────────────────
+  // Clean, professional light theme with soft grays and a blue accent.
+  light: {
+    name: "Light", emoji: "☀️",
+    bg: "#F7F8FA", surface: "#FFFFFF", surfaceRaised: "#FFFFFF",
+    border: "#DDE1E8", text: "#3D4752", textMuted: "#8893A0",
+    textBright: "#111820", accent: "#2563EB", accentDim: "rgba(37,99,235,0.08)",
+    accentGlow: "rgba(37,99,235,0.18)", green: "#16A34A", greenDim: "rgba(22,163,74,0.08)",
+    red: "#DC2626", redDim: "rgba(220,38,38,0.08)", amber: "#D97706",
+   amberDim: "rgba(217,119,6,0.08)", purple: "#7C3AED", purpleDim: "rgba(124,58,237,0.08)",
+    hover: "rgba(37,99,235,0.06)",
+},
+
+// ── FRUTIGER AERO ────────────────────────────────────────────────────────
+// Inspired by the glossy, translucent, nature-infused UI aesthetic of ~2006-2013.
+// Soft sky-blue gradients, glassy surfaces, lush green accents.
+  frutigerAero: {
+    name: "Frutiger Aero", emoji: "🫧",
+    bg: "#E8F4FD", surface: "#F0F8FF", surfaceRaised: "#FFFFFF",
+    border: "#B8D8EC", text: "#2E5062", textMuted: "#6A9BB5",
+    textBright: "#0C2D3F", accent: "#0099DD", accentDim: "rgba(0,153,221,0.10)",
+    accentGlow: "rgba(0,153,221,0.22)", green: "#2EAA4F", greenDim: "rgba(46,170,79,0.10)",
+    red: "#E04848", redDim: "rgba(224,72,72,0.10)", amber: "#E6A817",
+    amberDim: "rgba(230,168,23,0.10)", purple: "#8862D0", purpleDim: "rgba(136,98,208,0.10)",
+    hover: "rgba(0,153,221,0.06)",
+    // Frutiger Aero special flag — used by the Card override below
+    _aero: true,
+},
+
+// ── CHROMAWAVE (color-cycling) ───────────────────────────────────────────
+// Base palette that gets rotated via CSS hue-rotate animation.
+// The flag `_cycling: true` is read by App to inject the animation wrapper.
+chromawave: {
+  name: "Chromawave", emoji: "🌈",
+  bg: "#0D0D1A", surface: "#161625", surfaceRaised: "#1F1F33",
+  border: "#2E2E50", text: "#D0D0F0", textMuted: "#8888BB",
+  textBright: "#F0F0FF", accent: "#FF6EC7", accentDim: "rgba(255,110,199,0.14)",
+  accentGlow: "rgba(255,110,199,0.30)", green: "#7AFF8E", greenDim: "rgba(122,255,142,0.12)",
+  red: "#FF6B6B", redDim: "rgba(255,107,107,0.12)", amber: "#FFD93D",
+  amberDim: "rgba(255,217,61,0.12)", purple: "#B476FF", purpleDim: "rgba(180,118,255,0.12)",
+  hover: "rgba(255,110,199,0.08)",
+  _cycling: "8s",
+},
+
+// ── HYPERDRIVE (fast color-cycling) ───────────────────────────────────────────
+hyperdrive: {
+  name: "Hyperdrive", emoji: "⚡",
+  bg: "#220044", surface: "#330055", surfaceRaised: "#440066",
+  border: "#FF00FF", text: "#FF66FF", textMuted: "#CC33CC",
+  textBright: "#FFFFFF", accent: "#00FF00", accentDim: "rgba(0,255,0,0.18)",
+  accentGlow: "rgba(0,255,0,0.40)", green: "#39FF14", greenDim: "rgba(57,255,20,0.18)",
+  red: "#FF073A", redDim: "rgba(255,7,58,0.18)", amber: "#FFE700",
+  amberDim: "rgba(255,231,0,0.18)", purple: "#BF00FF", purpleDim: "rgba(191,0,255,0.18)",
+  hover: "rgba(0,255,0,0.10)",
+  _cycleSpeed: "0.4s",
+  _hyperdriveBg: true,
+},
+  
 };
 
 const ThemeContext = createContext(THEMES.midnight);
@@ -127,7 +185,36 @@ const Button = ({ variant = "primary", children, onClick, disabled, style, small
   return <button style={{ ...variants[variant], ...style }} onClick={onClick} disabled={disabled}>{children}</button>;
 };
 
-const Card = ({ children, style, glow, ...rest }) => { const T = useTheme(); return <div style={{ background: T.surfaceRaised, border: `1px solid ${glow ? T.accent + "44" : T.border}`, borderRadius: 10, padding: 20, boxShadow: glow ? `0 0 20px ${T.accentGlow}` : "0 2px 8px rgba(0,0,0,0.3)", ...style }} {...rest}>{children}</div>; };
+const Card = ({ children, style, glow, ...rest }) => {
+  const T = useTheme();
+  const isAeroTheme = T._aero || false;
+
+  return (
+    <div
+      style={{
+        background: isAeroTheme
+          ? "rgba(255, 255, 255, 0.55)"
+          : T.surfaceRaised,
+        border: `1px solid ${glow ? T.accent + "44" : T.border}`,
+        borderRadius: 10,
+        padding: 20,
+        boxShadow: glow
+          ? `0 0 20px ${T.accentGlow}`
+          : isAeroTheme
+            ? "0 4px 24px rgba(0, 80, 140, 0.08), inset 0 1px 0 rgba(255,255,255,0.6)"
+            : "0 2px 8px rgba(0,0,0,0.3)",
+        ...(isAeroTheme ? {
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+        } : {}),
+        ...style,
+      }}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+};
 
 const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => {
   const T = useTheme();
@@ -2464,10 +2551,42 @@ export default function App() {
   if (authState === "login") return <ThemeContext.Provider value={activeTheme}><LoginScreen onLogin={handleLogin} /></ThemeContext.Provider>;
   if (authState === "changePassword" && pendingPw) return <ThemeContext.Provider value={activeTheme}><PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} /></ThemeContext.Provider>;
 
-  const globalStyle = `input:focus, textarea:focus, select:focus { border-color: ${activeTheme.accent} !important; box-shadow: 0 0 0 2px ${activeTheme.accentDim}; } button:hover:not(:disabled) { filter: brightness(1.15); }`;
+  const isCycling = !!activeTheme._cycleSpeed;
+const isAero = activeTheme._aero || false;
+
+const globalStyle = `
+  input:focus, textarea:focus, select:focus {
+    border-color: ${activeTheme.accent} !important;
+    box-shadow: 0 0 0 2px ${activeTheme.accentDim};
+  }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+
+  ${isCycling ? `
+  @keyframes chromawave {
+    0%   { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
+  }
+  ` : ""}
+
+  ${isAero ? `
+  @keyframes aeroShimmer {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  ` : ""}
+`;
 
   return <ThemeContext.Provider value={activeTheme}>
-    <div style={{ display: "flex", minHeight: "100vh", background: activeTheme.bg, fontFamily: font, color: activeTheme.text }}>
+    <div style={{display: "flex", minHeight: "100vh", background: activeTheme.bg, fontFamily: font, color: activeTheme.text,
+  // Chromawave: rotate hue across the entire UI
+  ...(isCycling ? {
+  animation: `chromawave ${activeTheme._cycleSpeed} linear infinite${activeTheme._hyperdriveBg ? `, hyperdriveBg ${activeTheme._cycleSpeed} linear infinite` : ""}`,
+      } : {}),
+  // Frutiger Aero: slow-moving gradient background
+  ...(isAero ? {background: "linear-gradient(135deg, #E8F4FD 0%, #D5F0E8 35%, #EAF0FA 70%, #F0F8FF 100%)",backgroundSize: "200% 200%",
+    animation: "aeroShimmer 12s ease-in-out infinite",} : {}),
+}}>
       <style>{globalStyle}</style>
       <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
       <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
