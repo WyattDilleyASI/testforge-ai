@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import * as d3 from "d3";
+import { api } from "./api";
 
 // ─── DATA TRANSFORMER ──────────────────────────────────────────
 
@@ -519,7 +520,7 @@ function zoomFit(svgEl, zoomBehavior, positions, animate = true) {
 // MAIN REACT COMPONENT
 // ═══════════════════════════════════════════════════════════════
 
-export default function SysMLTraceability({ requirements: apiReqs, testCases: apiTcs, useTheme: useThemeFn, Badge, Card, Button, mono, font: fontFamily }) {
+export default function SysMLTraceability({ requirements: apiReqs, testCases: apiTcs, useTheme: useThemeFn, Badge, Card, Button, mono, font: fontFamily, refresh }) {
   const T = useThemeFn();
   const _isLight = isLightTheme(T);
   const themeForD3 = useMemo(() => ({ ...T, _isLight }), [T, _isLight]);
@@ -539,6 +540,8 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   const [viewMode, setViewMode] = useState("full");
   const [viewTarget, setViewTarget] = useState(null);
   const [showTcs, setShowTcs] = useState(true);
+  const [generating, setGenerating] = useState(null); // { reqId, depth } while in progress
+  const [toast, setToast] = useState(null); // { message, isError }
 
   // Transform — includeTestCases controlled by toggle
   const diagramData = useMemo(
@@ -618,6 +621,32 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   useEffect(() => { if (!svgRef.current) return; const hidden = applyCollapse(d3.select(svgRef.current), collapsedEdges, activeRels); if (selectedId && hidden.has(selectedId)) setSelectedId(null); }, [collapsedEdges, activeRels, selectedId]);
   useEffect(() => { const h = () => setContextMenu(null); document.addEventListener("click", h); return () => document.removeEventListener("click", h); }, []);
   useEffect(() => { const h = (e) => { if (e.key === "Escape") { setEditingReq(null); setContextMenu(null); } }; document.addEventListener("keydown", h); return () => document.removeEventListener("keydown", h); }, []);
+
+  // Toast auto-dismiss
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), toast.isError ? 4000 : 2500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  // Generate TCs handler
+  const handleGenerateTCs = useCallback(async (reqId, depth) => {
+    setContextMenu(null);
+    setGenerating({ reqId, depth });
+    setToast(null);
+    try {
+      const newTcs = await api.generateTestCases(reqId, depth);
+      const count = Array.isArray(newTcs) ? newTcs.length : 0;
+      setToast({ message: `✓ Generated ${count} test case${count !== 1 ? "s" : ""} for ${reqId}`, isError: false });
+      if (refresh) await refresh();
+      // Ensure TCs are visible after generation
+      if (!showTcs) setShowTcs(true);
+    } catch (err) {
+      setToast({ message: `✗ Generation failed: ${err.message}`, isError: true });
+    } finally {
+      setGenerating(null);
+    }
+  }, [refresh, showTcs]);
 
   // Family view
   const enterFamilyView = useCallback((rootId) => {
@@ -869,12 +898,44 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
         )}
 
         {/* Context menu */}
-        {contextMenu && (
-          <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 0", minWidth: 210, zIndex: 10000, boxShadow: _isLight ? "0 8px 32px rgba(0,0,0,0.12)" : "0 8px 32px rgba(0,0,0,0.7)" }}>
+        {contextMenu && !contextMenu.req._isTc && (
+          <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 0", minWidth: 230, zIndex: 10000, boxShadow: _isLight ? "0 8px 32px rgba(0,0,0,0.12)" : "0 8px 32px rgba(0,0,0,0.7)" }}>
             <div style={{ padding: "6px 14px 5px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, marginBottom: 3 }}>{contextMenu.req.id}</div>
             <div onClick={() => { enterFamilyView(contextMenu.req.id); setContextMenu(null); }} style={{ padding: "8px 14px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 9 }}>
               <span style={{ fontSize: 14 }}>◈</span> View Requirement Family
             </div>
+            <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
+            <div style={{ padding: "6px 14px 4px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase" }}>Generate Test Cases</div>
+            {[
+              { depth: "basic", label: "Basic", desc: "2–3 TCs" },
+              { depth: "standard", label: "Standard", desc: "4–6 TCs" },
+              { depth: "comprehensive", label: "Comprehensive", desc: "6–10 TCs" },
+            ].map(opt => (
+              <div key={opt.depth}
+                onClick={() => handleGenerateTCs(contextMenu.req.id, opt.depth)}
+                style={{ padding: "7px 14px 7px 28px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 9 }}>
+                <span>◨ {opt.label}</span>
+                <span style={{ fontSize: 10, color: T.textMuted, fontFamily: mono }}>{opt.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Generating overlay */}
+        {generating && (
+          <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 100, display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", background: T.surfaceRaised, border: `1px solid ${T.accent}44`, borderRadius: 8, boxShadow: _isLight ? "0 4px 20px rgba(0,0,0,0.1)" : "0 4px 20px rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
+            <div style={{ width: 16, height: 16, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            <span style={{ fontSize: 12, color: T.accent, fontFamily: mono }}>
+              Generating {generating.depth} TCs for {generating.reqId}…
+            </span>
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+          </div>
+        )}
+
+        {/* Toast notification */}
+        {toast && (
+          <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", zIndex: 100, padding: "8px 20px", borderRadius: 20, fontSize: 12, fontFamily: mono, pointerEvents: "none", background: toast.isError ? T.redDim : (_isLight ? "#e8f5e8" : "#1a2848"), color: toast.isError ? T.red : (_isLight ? "#16a34a" : "#90b8ff"), border: `1px solid ${toast.isError ? T.red + "44" : (_isLight ? "#a0d0a0" : "#2d4888")}`, boxShadow: _isLight ? "0 4px 20px rgba(0,0,0,0.08)" : "0 4px 20px rgba(0,0,0,0.6)" }}>
+            {toast.message}
           </div>
         )}
       </div>
