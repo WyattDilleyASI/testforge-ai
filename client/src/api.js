@@ -88,8 +88,13 @@ export const api = {
   deleteKbImage: (kbId, index) => request(`/kb/${kbId}/images/${index}`, { method: "DELETE" }),
   updateImageDescription: (kbId, index, description) => request(`/kb/${kbId}/images/${index}/description`, { method: "PUT", body: { description } }),
   regenerateImageDescription: (kbId, index) => request(`/kb/${kbId}/images/${index}/describe`, { method: "POST" }),
+  regenerateAllImageDescriptions: (kbId) => request(`/kb/${kbId}/images/describe-all`, { method: "POST" }),
   updateKbEntry: (kbId, data) => request(`/kb/${kbId}`, { method: "PUT", body: data }),
   deleteKbEntries: (kbIds) => request("/kb", { method: "DELETE", body: { kbIds } }),
+
+  // Product Context
+  getProductContext: () => request("/product-context"),
+  updateProductContext: (data) => request("/product-context", { method: "PUT", body: data }),
 
   // Token Usage
   getTokenUsage: () => request("/usage/tokens"),

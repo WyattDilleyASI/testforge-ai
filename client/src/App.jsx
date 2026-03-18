@@ -1380,11 +1380,10 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
     setDescSaving(false);
   };
 
-  const regenerateDescription = async (kbId, index) => {
-    const key = `${kbId}-${index}`;
-    setDescRegenerating(key);
+  const regenerateAllDescriptions = async (kbId) => {
+    setDescRegenerating(kbId);
     try {
-      await api.regenerateImageDescription(kbId, index);
+      await api.regenerateAllImageDescriptions(kbId);
       refresh();
     } catch (err) { setError(err.message); }
     setDescRegenerating(null);
@@ -1503,9 +1502,6 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
                     </> : <div style={{ fontSize: 11, color: COLORS.textMuted, fontStyle: "italic" }}>No description generated</div>}
                     <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                       <span onClick={() => { setEditingDesc({ kbId: e.kb_id, index: i }); setDescDraft(img.description || ""); }} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", fontWeight: 600 }}>Edit</span>
-                      <span onClick={() => regenerateDescription(e.kb_id, i)} style={{ fontSize: 10, color: COLORS.purple, cursor: descRegenerating === regenKey ? "not-allowed" : "pointer", fontWeight: 600, opacity: descRegenerating === regenKey ? 0.5 : 1 }}>
-                        {descRegenerating === regenKey ? "Generating..." : img.description ? "Regenerate" : "Generate Description"}
-                      </span>
                     </div>
                   </div>}
                 </div>
@@ -1534,6 +1530,12 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
                 disabled={uploading === e.kb_id}
               />
             </label>
+            {(e.images || []).length > 0 && <span
+              onClick={() => descRegenerating !== e.kb_id && regenerateAllDescriptions(e.kb_id)}
+              style={{ fontSize: 11, color: COLORS.purple, cursor: descRegenerating === e.kb_id ? "not-allowed" : "pointer", marginLeft: 8, fontWeight: 600, opacity: descRegenerating === e.kb_id ? 0.5 : 1 }}
+            >
+              {descRegenerating === e.kb_id ? "Generating Descriptions..." : "Generate Descriptions"}
+            </span>}
           </div>
           {editingTags === e.kb_id && <div style={{ marginTop: 8, padding: 10, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
             <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6, fontWeight: 600 }}>Tags</div>
@@ -2611,6 +2613,7 @@ const McpServerConfigView = ({ currentUser }) => {
 
 const SETTINGS_SECTIONS = [
   { key: "preferences", label: "User Preferences", icon: "◎", adminOnly: false },
+  { key: "product",     label: "Product Context",   icon: "◈", adminOnly: false },
   { key: "users",       label: "User Management",  icon: "◯", adminOnly: true },
   { key: "mcp",         label: "MCP Server Setup",  icon: "◆", adminOnly: true },
   { key: "jama",        label: "Jama Connect",      icon: "◭", adminOnly: true },
@@ -2719,6 +2722,8 @@ const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requirement
             onThemeChange={onThemeChange}
           />
         );
+      case "product":
+        return <ProductContextPanel />;
       case "users":
         return <UserManagementView currentUser={currentUser} />;
       case "mcp":
@@ -2756,6 +2761,76 @@ const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requirement
   );
 };
 
+
+// ─── PRODUCT CONTEXT PANEL ──────────────────────────────────────────────────
+
+const ProductContextPanel = () => {
+  const COLORS = useTheme();
+  const [productContext, setProductContext] = useState("");
+  const [keyTerms, setKeyTerms] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.getProductContext().then(data => {
+      setProductContext(data.product_context || "");
+      setKeyTerms(data.key_terms || "");
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setSaved(false);
+    try {
+      await api.updateProductContext({ product_context: productContext, key_terms: keyTerms });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {}
+    setSaving(false);
+  };
+
+  return <div>
+    <div style={{ marginBottom: 28 }}>
+      <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Product Context</h2>
+      <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>
+        Provide context about your product to improve AI-generated test cases and image descriptions.
+      </p>
+    </div>
+
+    {loading ? <Spinner /> : <>
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Product Description</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
+          Describe your product, who uses it, and what it does. This context is included in all AI prompts.
+        </div>
+        <textarea
+          value={productContext}
+          onChange={e => setProductContext(e.target.value)}
+          placeholder={"e.g., Mobius is a desktop application for autonomous mower fleet management. It is used by field operators to plan mowing missions, monitor mower status, and manage waypoints across multiple job sites.\n\nKey subsystems include WAT (Wireless Acceptance Testing) and Offline Planner (mission path planning)."}
+          style={{ width: "100%", minHeight: 120, fontSize: 12, fontFamily: mono, padding: 12, background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, resize: "vertical", boxSizing: "border-box", outline: "none" }}
+        />
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Key Terms</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
+          Define domain-specific terminology so the AI uses correct vocabulary. One term per line, in the format: <span style={{ fontFamily: mono, color: COLORS.accent }}>Term — Definition</span>
+        </div>
+        <textarea
+          value={keyTerms}
+          onChange={e => setKeyTerms(e.target.value)}
+          placeholder={"e.g.,\nWAT — Wireless Acceptance Testing, validates RF communication between mower and base station\nResume Point — GPS coordinate where the mower returns after an interruption\nOffline Planner — Desktop module for creating mowing mission paths without connectivity\nGeofence — Virtual boundary that restricts mower operating area"}
+          style={{ width: "100%", minHeight: 120, fontSize: 12, fontFamily: mono, padding: 12, background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, resize: "vertical", boxSizing: "border-box", outline: "none" }}
+        />
+      </Card>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Button onClick={save} disabled={saving}>{saving ? "Saving..." : saved ? "Saved!" : "Save"}</Button>
+        {saved && <span style={{ fontSize: 12, color: COLORS.green, fontFamily: mono }}>Changes saved</span>}
+      </div>
+    </>}
+  </div>;
+};
 
 // ─── USER PREFERENCES PANEL ─────────────────────────────────────────────────
 //

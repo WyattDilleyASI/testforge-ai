@@ -4,7 +4,7 @@ const XLSX = require("xlsx");
 const cheerio = require("cheerio");
 const mammoth = require("mammoth");
 const sharp = require("sharp");
-const { getDb, logAudit, logTokenUsage } = require("../db");
+const { getDb, logAudit, logTokenUsage, getProductContext } = require("../db");
 const { requireAuth } = require("../auth");
 
 const MAX_IMAGE_DIM = 1568; // Claude API max for multi-image requests (safe under 2000px limit)
@@ -103,12 +103,16 @@ function buildPrompt(db, reqId, depth, focuses = []) {
   }
 
   // Build system prompt — constant instructions + active focus areas
+  const { product_context, key_terms } = getProductContext();
+
   const focusSections = focuses
     .filter(f => FOCUS_PROMPTS[f])
     .map(f => FOCUS_PROMPTS[f])
     .join("\n\n");
 
   const systemPrompt = `You are a senior QA engineer generating software test case drafts in JAMA format. These are starting points for engineer review — not finished test coverage.
+${product_context ? `\nPRODUCT CONTEXT:\n${product_context}` : ""}
+${key_terms ? `\nKEY TERMS:\n${key_terms}` : ""}
 
 QUALITY STANDARDS:
 - Each test step must be independently actionable by a manual tester with no prior knowledge of the system.
@@ -129,12 +133,8 @@ ${focusSections ? `\n${focusSections}` : ""}`;
 - Title: ${requirement.title}
 - Description: ${requirement.description || "N/A"}
 - Rationale: ${requirement.rationale || "N/A"}
-- Requirement Type: ${requirement.requirement_type || "N/A"}
 - Safety Level: ${requirement.safety_level || "N/A"}
-- Priority: ${requirement.priority}
-- Status: ${requirement.status}
 - Verification Method: ${requirement.verification_method || "N/A"}
-- Scheduled Release: ${requirement.scheduled_release || "N/A"}
 - Acceptance Criteria: ${acceptanceCriteria.length > 0 ? acceptanceCriteria.join("; ") : "N/A"}
 - Tags: ${tags.length > 0 ? tags.join(", ") : "N/A"}
 ${contextStr ? `- Requirement Context:\n${contextStr}` : ""}
@@ -143,7 +143,7 @@ ${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT (entries matching this requirement 
     const images = JSON.parse(kb.images || "[]");
     const describedImages = images.filter(img => img.description);
     const undescribedCount = images.filter(img => !img.description).length;
-    let entry = `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`;
+    let entry = `- (${kb.type}) ${kb.title}: ${kb.content}`;
     if (describedImages.length > 0) {
       entry += `\n  UI References:\n${describedImages.map(img => `    [${img.name}]\n${img.description.split("\n").map(l => `    ${l}`).join("\n")}`).join("\n")}`;
     }
@@ -163,7 +163,7 @@ Generate test cases as a JSON array. Each test case must have:
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
 - reqAttribute: which acceptance criterion or attribute this TC validates
-${allKb.length > 0 ? "- kbReferences: array of KB entry IDs that informed this test case" : ""}
+${allKb.length > 0 ? "- kbReferences: array of KB entry titles that informed this test case" : ""}
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
