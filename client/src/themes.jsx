@@ -387,6 +387,21 @@ export const THEMES = {
     hover: "rgba(247,37,133,0.06)",
   },  
 
+  // ── FISH TANK ──────────────────────────────────────────────────────────────
+  // Deep aquatic blue with underwater light caustics, rising bubbles,
+  // swimming fish, and swaying seaweed. Flag `_fishTank: true` renders canvas.
+  fishTank: {
+    name: "Fish Tank", emoji: "🐠",
+    _fishTank: true,
+    bg: "#041428", surface: "#081E36", surfaceRaised: "#0C2844",
+    border: "#1A4468", text: "#90C8E8", textMuted: "#4A8AAA",
+    textBright: "#D0F0FF", accent: "#3ABEFF", accentDim: "rgba(58,190,255,0.14)",
+    accentGlow: "rgba(58,190,255,0.28)", green: "#40E8A0", greenDim: "rgba(64,232,160,0.12)",
+    red: "#FF7088", redDim: "rgba(255,112,136,0.12)", amber: "#FFD060",
+    amberDim: "rgba(255,208,96,0.12)", purple: "#A080E0", purpleDim: "rgba(160,128,224,0.12)",
+    hover: "rgba(58,190,255,0.06)",
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // HIDDEN EASTER EGG THEMES
   // ═══════════════════════════════════════════════════════════════════════════
@@ -454,7 +469,7 @@ export const THEME_CATEGORIES = [
   },
   {
     label: "Animated",
-    keys: ["chromawave", "hyperdrive", "aurora", "vaporwave", "fireflies", "lavaLamp", "synthwave"],
+    keys: ["chromawave", "hyperdrive", "aurora", "vaporwave", "fireflies", "lavaLamp", "synthwave", "fishTank"],
   },
   {
     label: "Accessibility",
