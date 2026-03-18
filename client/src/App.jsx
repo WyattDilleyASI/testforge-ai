@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
 import SysMLTraceability from "./SysMLTraceability";
-import { THEMES, THEME_CATEGORIES, ThemeSwatch, ThemeContext, useTheme } from "./themes.jsx";
+import { THEMES, THEME_CATEGORIES, ThemeSwatch, ThemeContext, useTheme } from "./themes";
+
 
 // Legacy alias so existing component code keeps working
 const COLORS = THEMES.midnight;
@@ -658,6 +659,272 @@ const MatrixRainCanvas = () => {
         }
         drops[i]++;
       }
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+}
+// ── AURORA BOREALIS ──────────────────────────────────────────────────────────
+// Renders slow-flowing translucent waves of green/purple/teal across the sky.
+
+const AuroraCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const colors = [
+        { r: 0, g: 232, b: 126, a: 0.08 },   // green
+        { r: 100, g: 80, b: 255, a: 0.06 },   // purple
+        { r: 0, g: 180, b: 220, a: 0.05 },    // teal
+        { r: 0, g: 255, b: 180, a: 0.04 },    // mint
+      ];
+
+      for (let i = 0; i < colors.length; i++) {
+        const c = colors[i];
+        const yBase = H * 0.15 + i * H * 0.08;
+        const speed = 0.0003 + i * 0.0001;
+        const amplitude = H * 0.12 + i * 20;
+
+        ctx.beginPath();
+        ctx.moveTo(0, H);
+
+        for (let x = 0; x <= W; x += 4) {
+          const wave1 = Math.sin(x * 0.002 + time * speed * 6 + i * 1.5) * amplitude;
+          const wave2 = Math.sin(x * 0.004 + time * speed * 4 + i * 0.8) * amplitude * 0.5;
+          const wave3 = Math.sin(x * 0.001 + time * speed * 2) * amplitude * 0.3;
+          const y = yBase + wave1 + wave2 + wave3;
+          ctx.lineTo(x, y);
+        }
+
+        ctx.lineTo(W, H);
+        ctx.closePath();
+
+        const grad = ctx.createLinearGradient(0, yBase - amplitude, 0, yBase + amplitude * 2);
+        grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${c.a * 1.5})`);
+        grad.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},${c.a})`);
+        grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+
+// ── VAPORWAVE GRID ───────────────────────────────────────────────────────────
+// Renders a retro 80s sunset with a scrolling perspective grid.
+
+const VaporwaveCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      const horizon = H * 0.45;
+
+      // Sky gradient
+      const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+      sky.addColorStop(0, "#0E0620");
+      sky.addColorStop(0.5, "#2D1050");
+      sky.addColorStop(0.8, "#FF6B9D44");
+      sky.addColorStop(1, "#FF71CE33");
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, horizon);
+
+      // Sun
+      const sunY = horizon - 40;
+      const sunR = 50;
+      const sunGrad = ctx.createRadialGradient(W / 2, sunY, 0, W / 2, sunY, sunR);
+      sunGrad.addColorStop(0, "rgba(255,200,100,0.8)");
+      sunGrad.addColorStop(0.5, "rgba(255,113,206,0.5)");
+      sunGrad.addColorStop(1, "rgba(255,113,206,0)");
+      ctx.fillStyle = sunGrad;
+      ctx.beginPath();
+      ctx.arc(W / 2, sunY, sunR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Sun horizontal stripes (retro effect)
+      ctx.fillStyle = "#0E0620";
+      for (let i = 0; i < 6; i++) {
+        const stripeY = sunY - sunR + 18 + i * 14;
+        const stripeH = 3 + i * 0.5;
+        ctx.fillRect(W / 2 - sunR, stripeY, sunR * 2, stripeH);
+      }
+
+      // Ground
+      const ground = ctx.createLinearGradient(0, horizon, 0, H);
+      ground.addColorStop(0, "rgba(26,10,46,0.95)");
+      ground.addColorStop(1, "rgba(14,6,32,0.98)");
+      ctx.fillStyle = ground;
+      ctx.fillRect(0, horizon, W, H - horizon);
+
+      // Perspective grid — horizontal lines
+      ctx.strokeStyle = "rgba(255,113,206,0.15)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 20; i++) {
+        const t = i / 20;
+        const y = horizon + (H - horizon) * (t * t); // quadratic spacing
+        ctx.globalAlpha = 0.1 + t * 0.2;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+
+      // Perspective grid — vertical lines (scrolling)
+      const numLines = 24;
+      const scrollOffset = (time * 0.2) % (W / numLines);
+      ctx.globalAlpha = 1;
+
+      for (let i = -numLines; i <= numLines; i++) {
+        const baseX = W / 2 + i * (W / numLines) + scrollOffset;
+        const topX = W / 2 + (baseX - W / 2) * 0.02; // converge at horizon
+
+        ctx.strokeStyle = `rgba(185,103,255,${0.08 + Math.abs(i) * 0.005})`;
+        ctx.beginPath();
+        ctx.moveTo(topX, horizon);
+        ctx.lineTo(baseX, H);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = 1;
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+
+// ── FIREFLIES ────────────────────────────────────────────────────────────────
+// Floating warm-toned particles that drift, pulse, and softly glow.
+
+const FirefliesCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    const particles = [];
+    const COUNT = 45;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    // Initialize particles
+    for (let i = 0; i < COUNT; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.2 - 0.1,
+        radius: 1.5 + Math.random() * 2.5,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.01 + Math.random() * 0.02,
+        hue: 40 + Math.random() * 30, // warm yellow-amber range
+      });
+    }
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      for (const p of particles) {
+        p.phase += p.speed;
+        p.x += p.vx + Math.sin(p.phase * 0.7) * 0.15;
+        p.y += p.vy + Math.cos(p.phase * 0.5) * 0.1;
+
+        // Wrap around
+        if (p.x < -20) p.x = W + 20;
+        if (p.x > W + 20) p.x = -20;
+        if (p.y < -20) p.y = H + 20;
+        if (p.y > H + 20) p.y = -20;
+
+        const glow = 0.3 + Math.sin(p.phase) * 0.3 + 0.2;
+        const r = p.radius * (1 + Math.sin(p.phase) * 0.3);
+
+        // Outer glow
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 8);
+        grad.addColorStop(0, `hsla(${p.hue}, 90%, 65%, ${glow * 0.25})`);
+        grad.addColorStop(0.3, `hsla(${p.hue}, 80%, 55%, ${glow * 0.08})`);
+        grad.addColorStop(1, `hsla(${p.hue}, 70%, 50%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Bright core
+        ctx.fillStyle = `hsla(${p.hue}, 95%, 80%, ${glow})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       animId = requestAnimationFrame(draw);
     };
     draw();
@@ -2942,6 +3209,8 @@ useEffect(() => {
   const isCycling = !!activeTheme._cycleSpeed;
   const isAero = activeTheme._aero || false;
   const isXP = activeTheme._xpStyle || false;
+  const isLavaLamp = activeTheme._lavaLamp || false;
+  const isSynthwave = activeTheme._synthwave || false;
 
   const globalStyle = `
     input:focus, textarea:focus, select:focus {
@@ -2981,6 +3250,23 @@ useEffect(() => {
       100% { background-position: 0% 50%; }
     }
     ` : ""}
+        ${isLavaLamp ? `
+    @keyframes lavaLamp {
+      0%   { background-position: 0% 50%; }
+      25%  { background-position: 50% 100%; }
+      50%  { background-position: 100% 50%; }
+      75%  { background-position: 50% 0%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
+
+    ${isSynthwave ? `
+    @keyframes synthwaveShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
   `;
 
   return <ThemeContext.Provider value={activeTheme}>
@@ -3004,10 +3290,23 @@ useEffect(() => {
       ...(activeTheme._upsideDown ? {
         transform: "rotate(180deg)",
       } : {}),
+      ...(isLavaLamp ? {
+        background: "linear-gradient(-45deg, #1A0A0A, #2A0A1A, #1A1A0A, #0A1A1A, #2A0A0A)",
+        backgroundSize: "400% 400%",
+        animation: "lavaLamp 20s ease infinite",
+      } : {}),
+      ...(isSynthwave ? {
+        background: "linear-gradient(135deg, #0E0620, #1A0640, #2D0A5A, #1A0640, #0E0620)",
+        backgroundSize: "300% 300%",
+        animation: "synthwaveShift 10s ease infinite",
+      } : {}),
     }}>
       <style>{globalStyle}</style>
       {activeTheme._starfield && <StarfieldCanvas />}
       {activeTheme._matrixRain && <MatrixRainCanvas />}
+      {activeTheme._aurora && <AuroraCanvas />}
+      {activeTheme._vaporwave && <VaporwaveCanvas />}
+      {activeTheme._fireflies && <FirefliesCanvas />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");
