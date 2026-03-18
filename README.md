@@ -29,41 +29,59 @@ TestForge AI ingests requirements, leverages a Knowledge Base of historical defe
 
 > All screenshots shown using the **Frutiger Aero** theme. TestForge ships with 16 built-in themes selectable from Settings → User Preferences.
 
+### Login
+
+<img width="2558" height="1282" alt="Login" src="https://github.com/user-attachments/assets/e74e1192-247e-4cb9-bd06-6dde45db34b4" />
+
+A clean, centered sign-in screen branded with the TestForge AI logo and version identifier. Username and password fields with a single Sign In button — no registration link, since accounts are provisioned by Admins. The footer references FRD requirement UM-008, reminding users that accounts lock after 5 failed attempts. First-time users sign in with an Admin-issued OTP and are immediately prompted to set their own password.
+
 ### Coverage Dashboard
 
-![Coverage Dashboard](docs/screenshots/coverage-dashboard.png)
+<img width="2558" height="1283" alt="Dashboard" src="https://github.com/user-attachments/assets/4510e8ca-f358-46f0-9aa2-72ec1d6a4e7a" />
 
 The landing page for every session. At a glance you see requirement coverage percentage, draft test cases awaiting review, engineer-approved test cases, and knowledge base entry count — each linking to the relevant FRD requirement ID (RS-007, TC-003A, KB-001). Below that, Claude API usage metrics (tokens consumed, API calls, budget status) give visibility into generation costs. The bottom half lists every untested requirement sorted by priority (MUST HAVE / SHOULD HAVE) so engineers know exactly where to focus next.
 
 ### Requirements
 
-![Requirements](docs/screenshots/requirements.png)
+<img width="2557" height="1282" alt="Requirements" src="https://github.com/user-attachments/assets/7c6f9543-540a-452c-a7a2-eaa6a3e6fc61" />
 
 All ingested requirements in a single scrollable list. Each card shows the requirement's Jama ID (e.g. `LFWM2-PRD_Rqmts-3`), full description text, source badge (JAMA), priority level (MUST HAVE), approval status (APPROVED), and downstream traceability references (TC: LFWM2-SYSRQ-xxx). Requirements can be imported directly from Jama DOC files, added manually, or cleared in bulk. The Edit button on each card opens an inline editor for description and acceptance criteria.
 
 ### Test Case Generation
 
-![Test Case Generation](docs/screenshots/test-cases.png)
+<img width="2558" height="1291" alt="Test_Cases" src="https://github.com/user-attachments/assets/9babe6ca-15fb-48c7-b01a-b93330e00a54" />
 
 The core workflow. Select a requirement from the dropdown, choose generation depth (Basic 2–3 / Standard 4–6 / Comprehensive 7–10), and optionally filter by test focus areas (Safety Critical, UI/UX Validation, Boundary Analysis, Error Recovery, Regression). Click **Generate Drafts** and the Claude API produces structured test cases — each with a unique ID (e.g. `TC-LFWM2-SubSys_Rqmt-186-001`), requirement traceability link, and test type badge (HAPPY PATH, NEGATIVE, BOUNDARY, EDGE CASE). A yellow DRAFT disclaimer banner reminds engineers that AI output requires human review. The Library / Session View tabs separate the full test case library from the current generation session. When no API key is configured, a fallback "Copy Prompt / Import Response" workflow lets teams use claude.ai manually.
 
 ### SysML Traceability Diagram
 
-![SysML Traceability](docs/screenshots/sysml-traceability.png)
+<img width="2558" height="1287" alt="SysML" src="https://github.com/user-attachments/assets/3a5fd845-2f9a-4ec3-97b7-d41cce4f83e2" />
 
 A fully interactive D3-powered requirements diagram that visualizes the entire hierarchy — from product-level requirements down through system, subsystem, and component requirements — with containment edges, cross-references, and verify links to test cases. The right-side Finder panel lists all 191 nodes and supports search by ID or name. Toggle **TCs On** to overlay test case nodes on the diagram. The bottom TACO Assessment section evaluates each requirement against T (Testable), A (Atomic), C (Complete), and O (Observable) criteria, reporting overall compliance (e.g. 158/171 = 92% fully compliant). Zoom, pan, fit-to-view, and SVG export controls are in the top-right toolbar.
 
 ### Knowledge Base
 
-![Knowledge Base](docs/screenshots/knowledge-base.png)
+<img width="2557" height="1280" alt="Knowledge_Base" src="https://github.com/user-attachments/assets/74e0e83b-1a6d-4baa-b115-031b8cbeda99" />
 
 Tagged entries that inform AI test case generation. Each entry has a structured ID (KB-E001 – KB-E005+), type badge (DEFECT HISTORY, SYSTEM BEHAVIOR, BUSINESS RULE), descriptive content, and linked tags for requirements (e.g. RS-001, RS-003), test cases (TC-002), Jama IDs (JM-007, JM-003), and custom tags (PDF, OCR, field-mapping, parsing, acceptance-criteria). Entries can include attached images with descriptions — useful for capturing UI screenshots of historical defects or setup procedures. The usage counter tracks how many times each entry has been injected into generation prompts.
 
 ### Settings — User Preferences & Themes
 
-![Settings](docs/screenshots/settings-user-preferences.png)
+<img width="2558" height="1283" alt="Settings" src="https://github.com/user-attachments/assets/ec99dc33-a8d3-4f84-8b8e-810b1981218f" />
 
 The Settings page (Admin-only for MCP and User Management sub-pages) opens to User Preferences by default. The Theme picker offers 16 appearance options: Midnight, Cherry Blossom, Wacky, Eye Bleed, Forest, Ocean, Sunset, Lavender, Retro Terminal, Nord, Light, Frutiger Aero, Chromawave, Hyperdrive, Solarized Dark, and Catppuccin. Additional settings sub-pages include Product Context (domain terms and example test cases for prompt tuning), User Management (CRUD, role assignment, OTP reset, account lockout), MCP Server Setup (token CRUD, config download, Claude Desktop/Code/Web connection guides), and Jama Connect configuration.
+
+### Settings — MCP Server Setup
+
+<img width="2557" height="1283" alt="MCP_Setup" src="https://github.com/user-attachments/assets/0d4f9823-fcf1-4b1e-bdc1-569c1d859f41" />
+
+The Admin-only MCP integration page. The top section explains the key value proposition: no API key needed, billing goes through the user's own Claude account, and Claude gets full tool access to read requirements, generate test cases, search the KB, and save results directly. The Prerequisites section walks through downloading the `mcp-bridge.mjs` bridge script (3 KB, zero dependencies, Node.js 18+) and verifying the TestForge server URL. Below that, the MCP Access Tokens panel provides a form to name a token, enter the local path to the bridge script, and generate a token — the full token value is shown only once at creation time. Existing tokens are listed in a table with name, masked preview, creation date, last-used timestamp, and a Revoke button. After token creation, auto-install terminal commands (PowerShell / bash) and downloadable config files are provided for Claude Desktop, Claude Code, and Claude Web.
+
+### Deferred to v2
+
+<img width="2557" height="1281" alt="Deferred" src="https://github.com/user-attachments/assets/550ccffb-5047-4a14-9f29-3d035937c3da" />
+
+A transparency page documenting features intentionally scoped out of v1 and planned for v2. Each card shows a DEFERRED badge, feature name, FRD requirement IDs, and a brief explanation of what v1 provides versus what v2 will add. Current deferred items include the Adaptive Learning Engine (AL-001 – AL-008), Confluence KB Import (KB-007), and SSO / External Identity (UM-xxx). This page ensures the FRD is fully traceable even for features not yet implemented.
 
 ---
 
