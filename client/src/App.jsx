@@ -1,235 +1,7 @@
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
 import SysMLTraceability from "./SysMLTraceability";
-
-// ─── THEMES ─────────────────────────────────────────────────────────────────
-
-const THEMES = {
-  midnight: {
-    name: "Midnight", emoji: "🌙",
-    bg: "#0B0E14", surface: "#121821", surfaceRaised: "#1A2233",
-    border: "#243044", text: "#C8D6E5", textMuted: "#7A8BA3",
-    textBright: "#EFF4F8", accent: "#22D3EE", accentDim: "rgba(34,211,238,0.12)",
-    accentGlow: "rgba(34,211,238,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
-    red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
-    amberDim: "rgba(251,191,36,0.12)", purple: "#A78BFA", purpleDim: "rgba(167,139,250,0.12)",
-  },
-  cherry: {
-    name: "Cherry Blossom", emoji: "🌸",
-    bg: "#FFF5F7", surface: "#FFF0F3", surfaceRaised: "#FFFFFF",
-    border: "#F5C6D0", text: "#5C3D4E", textMuted: "#9E7389",
-    textBright: "#2D1B25", accent: "#E8457C", accentDim: "rgba(232,69,124,0.10)",
-    accentGlow: "rgba(232,69,124,0.20)", green: "#38A169", greenDim: "rgba(56,161,105,0.10)",
-    red: "#E53E3E", redDim: "rgba(229,62,62,0.10)", amber: "#D69E2E",
-    amberDim: "rgba(214,158,46,0.10)", purple: "#9F7AEA", purpleDim: "rgba(159,122,234,0.10)",
-  },
-  wacky: {
-    name: "Wacky", emoji: "🤪",
-    bg: "#1A0033", surface: "#2D004D", surfaceRaised: "#3D0066",
-    border: "#FF6600", text: "#00FF99", textMuted: "#FFD700",
-    textBright: "#FF00FF", accent: "#00FFFF", accentDim: "rgba(0,255,255,0.15)",
-    accentGlow: "rgba(0,255,255,0.35)", green: "#39FF14", greenDim: "rgba(57,255,20,0.15)",
-    red: "#FF1493", redDim: "rgba(255,20,147,0.15)", amber: "#FFD700",
-    amberDim: "rgba(255,215,0,0.15)", purple: "#BF00FF", purpleDim: "rgba(191,0,255,0.15)",
-  },
-  eyebleed: {
-    name: "Eye Bleed", emoji: "💀",
-    bg: "#FF0000", surface: "#00FF00", surfaceRaised: "#FFFF00",
-    border: "#FF00FF", text: "#0000FF", textMuted: "#FF6600",
-    textBright: "#FFFFFF", accent: "#00FFFF", accentDim: "rgba(0,255,255,0.30)",
-    accentGlow: "rgba(255,0,255,0.50)", green: "#FF1493", greenDim: "rgba(255,20,147,0.25)",
-    red: "#00FF00", redDim: "rgba(0,255,0,0.25)", amber: "#FF00FF",
-    amberDim: "rgba(255,0,255,0.25)", purple: "#FFFF00", purpleDim: "rgba(255,255,0,0.25)",
-  },
-  forest: {
-    name: "Forest", emoji: "🌲",
-    bg: "#0A1F0A", surface: "#122712", surfaceRaised: "#1A331A",
-    border: "#2D5A2D", text: "#B8D4B8", textMuted: "#6B946B",
-    textBright: "#E8F5E8", accent: "#4ADE80", accentDim: "rgba(74,222,128,0.12)",
-    accentGlow: "rgba(74,222,128,0.25)", green: "#22C55E", greenDim: "rgba(34,197,94,0.12)",
-    red: "#FB7185", redDim: "rgba(251,113,133,0.12)", amber: "#FACC15",
-    amberDim: "rgba(250,204,21,0.12)", purple: "#C084FC", purpleDim: "rgba(192,132,252,0.12)",
-  },
-  ocean: {
-    name: "Ocean", emoji: "🌊",
-    bg: "#0A192F", surface: "#0D2137", surfaceRaised: "#112B45",
-    border: "#1E4976", text: "#A8C8E8", textMuted: "#5E8AB4",
-    textBright: "#E0F0FF", accent: "#38BDF8", accentDim: "rgba(56,189,248,0.12)",
-    accentGlow: "rgba(56,189,248,0.25)", green: "#2DD4BF", greenDim: "rgba(45,212,191,0.12)",
-    red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FDE68A",
-    amberDim: "rgba(253,230,138,0.12)", purple: "#818CF8", purpleDim: "rgba(129,140,248,0.12)",
-  },
-  sunset: {
-    name: "Sunset", emoji: "🌅",
-    bg: "#1A0A0A", surface: "#261210", surfaceRaised: "#331A16",
-    border: "#5C3028", text: "#E8C8B8", textMuted: "#B47A64",
-    textBright: "#FFF0E8", accent: "#FB923C", accentDim: "rgba(251,146,60,0.12)",
-    accentGlow: "rgba(251,146,60,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
-    red: "#EF4444", redDim: "rgba(239,68,68,0.12)", amber: "#FBBF24",
-    amberDim: "rgba(251,191,36,0.12)", purple: "#E879F9", purpleDim: "rgba(232,121,249,0.12)",
-  },
-  lavender: {
-    name: "Lavender", emoji: "💜",
-    bg: "#F5F0FF", surface: "#EDE5FF", surfaceRaised: "#FFFFFF",
-    border: "#D4C4F0", text: "#4A3668", textMuted: "#8B72AA",
-    textBright: "#1E0A3C", accent: "#8B5CF6", accentDim: "rgba(139,92,246,0.10)",
-    accentGlow: "rgba(139,92,246,0.20)", green: "#10B981", greenDim: "rgba(16,185,129,0.10)",
-    red: "#EF4444", redDim: "rgba(239,68,68,0.10)", amber: "#F59E0B",
-    amberDim: "rgba(245,158,11,0.10)", purple: "#7C3AED", purpleDim: "rgba(124,58,237,0.10)",
-  },
-  retro: {
-    name: "Retro Terminal", emoji: "📟",
-    bg: "#0C0C0C", surface: "#1A1A1A", surfaceRaised: "#222222",
-    border: "#333333", text: "#33FF33", textMuted: "#1A991A",
-    textBright: "#66FF66", accent: "#33FF33", accentDim: "rgba(51,255,51,0.10)",
-    accentGlow: "rgba(51,255,51,0.25)", green: "#33FF33", greenDim: "rgba(51,255,51,0.12)",
-    red: "#FF3333", redDim: "rgba(255,51,51,0.12)", amber: "#FFCC00",
-    amberDim: "rgba(255,204,0,0.12)", purple: "#CC66FF", purpleDim: "rgba(204,102,255,0.12)",
-  },
-  nord: {
-    name: "Nord", emoji: "❄️",
-    bg: "#2E3440", surface: "#3B4252", surfaceRaised: "#434C5E",
-    border: "#4C566A", text: "#D8DEE9", textMuted: "#8FBCBB",
-    textBright: "#ECEFF4", accent: "#88C0D0", accentDim: "rgba(136,192,208,0.12)",
-    accentGlow: "rgba(136,192,208,0.25)", green: "#A3BE8C", greenDim: "rgba(163,190,140,0.12)",
-    red: "#BF616A", redDim: "rgba(191,97,106,0.12)", amber: "#EBCB8B",
-    amberDim: "rgba(235,203,139,0.12)", purple: "#B48EAD", purpleDim: "rgba(180,142,173,0.12)",
-  },
-  // ── LIGHT ────────────────────────────────────────────────────────────────
-  // Clean, professional light theme with soft grays and a blue accent.
-  light: {
-    name: "Light", emoji: "☀️",
-    bg: "#F7F8FA", surface: "#FFFFFF", surfaceRaised: "#FFFFFF",
-    border: "#DDE1E8", text: "#3D4752", textMuted: "#8893A0",
-    textBright: "#111820", accent: "#2563EB", accentDim: "rgba(37,99,235,0.08)",
-    accentGlow: "rgba(37,99,235,0.18)", green: "#16A34A", greenDim: "rgba(22,163,74,0.08)",
-    red: "#DC2626", redDim: "rgba(220,38,38,0.08)", amber: "#D97706",
-   amberDim: "rgba(217,119,6,0.08)", purple: "#7C3AED", purpleDim: "rgba(124,58,237,0.08)",
-    hover: "rgba(37,99,235,0.06)",
-},
-
-// ── FRUTIGER AERO ────────────────────────────────────────────────────────
-// Inspired by the glossy, translucent, nature-infused UI aesthetic of ~2006-2013.
-// Soft sky-blue gradients, glassy surfaces, lush green accents.
-  frutigerAero: {
-    name: "Frutiger Aero", emoji: "🫧",
-    bg: "#E8F4FD", surface: "#F0F8FF", surfaceRaised: "#FFFFFF",
-    border: "#B8D8EC", text: "#2E5062", textMuted: "#6A9BB5",
-    textBright: "#0C2D3F", accent: "#0099DD", accentDim: "rgba(0,153,221,0.10)",
-    accentGlow: "rgba(0,153,221,0.22)", green: "#2EAA4F", greenDim: "rgba(46,170,79,0.10)",
-    red: "#E04848", redDim: "rgba(224,72,72,0.10)", amber: "#E6A817",
-    amberDim: "rgba(230,168,23,0.10)", purple: "#8862D0", purpleDim: "rgba(136,98,208,0.10)",
-    hover: "rgba(0,153,221,0.06)",
-    // Frutiger Aero special flag — used by the Card override below
-    _aero: true,
-},
-
-// ── CHROMAWAVE (color-cycling) ───────────────────────────────────────────
-// Base palette that gets rotated via CSS hue-rotate animation.
-// The flag `_cycling: true` is read by App to inject the animation wrapper.
-chromawave: {
-  name: "Chromawave", emoji: "🌈",
-  bg: "#0D0D1A", surface: "#161625", surfaceRaised: "#1F1F33",
-  border: "#2E2E50", text: "#D0D0F0", textMuted: "#8888BB",
-  textBright: "#F0F0FF", accent: "#FF6EC7", accentDim: "rgba(255,110,199,0.14)",
-  accentGlow: "rgba(255,110,199,0.30)", green: "#7AFF8E", greenDim: "rgba(122,255,142,0.12)",
-  red: "#FF6B6B", redDim: "rgba(255,107,107,0.12)", amber: "#FFD93D",
-  amberDim: "rgba(255,217,61,0.12)", purple: "#B476FF", purpleDim: "rgba(180,118,255,0.12)",
-  hover: "rgba(255,110,199,0.08)",
-  _cycling: "8s",
-},
-
-// ── HYPERDRIVE (fast color-cycling) ───────────────────────────────────────────
-hyperdrive: {
-  name: "Hyperdrive", emoji: "⚡",
-  bg: "#220044", surface: "#330055", surfaceRaised: "#440066",
-  border: "#FF00FF", text: "#FF66FF", textMuted: "#CC33CC",
-  textBright: "#FFFFFF", accent: "#00FF00", accentDim: "rgba(0,255,0,0.18)",
-  accentGlow: "rgba(0,255,0,0.40)", green: "#39FF14", greenDim: "rgba(57,255,20,0.18)",
-  red: "#FF073A", redDim: "rgba(255,7,58,0.18)", amber: "#FFE700",
-  amberDim: "rgba(255,231,0,0.18)", purple: "#BF00FF", purpleDim: "rgba(191,0,255,0.18)",
-  hover: "rgba(0,255,0,0.10)",
-  _cycleSpeed: "0.4s",
-  _hyperdriveBg: true,
-},
-
-// ── SOLARIZED ───────────────────────────────────────────────────────────────
-// The classic developer color scheme. Warm, muted tones with a dark blue-gray base. Very easy on the eyes for long sessions.
-solarized: {
-  name: "Solarized Dark", emoji: "🔆",
-  bg: "#002B36", surface: "#073642", surfaceRaised: "#0A3F4C",
-  border: "#586E75", text: "#839496", textMuted: "#657B83",
-  textBright: "#FDF6E3", accent: "#268BD2", accentDim: "rgba(38,139,210,0.12)",
-  accentGlow: "rgba(38,139,210,0.25)", green: "#859900", greenDim: "rgba(133,153,0,0.12)",
-  red: "#DC322F", redDim: "rgba(220,50,47,0.12)", amber: "#B58900",
-  amberDim: "rgba(181,137,0,0.12)", purple: "#6C71C4", purpleDim: "rgba(108,113,196,0.12)",
-  hover: "rgba(38,139,210,0.06)",
-},
-
-// ── CATPPUCCIN ───────────────────────────────────────────────────────────────
-// A pastel-toned dark theme that's gotten very popular. Cozy and soft without being a light theme.
-catppuccin: {
-  name: "Catppuccin", emoji: "🐱",
-  bg: "#1E1E2E", surface: "#242437", surfaceRaised: "#313244",
-  border: "#45475A", text: "#CDD6F4", textMuted: "#7F849C",
-  textBright: "#F5E0DC", accent: "#CBA6F7", accentDim: "rgba(203,166,247,0.12)",
-  accentGlow: "rgba(203,166,247,0.25)", green: "#A6E3A1", greenDim: "rgba(166,227,161,0.12)",
-  red: "#F38BA8", redDim: "rgba(243,139,168,0.12)", amber: "#F9E2AF",
-  amberDim: "rgba(249,226,175,0.12)", purple: "#B4BEFE", purpleDim: "rgba(180,190,254,0.12)",
-  hover: "rgba(203,166,247,0.06)",
-},
-
-// ── KONAMI ───────────────────────────────────────────────────────────────
-// Typing ↑↑↓↓←→←→BA fliprs the UI upside down.
-konami: {
-  name: "Classified", emoji: "🔓",
-  _hidden: true,
-  _upsideDown: true,
-  bg: "#0C0C0C", surface: "#1A1A1A", surfaceRaised: "#222222",
-  border: "#FF0000", text: "#FF3333", textMuted: "#993333",
-  textBright: "#FFFFFF", accent: "#FF0000", accentDim: "rgba(255,0,0,0.12)",
-  accentGlow: "rgba(255,0,0,0.30)", green: "#FF0000", greenDim: "rgba(255,0,0,0.12)",
-  red: "#FF0000", redDim: "rgba(255,0,0,0.12)", amber: "#FF3300",
-  amberDim: "rgba(255,51,0,0.12)", purple: "#FF0066", purpleDim: "rgba(255,0,102,0.12)",
-  hover: "rgba(255,0,0,0.06)",
-},
-
-// ── AFTERDARK ───────────────────────────────────────────────────────────────
-// Typing "afterdark" → starfield background.
-afterdark: {
-  name: "After Dark", emoji: "🌌",
-  _hidden: true,
-  _starfield: true,
-  bg: "#000008", surface: "#080816", surfaceRaised: "#101024",
-  border: "#1E1E3A", text: "#A0A0CC", textMuted: "#6060AA",
-  textBright: "#E0E0FF", accent: "#FFD700", accentDim: "rgba(255,215,0,0.12)",
-  accentGlow: "rgba(255,215,0,0.25)", green: "#66FF66", greenDim: "rgba(102,255,102,0.12)",
-  red: "#FF6666", redDim: "rgba(255,102,102,0.12)", amber: "#FFD700",
-  amberDim: "rgba(255,215,0,0.12)", purple: "#CC88FF", purpleDim: "rgba(204,136,255,0.12)",
-  hover: "rgba(255,215,0,0.06)",
-},
-
-// ── MATRIX ───────────────────────────────────────────────────────────────
-// Type "matrix" → falling green characters.
-matrix: {
-  name: "Matrix", emoji: "💊",
-  _hidden: true,
-  _matrixRain: true,
-  bg: "#000800", surface: "#001200", surfaceRaised: "#001A00",
-  border: "#003300", text: "#00CC00", textMuted: "#008800",
-  textBright: "#00FF41", accent: "#00FF41", accentDim: "rgba(0,255,65,0.12)",
-  accentGlow: "rgba(0,255,65,0.30)", green: "#00FF41", greenDim: "rgba(0,255,65,0.12)",
-  red: "#FF0000", redDim: "rgba(255,0,0,0.12)", amber: "#00FF41",
-  amberDim: "rgba(0,255,65,0.12)", purple: "#00CC00", purpleDim: "rgba(0,204,0,0.12)",
-  hover: "rgba(0,255,65,0.06)",
-},
-
-
-
-};
-
-const ThemeContext = createContext(THEMES.midnight);
-const useTheme = () => useContext(ThemeContext);
+import { THEMES, THEME_CATEGORIES, ThemeSwatch, ThemeContext, useTheme } from "./themes.jsx";
 
 // Legacy alias so existing component code keeps working
 const COLORS = THEMES.midnight;
@@ -2861,17 +2633,25 @@ const ProductContextPanel = () => {
   </div>;
 };
 
-// ─── USER PREFERENCES PANEL ─────────────────────────────────────────────────
-//
-// Visible to all users. Contains Themes and Language (placeholder).
-//
+// ── Upgraded UserPreferencesPanel ────────────────────────────────────────────
 
 const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
   const COLORS = useTheme();
+  const [searchFilter, setSearchFilter] = useState("");
+
+  // Filter themes by search
+  const matchesSearch = (key, theme) => {
+    if (!searchFilter) return true;
+    const q = searchFilter.toLowerCase();
+    return (
+      key.toLowerCase().includes(q) ||
+      theme.name.toLowerCase().includes(q)
+    );
+  };
 
   return (
     <div>
-      {/* ── Themes ── */}
+      {/* ── Header ── */}
       <div style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>
           User Preferences
@@ -2887,39 +2667,145 @@ const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
       </div>
 
       <Card>
-        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>
-          Theme
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright }}>
+            Theme
+          </div>
+          <div style={{ fontSize: 11, fontFamily: mono, color: COLORS.textMuted }}>
+            {Object.keys(THEMES).filter(k => !THEMES[k]._hidden).length} themes
+          </div>
         </div>
-        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 14 }}>
           Choose your preferred interface appearance.
         </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-         {Object.entries(THEMES).filter(([, t]) => !t._hidden).map(([key, t]) => (
-            <button
-              key={key}
-              onClick={() => onThemeChange(key)}
-              style={{
-                padding: "14px 16px",
-                borderRadius: 8,
-                border: `1.5px solid ${currentTheme === key ? COLORS.accent : COLORS.border}`,
-                background: currentTheme === key ? COLORS.accentDim : COLORS.surface,
-                cursor: "pointer",
-                textAlign: "left",
-                transition: "all 0.15s ease",
-                minWidth: 120,
-              }}
-            >
-              <div style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: currentTheme === key ? COLORS.accent : COLORS.textBright,
-                marginBottom: 4,
-              }}>
-                {t.emoji} {t.name}
-              </div>
-            </button>
-          ))}
+
+        {/* ── Search / filter ── */}
+        <div style={{ marginBottom: 18 }}>
+          <input
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            placeholder="Search themes..."
+            style={{
+              fontFamily: mono,
+              fontSize: 12,
+              color: COLORS.textBright,
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 6,
+              padding: "8px 12px",
+              outline: "none",
+              width: 220,
+            }}
+          />
         </div>
+
+        {/* ── Categorized grid ── */}
+        {THEME_CATEGORIES.map(cat => {
+          const visibleThemes = cat.keys.filter(k =>
+            THEMES[k] && !THEMES[k]._hidden && matchesSearch(k, THEMES[k])
+          );
+          if (visibleThemes.length === 0) return null;
+
+          return (
+            <div key={cat.label} style={{ marginBottom: 22 }}>
+              {/* Category label */}
+              <div style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: COLORS.textMuted,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                fontFamily: mono,
+                marginBottom: 10,
+                paddingBottom: 6,
+                borderBottom: `1px solid ${COLORS.border}`,
+              }}>
+                {cat.label}
+              </div>
+
+              {/* Theme cards grid */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                gap: 10,
+              }}>
+                {visibleThemes.map(key => {
+                  const t = THEMES[key];
+                  const isActive = currentTheme === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => onThemeChange(key)}
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: 8,
+                        border: `1.5px solid ${isActive ? COLORS.accent : COLORS.border}`,
+                        background: isActive ? COLORS.accentDim : COLORS.surface,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "all 0.15s ease",
+                        position: "relative",
+                      }}
+                      onMouseEnter={e => {
+                        if (!isActive) e.currentTarget.style.borderColor = COLORS.accent + "66";
+                        if (!isActive) e.currentTarget.style.background = COLORS.hover || COLORS.accentDim;
+                      }}
+                      onMouseLeave={e => {
+                        if (!isActive) e.currentTarget.style.borderColor = COLORS.border;
+                        if (!isActive) e.currentTarget.style.background = COLORS.surface;
+                      }}
+                    >
+                      {/* Active indicator */}
+                      {isActive && (
+                        <div style={{
+                          position: "absolute",
+                          top: 8,
+                          right: 10,
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: COLORS.accent,
+                          boxShadow: `0 0 6px ${COLORS.accentGlow}`,
+                        }} />
+                      )}
+
+                      {/* Theme name */}
+                      <div style={{
+                        fontSize: 13,
+                        fontWeight: isActive ? 700 : 500,
+                        color: isActive ? COLORS.accent : COLORS.textBright,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        paddingRight: isActive ? 16 : 0,
+                      }}>
+                        {t.emoji} {t.name}
+                      </div>
+
+                      {/* Mini swatch preview */}
+                      <ThemeSwatch theme={t} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* ── No results state ── */}
+        {searchFilter && THEME_CATEGORIES.every(cat =>
+          cat.keys.filter(k => THEMES[k] && !THEMES[k]._hidden && matchesSearch(k, THEMES[k])).length === 0
+        ) && (
+          <div style={{
+            padding: 24,
+            textAlign: "center",
+            color: COLORS.textMuted,
+            fontSize: 13,
+            fontStyle: "italic",
+          }}>
+            No themes match "{searchFilter}"
+          </div>
+        )}
       </Card>
 
       {/* ── Language (placeholder) ── */}
@@ -2931,28 +2817,15 @@ const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
           Interface language preference.
         </div>
         <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "12px 16px",
-          background: COLORS.bg,
-          borderRadius: 8,
+          padding: "10px 14px",
+          background: COLORS.surface,
+          borderRadius: 6,
           border: `1px solid ${COLORS.border}`,
+          fontSize: 12,
+          color: COLORS.textMuted,
+          fontStyle: "italic",
         }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>
-            English (US)
-          </span>
-          <span style={{
-            marginLeft: "auto",
-            fontSize: 10,
-            fontFamily: mono,
-            color: COLORS.textMuted,
-            background: COLORS.surface,
-            padding: "2px 8px",
-            borderRadius: 4,
-          }}>
-            ONLY AVAILABLE LANGUAGE
-          </span>
+          English (default) — additional languages coming soon.
         </div>
       </Card>
     </div>
@@ -3068,6 +2941,7 @@ useEffect(() => {
 
   const isCycling = !!activeTheme._cycleSpeed;
   const isAero = activeTheme._aero || false;
+  const isXP = activeTheme._xpStyle || false;
 
   const globalStyle = `
     input:focus, textarea:focus, select:focus {
@@ -3099,6 +2973,14 @@ useEffect(() => {
       100% { background-position: 0% 50%; }
     }
     ` : ""}
+    
+    ${isXP ? `
+    @keyframes xpGradient {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
   `;
 
   return <ThemeContext.Provider value={activeTheme}>
@@ -3115,6 +2997,9 @@ useEffect(() => {
         background: "linear-gradient(135deg, #E8F4FD 0%, #D5F0E8 35%, #EAF0FA 70%, #F0F8FF 100%)",
         backgroundSize: "200% 200%",
         animation: "aeroShimmer 12s ease-in-out infinite",
+      } : {}),
+      ...(isXP ? {
+        background: "linear-gradient(180deg, #0055E5 0%, #2E8AE6 8%, #ECE9D8 8%, #ECE9D8 100%)",
       } : {}),
       ...(activeTheme._upsideDown ? {
         transform: "rotate(180deg)",
