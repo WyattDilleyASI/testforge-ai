@@ -4,7 +4,7 @@ const XLSX = require("xlsx");
 const cheerio = require("cheerio");
 const mammoth = require("mammoth");
 const sharp = require("sharp");
-const { getDb, logAudit, logTokenUsage, getProductContext } = require("../db");
+const { getDb, logAudit, logTokenUsage, getProductContext, getSetting } = require("../db");
 const { requireAuth } = require("../auth");
 
 const MAX_IMAGE_DIM = 1568; // Claude API max for multi-image requests (safe under 2000px limit)
@@ -40,7 +40,7 @@ const FOCUS_PROMPTS = {
   safety_critical: `SAFETY-CRITICAL FOCUS:
 - Perform failure mode analysis: for each function described in the requirement, identify what happens if it fails, produces incorrect output, or executes at the wrong time.
 - Generate test cases that verify safe states are reached after failures — the system must fail gracefully.
-- Every test case must trace directly to a specific acceptance criterion or safety requirement.
+- Every test case must trace directly to a specific safety requirement.
 - Include worst-case scenario tests: what is the most dangerous possible outcome if this requirement is not met?
 - Add verify-before-proceed steps: confirm preconditions are actually met before executing the main action.
 - Expected results must include specific safety-relevant observable outcomes (e.g., "system enters fault state within 100ms", not "system handles error").`,
@@ -82,7 +82,6 @@ function buildPrompt(db, reqId, depth, focuses = []) {
   const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
   if (!requirement) return null;
 
-  const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
   const reqContext = JSON.parse(requirement.requirement_context || "[]");
   const tags = JSON.parse(requirement.tags || "[]");
 
@@ -104,6 +103,25 @@ function buildPrompt(db, reqId, depth, focuses = []) {
 
   // Build system prompt — constant instructions + active focus areas
   const { product_context, key_terms } = getProductContext();
+  const exampleRaw = getSetting("example_tc");
+  let exampleSection = "";
+  if (exampleRaw) {
+    try {
+      const ex = JSON.parse(exampleRaw);
+      const exDesc = typeof ex.description === "string" && ex.description.startsWith("{") ? JSON.parse(ex.description) : ex.description;
+      const exSetup = typeof ex.preconditions === "string" && ex.preconditions.startsWith("{") ? JSON.parse(ex.preconditions) : ex.preconditions;
+      const exSteps = typeof ex.steps === "string" ? JSON.parse(ex.steps) : ex.steps;
+      const exObj = {
+        title: ex.title,
+        type: ex.type,
+        description: exDesc || ex.description,
+        setup: exSetup || undefined,
+        steps: exSteps,
+        reqAttribute: ex.req_attribute,
+      };
+      exampleSection = `\nEXAMPLE OUTPUT (for reference — match this format, tone, and detail level, but do NOT copy this content):\n${JSON.stringify([exObj], null, 2)}`;
+    } catch {}
+  }
 
   const focusSections = focuses
     .filter(f => FOCUS_PROMPTS[f])
@@ -115,18 +133,22 @@ ${product_context ? `\nPRODUCT CONTEXT:\n${product_context}` : ""}
 ${key_terms ? `\nKEY TERMS:\n${key_terms}` : ""}
 
 QUALITY STANDARDS:
+- Each test step must be a single user action or a single system observation — never combine multiple actions into one step.
 - Each test step must be independently actionable by a manual tester with no prior knowledge of the system.
-- Expected results must be objectively verifiable — specific and measurable, not vague (e.g., "displays error code E-201 within 2 seconds" not "works correctly").
-- Steps should reference specific UI elements, fields, API endpoints, or system components mentioned in the requirement.
-- Each acceptance criterion in the requirement MUST have at least one test case that validates it. Set reqAttribute to the specific criterion being tested.
+- Expected results must be objectively verifiable — specific values, states, or messages, not vague (e.g., "Direction field displays 'Clockwise'" not "works correctly").
+- Steps should reference specific UI elements, fields, API endpoints, or system components by name as described in the requirement or KB context.
+- Each test case must validate a specific aspect of the requirement. Set reqAttribute to the requirement attribute or aspect being tested.
 - Every test case must validate something distinct — no duplicate coverage across test cases.
+
+- Preconditions describe the state before the test begins. Do NOT repeat precondition setup as test steps — start steps from the first user action after setup is complete.
+- When KB entries include UI References, use exact element names, labels, field types, and screen names from those descriptions in your test steps and expected results. This ensures testers see the same terminology as the actual UI.
 
 ANTI-PATTERNS TO AVOID:
 - Do NOT generate generic test cases that could apply to any requirement — every test must be specific to THIS requirement.
 - Do NOT restate the requirement description as a test step.
 - Do NOT use vague expected results like "system behaves as expected" or "works correctly".
 - Do NOT include setup steps that are already covered in preconditions.
-${focusSections ? `\n${focusSections}` : ""}`;
+${focusSections ? `\n${focusSections}` : ""}${exampleSection}`;
 
   const prompt = `REQUIREMENT:
 - ID: ${requirement.req_id}
@@ -135,7 +157,6 @@ ${focusSections ? `\n${focusSections}` : ""}`;
 - Rationale: ${requirement.rationale || "N/A"}
 - Safety Level: ${requirement.safety_level || "N/A"}
 - Verification Method: ${requirement.verification_method || "N/A"}
-- Acceptance Criteria: ${acceptanceCriteria.length > 0 ? acceptanceCriteria.join("; ") : "N/A"}
 - Tags: ${tags.length > 0 ? tags.join(", ") : "N/A"}
 ${contextStr ? `- Requirement Context:\n${contextStr}` : ""}
 
@@ -159,7 +180,7 @@ Generate test cases as a JSON array. Each test case must have:
 - description: object with keys: objective (string), scope (string), assumptions (array of strings)
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
-- reqAttribute: which acceptance criterion or attribute this TC validates
+- reqAttribute: which requirement attribute or aspect this TC validates
 ${allKb.length > 0 ? "- kbReferences: array of KB entry titles that informed this test case" : ""}
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
@@ -392,13 +413,10 @@ router.post("/:tcId/refine", requireAuth, async (req, res) => {
   if (linkedReqIds.length > 0) {
     const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
     if (requirement) {
-      const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
       requirementContext = `\nORIGINAL REQUIREMENT CONTEXT:
 - ID: ${requirement.req_id}
 - Title: ${requirement.title}
-- Description: ${requirement.description}
-- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
-- Priority: ${requirement.priority}`;
+- Description: ${requirement.description}`;
     }
   }
 
@@ -427,7 +445,7 @@ Refine the test case based on the feedback. Return the improved test case as a s
 - description: object with keys: objective (string), scope (string), assumptions (array of strings)
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
-- reqAttribute: which acceptance criterion or attribute this TC validates
+- reqAttribute: which requirement attribute or aspect this TC validates
 
 Respond ONLY with valid JSON object, no markdown, no preamble.`;
 
@@ -503,13 +521,10 @@ router.post("/:tcId/refine-prompt", requireAuth, (req, res) => {
   if (linkedReqIds.length > 0) {
     const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
     if (requirement) {
-      const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
       requirementContext = `\nORIGINAL REQUIREMENT CONTEXT:
 - ID: ${requirement.req_id}
 - Title: ${requirement.title}
-- Description: ${requirement.description}
-- Acceptance Criteria: ${acceptanceCriteria.join("; ")}
-- Priority: ${requirement.priority}`;
+- Description: ${requirement.description}`;
     }
   }
 
@@ -537,7 +552,7 @@ Refine the test case based on the feedback. Return the improved test case as a s
 - description: object with keys: objective (string), scope (string), assumptions (array of strings)
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
-- reqAttribute: which acceptance criterion or attribute this TC validates
+- reqAttribute: which requirement attribute or aspect this TC validates
 
 Respond ONLY with valid JSON object, no markdown, no preamble.`;
 

@@ -96,6 +96,11 @@ export const api = {
   getProductContext: () => request("/product-context"),
   updateProductContext: (data) => request("/product-context", { method: "PUT", body: data }),
 
+  // Example Test Case
+  getExampleTc: () => request("/example-tc"),
+  setExampleTc: (tc_id) => request("/example-tc", { method: "PUT", body: { tc_id } }),
+  clearExampleTc: () => request("/example-tc", { method: "PUT", body: {} }),
+
   // Token Usage
   getTokenUsage: () => request("/usage/tokens"),
 

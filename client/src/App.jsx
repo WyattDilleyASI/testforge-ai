@@ -935,6 +935,9 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const [refineCopyState, setRefineCopyState] = useState("idle");
   const [tcSelectMode, setTcSelectMode] = useState(false);
   const [selectedTcIds, setSelectedTcIds] = useState(new Set());
+  const [exampleTcId, setExampleTcId] = useState(null);
+
+  useEffect(() => { api.getExampleTc().then(d => { if (d.example_tc) setExampleTcId(d.example_tc.tc_id); }).catch(() => {}); }, []);
 
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
@@ -1236,7 +1239,12 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
                   </Button>
                   <Button small variant="ghost" disabled={refineLoading} onClick={e => { e.stopPropagation(); setRefiningTcId(null); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Cancel</Button>
                 </div>
-              </div> : <div style={{ display: "flex" }}><Button small variant="secondary" onClick={e => { e.stopPropagation(); setRefiningTcId(tc.tc_id); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Refine</Button></div>}
+              </div> : <div style={{ display: "flex", gap: 8 }}>
+                <Button small variant="secondary" onClick={e => { e.stopPropagation(); setRefiningTcId(tc.tc_id); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Refine</Button>
+                <Button small variant="ghost" onClick={async e => { e.stopPropagation(); try { await api.setExampleTc(tc.tc_id); setExampleTcId(tc.tc_id); } catch {} }}>
+                  {exampleTcId === tc.tc_id ? "Example TC" : "Use as Example"}
+                </Button>
+              </div>}
             </div>
           </div>;
         })()}
@@ -2768,15 +2776,18 @@ const ProductContextPanel = () => {
   const COLORS = useTheme();
   const [productContext, setProductContext] = useState("");
   const [keyTerms, setKeyTerms] = useState("");
+  const [exampleTc, setExampleTc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.getProductContext().then(data => {
-      setProductContext(data.product_context || "");
-      setKeyTerms(data.key_terms || "");
-    }).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([api.getProductContext(), api.getExampleTc()])
+      .then(([ctx, ex]) => {
+        setProductContext(ctx.product_context || "");
+        setKeyTerms(ctx.key_terms || "");
+        setExampleTc(ex.example_tc || null);
+      }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const save = async () => {
@@ -2822,6 +2833,23 @@ const ProductContextPanel = () => {
           placeholder={"e.g.,\nWAT — Wireless Acceptance Testing, validates RF communication between mower and base station\nResume Point — GPS coordinate where the mower returns after an interruption\nOffline Planner — Desktop module for creating mowing mission paths without connectivity\nGeofence — Virtual boundary that restricts mower operating area"}
           style={{ width: "100%", minHeight: 120, fontSize: 12, fontFamily: mono, padding: 12, background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, resize: "vertical", boxSizing: "border-box", outline: "none" }}
         />
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Example Test Case</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
+          A real test case used as a few-shot example in generation prompts. Set this from any test case card using the "Use as Example" button.
+        </div>
+        {exampleTc ? <div style={{ background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}`, padding: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.accent, marginBottom: 4 }}>{exampleTc.tc_id}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 8 }}>{exampleTc.title}</div>
+          {exampleTc.type && <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>Type: {exampleTc.type}</div>}
+          {(() => { try { const d = typeof exampleTc.description === "string" ? JSON.parse(exampleTc.description) : exampleTc.description; return d?.objective ? <div style={{ fontSize: 11, color: COLORS.text, marginBottom: 4 }}>Objective: {d.objective}</div> : null; } catch { return null; } })()}
+          {(() => { try { const s = typeof exampleTc.steps === "string" ? JSON.parse(exampleTc.steps) : exampleTc.steps; return s?.length ? <div style={{ fontSize: 11, color: COLORS.textMuted }}>{s.length} step(s)</div> : null; } catch { return null; } })()}
+          <Button small variant="ghost" style={{ marginTop: 8 }} onClick={async () => { try { await api.clearExampleTc(); setExampleTc(null); } catch {} }}>Clear Example</Button>
+        </div> : <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic", padding: "12px 0" }}>
+          No example set. Open any test case and click "Use as Example" to set one.
+        </div>}
       </Card>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

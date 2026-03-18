@@ -374,4 +374,38 @@ router.put("/product-context", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/example-tc — get the example test case for few-shot prompting
+router.get("/example-tc", requireAuth, (req, res) => {
+  const raw = getSetting("example_tc");
+  res.json({ example_tc: raw ? JSON.parse(raw) : null });
+});
+
+// PUT /api/example-tc — set a test case as the example
+router.put("/example-tc", requireAuth, (req, res) => {
+  const { tc_id } = req.body;
+  if (!tc_id) {
+    // Clear the example
+    setSetting("example_tc", "");
+    logAudit(req.session.name, "EXAMPLE_TC_CLEARED", "Cleared example test case");
+    return res.json({ ok: true });
+  }
+
+  const tc = getDb().prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(tc_id);
+  if (!tc) return res.status(404).json({ error: "Test case not found" });
+
+  // Store a clean version with only prompt-relevant fields
+  const example = {
+    tc_id: tc.tc_id,
+    title: tc.title,
+    type: tc.type,
+    description: tc.description,
+    preconditions: tc.preconditions,
+    steps: tc.steps,
+    req_attribute: tc.req_attribute,
+  };
+  setSetting("example_tc", JSON.stringify(example));
+  logAudit(req.session.name, "EXAMPLE_TC_SET", `Set example test case: ${tc.tc_id} — ${tc.title}`);
+  res.json({ ok: true, example_tc: example });
+});
+
 module.exports = router;
