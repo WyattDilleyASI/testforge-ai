@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { api } from "./api";
+import SysMLTraceability from "./SysMLTraceability";
 
 // ─── THEMES ─────────────────────────────────────────────────────────────────
 
@@ -416,7 +417,7 @@ const NAV_ITEMS = [
   { key: "dashboard",     label: "Coverage Dashboard",   icon: "◫", reqs: "RS-007" },
   { key: "requirements",  label: "Requirements",         icon: "◧", reqs: "RS-001 – RS-006" },
   { key: "testcases",     label: "Test Cases",           icon: "◨", reqs: "TC-001 – TC-009" },
-  { key: "traceability",  label: "Traceability Matrix",  icon: "◩", reqs: "TC-007" },
+  { key: "traceability",  label: "SysML Traceability",   icon: "◈", reqs: "TC-007" },
   { key: "kb",            label: "Knowledge Base",       icon: "◪", reqs: "KB-001 – KB-006" },
   { key: "settings",      label: "Settings",             icon: "⚙", reqs: "UM · JM · MCP" },
   { key: "deferred",      label: "Deferred to v2",       icon: "◬", reqs: "AL-xxx · KB-007" },
@@ -3129,11 +3130,11 @@ useEffect(() => {
         setEasterEggToast("↩️ Theme restored");
       }} />}
       <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
-      <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
+      <main style={{ flex: 1, padding: page === "traceability" ? 0 : "28px 36px", maxWidth: page === "traceability" ? "none" : 1100, overflowY: page === "traceability" ? "hidden" : "auto", display: page === "traceability" ? "flex" : "block", flexDirection: "column" }}>
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
         {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
         {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
-        {page === "traceability" && <TraceabilityView requirements={requirements} testCases={testCases} />}
+        {page === "traceability" && <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} />}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
