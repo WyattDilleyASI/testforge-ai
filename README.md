@@ -8,6 +8,7 @@ TestForge AI ingests requirements, leverages a Knowledge Base of historical defe
 
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [Quick Start (Docker)](#quick-start-docker)
 - [Alternative: Run Directly (Node.js)](#alternative-run-directly-nodejs)
 - [Default Credentials](#default-credentials)
@@ -21,6 +22,48 @@ TestForge AI ingests requirements, leverages a Knowledge Base of historical defe
 - [Security](#security)
 - [Development](#development)
 - [Remote Access & Production Hardening](#remote-access--production-hardening)
+
+---
+
+## Screenshots
+
+> All screenshots shown using the **Frutiger Aero** theme. TestForge ships with 16 built-in themes selectable from Settings → User Preferences.
+
+### Coverage Dashboard
+
+![Coverage Dashboard](docs/screenshots/coverage-dashboard.png)
+
+The landing page for every session. At a glance you see requirement coverage percentage, draft test cases awaiting review, engineer-approved test cases, and knowledge base entry count — each linking to the relevant FRD requirement ID (RS-007, TC-003A, KB-001). Below that, Claude API usage metrics (tokens consumed, API calls, budget status) give visibility into generation costs. The bottom half lists every untested requirement sorted by priority (MUST HAVE / SHOULD HAVE) so engineers know exactly where to focus next.
+
+### Requirements
+
+![Requirements](docs/screenshots/requirements.png)
+
+All ingested requirements in a single scrollable list. Each card shows the requirement's Jama ID (e.g. `LFWM2-PRD_Rqmts-3`), full description text, source badge (JAMA), priority level (MUST HAVE), approval status (APPROVED), and downstream traceability references (TC: LFWM2-SYSRQ-xxx). Requirements can be imported directly from Jama DOC files, added manually, or cleared in bulk. The Edit button on each card opens an inline editor for description and acceptance criteria.
+
+### Test Case Generation
+
+![Test Case Generation](docs/screenshots/test-cases.png)
+
+The core workflow. Select a requirement from the dropdown, choose generation depth (Basic 2–3 / Standard 4–6 / Comprehensive 7–10), and optionally filter by test focus areas (Safety Critical, UI/UX Validation, Boundary Analysis, Error Recovery, Regression). Click **Generate Drafts** and the Claude API produces structured test cases — each with a unique ID (e.g. `TC-LFWM2-SubSys_Rqmt-186-001`), requirement traceability link, and test type badge (HAPPY PATH, NEGATIVE, BOUNDARY, EDGE CASE). A yellow DRAFT disclaimer banner reminds engineers that AI output requires human review. The Library / Session View tabs separate the full test case library from the current generation session. When no API key is configured, a fallback "Copy Prompt / Import Response" workflow lets teams use claude.ai manually.
+
+### SysML Traceability Diagram
+
+![SysML Traceability](docs/screenshots/sysml-traceability.png)
+
+A fully interactive D3-powered requirements diagram that visualizes the entire hierarchy — from product-level requirements down through system, subsystem, and component requirements — with containment edges, cross-references, and verify links to test cases. The right-side Finder panel lists all 191 nodes and supports search by ID or name. Toggle **TCs On** to overlay test case nodes on the diagram. The bottom TACO Assessment section evaluates each requirement against T (Testable), A (Atomic), C (Complete), and O (Observable) criteria, reporting overall compliance (e.g. 158/171 = 92% fully compliant). Zoom, pan, fit-to-view, and SVG export controls are in the top-right toolbar.
+
+### Knowledge Base
+
+![Knowledge Base](docs/screenshots/knowledge-base.png)
+
+Tagged entries that inform AI test case generation. Each entry has a structured ID (KB-E001 – KB-E005+), type badge (DEFECT HISTORY, SYSTEM BEHAVIOR, BUSINESS RULE), descriptive content, and linked tags for requirements (e.g. RS-001, RS-003), test cases (TC-002), Jama IDs (JM-007, JM-003), and custom tags (PDF, OCR, field-mapping, parsing, acceptance-criteria). Entries can include attached images with descriptions — useful for capturing UI screenshots of historical defects or setup procedures. The usage counter tracks how many times each entry has been injected into generation prompts.
+
+### Settings — User Preferences & Themes
+
+![Settings](docs/screenshots/settings-user-preferences.png)
+
+The Settings page (Admin-only for MCP and User Management sub-pages) opens to User Preferences by default. The Theme picker offers 16 appearance options: Midnight, Cherry Blossom, Wacky, Eye Bleed, Forest, Ocean, Sunset, Lavender, Retro Terminal, Nord, Light, Frutiger Aero, Chromawave, Hyperdrive, Solarized Dark, and Catppuccin. Additional settings sub-pages include Product Context (domain terms and example test cases for prompt tuning), User Management (CRUD, role assignment, OTP reset, account lockout), MCP Server Setup (token CRUD, config download, Claude Desktop/Code/Web connection guides), and Jama Connect configuration.
 
 ---
 
@@ -127,6 +170,7 @@ testforge-ai/
 ├── client/
 │   ├── src/
 │   │   ├── App.jsx         Full React frontend (single-file SPA)
+│   │   ├── SysMLTraceability.jsx   Interactive D3 requirements diagram
 │   │   ├── api.js          API client helper
 │   │   └── main.jsx        Entry point
 │   ├── index.html
@@ -139,7 +183,7 @@ testforge-ai/
 └── package.json            Server dependencies
 ```
 
-**Stack:** Node.js/Express · React 18 (Vite) · SQLite (better-sqlite3, WAL mode) · Claude API (`@anthropic-ai/sdk`) · MCP SDK (`@modelcontextprotocol/sdk`) · Docker
+**Stack:** Node.js/Express · React 18 (Vite) · SQLite (better-sqlite3, WAL mode) · D3.js (SysML diagrams) · Claude API (`@anthropic-ai/sdk`) · MCP SDK (`@modelcontextprotocol/sdk`) · Docker
 
 ---
 
@@ -147,19 +191,27 @@ testforge-ai/
 
 ### Requirement Ingestion (RS-001 – RS-007)
 
-Ingest requirements via plain text, markdown, JSON, CSV, or PDF. The system parses acceptance criteria into individual testable statements and flags ambiguous or untestable requirements for clarification.
+Ingest requirements via plain text, markdown, JSON, CSV, or PDF. Import directly from Jama DOC exports with automatic ID preservation and hierarchy mapping. The system parses acceptance criteria into individual testable statements and flags ambiguous or untestable requirements for clarification.
 
 ### AI Test Case Generation (TC-001 – TC-009)
 
-Select a requirement, choose generation depth (basic / standard / comprehensive), and generate 2–10 draft test cases via the Claude API. Each test case includes a structured ID, title, linked requirement IDs, preconditions, steps, expected results, and pass/fail criteria. All AI-generated test cases are marked **DRAFT** with a disclaimer — engineers review, augment, then approve.
+Select a requirement, choose generation depth (basic / standard / comprehensive), and generate 2–10 draft test cases via the Claude API. Each test case includes a structured ID, title, linked requirement IDs, preconditions, steps, expected results, and pass/fail criteria. All AI-generated test cases are marked **DRAFT** with a disclaimer — engineers review, augment, then approve. Optional test focus filters (Safety Critical, UI/UX Validation, Boundary Analysis, Error Recovery, Regression) steer the AI toward specific coverage goals.
 
 ### Knowledge Base–Informed Generation (KB-001 – KB-006)
 
-Tag Knowledge Base entries (defect history, business rules, environment constraints) to requirement IDs. During generation, relevant KB context is injected into the Claude prompt, producing test cases informed by organizational memory.
+Tag Knowledge Base entries (defect history, business rules, environment constraints) to requirement IDs. During generation, relevant KB context is injected into the Claude prompt, producing test cases informed by organizational memory. Entries support image attachments with AI-generated descriptions for visual context (e.g. UI screenshots of historical defects).
+
+### SysML Traceability Diagram (TC-007)
+
+An interactive D3-powered visualization of the full requirements hierarchy — product, system, subsystem, and component levels — with containment edges, cross-references, and verify links to test cases. Includes TACO assessment (Testable, Atomic, Complete, Observable) scoring per requirement, a searchable Finder panel, SVG export, and zoom/pan controls.
+
+### Coverage Dashboard (RS-007)
+
+Real-time metrics across the entire requirement set: coverage percentage, draft count, reviewed count, KB entry count, Claude API token usage, and a prioritized list of untested requirements. Each metric card links to its governing FRD requirement ID.
 
 ### Review, Approve & Export (TC-003a, JM-001 – JM-009)
 
-Only reviewed test cases with valid requirement links pass pre-export validation (JM-004) for Jama Connect sync. The export pipeline includes a simulation mode and full audit logging.
+Only reviewed test cases with valid requirement links pass pre-export validation (JM-004) for Jama Connect sync. Export to XLSX is available for all test cases. The export pipeline includes a simulation mode and full audit logging.
 
 ---
 
@@ -315,6 +367,13 @@ All endpoints require authentication (session cookie) unless noted.
 | `GET` | `/mcp/sse` | SSE endpoint for MCP connections |
 | `POST` | `/mcp/messages` | JSON-RPC message relay |
 
+### MCP Tokens
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/mcp/tokens` | List current user's tokens (masked) |
+| `POST` | `/api/mcp/tokens` | Create new token (full value returned once) |
+| `DELETE` | `/api/mcp/tokens/:id` | Revoke a token |
+
 ### Audit & Jama
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -332,9 +391,10 @@ Every feature maps to specific FRD v1.2 requirement IDs:
 |--------|---------|----------------|
 | Requirement Ingestion | RS-001 – RS-007 | CRUD + acceptance criteria parsing |
 | Test Case Generation | TC-001 – TC-009 | Claude API generation, Session View, Draft disclaimer |
-| Knowledge Base | KB-001 – KB-006 | Tagged entries, KB-informed generation |
+| Knowledge Base | KB-001 – KB-006 | Tagged entries, KB-informed generation, image attachments |
 | User Management | UM-001 – UM-009 | RBAC, OTP flow, audit log, lockout |
-| Jama Integration | JM-001 – JM-009 | Pre-export validation, simulated sync |
+| Jama Integration | JM-001 – JM-009 | Pre-export validation, XLSX export, simulated sync |
+| SysML Traceability | TC-007 | Interactive D3 diagram, TACO assessment, SVG export |
 | MCP Server Config | Admin Config | Admin-only CRUD, connection testing, token encryption |
 | Deferred (v2) | AL-001 – AL-008, KB-007 | Documented in Deferred view |
 
@@ -362,6 +422,8 @@ TestForge implements defense-in-depth across every layer:
 | `MCP_DELETED` | Server removed |
 | `MCP_TEST` | Connection test attempted (logs status or failure) |
 | `MCP_TOGGLED` | Server enabled or disabled |
+| `MCP_TOKEN_CREATED` | New MCP auth token generated |
+| `MCP_TOKEN_DELETED` | MCP auth token revoked |
 
 ---
 
