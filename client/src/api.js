@@ -44,9 +44,13 @@ export const api = {
 
   // Test Cases
   getTestCases: () => request("/testcases"),
-  generateTestCases: (reqId, depth) => request("/testcases/generate", { method: "POST", body: { reqId, depth } }),
+  generateTestCases: (reqId, depth, focuses) => request("/testcases/generate", { method: "POST", body: { reqId, depth, focuses } }),
   updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
-  getPrompt: (reqId, depth) => request(`/testcases/prompt?reqId=${encodeURIComponent(reqId)}&depth=${encodeURIComponent(depth || "standard")}`),
+  getPrompt: (reqId, depth, focuses) => {
+    const params = new URLSearchParams({ reqId, depth: depth || "standard" });
+    if (focuses && focuses.length > 0) params.set("focuses", focuses.join(","));
+    return request(`/testcases/prompt?${params}`);
+  },
   importTestCases: (reqId, depth, tcs) => request("/testcases/import", { method: "POST", body: { reqId, depth, tcs } }),
   refineTestCase: (tcId, feedback) => request(`/testcases/${tcId}/refine`, { method: "POST", body: { feedback } }),
   refinePrompt: (tcId, feedback) => request(`/testcases/${tcId}/refine-prompt`, { method: "POST", body: { feedback } }),
@@ -82,8 +86,20 @@ export const api = {
     return data;
   },
   deleteKbImage: (kbId, index) => request(`/kb/${kbId}/images/${index}`, { method: "DELETE" }),
+  updateImageDescription: (kbId, index, description) => request(`/kb/${kbId}/images/${index}/description`, { method: "PUT", body: { description } }),
+  regenerateImageDescription: (kbId, index) => request(`/kb/${kbId}/images/${index}/describe`, { method: "POST" }),
+  regenerateAllImageDescriptions: (kbId) => request(`/kb/${kbId}/images/describe-all`, { method: "POST" }),
   updateKbEntry: (kbId, data) => request(`/kb/${kbId}`, { method: "PUT", body: data }),
   deleteKbEntries: (kbIds) => request("/kb", { method: "DELETE", body: { kbIds } }),
+
+  // Product Context
+  getProductContext: () => request("/product-context"),
+  updateProductContext: (data) => request("/product-context", { method: "PUT", body: data }),
+
+  // Example Test Case
+  getExampleTc: () => request("/example-tc"),
+  setExampleTc: (tc_id) => request("/example-tc", { method: "PUT", body: { tc_id } }),
+  clearExampleTc: () => request("/example-tc", { method: "PUT", body: {} }),
 
   // Token Usage
   getTokenUsage: () => request("/usage/tokens"),

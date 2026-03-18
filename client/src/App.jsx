@@ -912,6 +912,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const COLORS = useTheme();
   const [selectedReqId, setSelectedReqId] = useState("");
   const [depth, setDepth] = useState("standard");
+  const [focuses, setFocuses] = useState(new Set());
   const [generating, setGenerating] = useState(false);
   const [expandedTc, setExpandedTc] = useState(null);
   const [apiError, setApiError] = useState(null);
@@ -934,15 +935,21 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
   const [refineCopyState, setRefineCopyState] = useState("idle");
   const [tcSelectMode, setTcSelectMode] = useState(false);
   const [selectedTcIds, setSelectedTcIds] = useState(new Set());
+  const [exampleTcId, setExampleTcId] = useState(null);
+
+  useEffect(() => { api.getExampleTc().then(d => { if (d.example_tc) setExampleTcId(d.example_tc.tc_id); }).catch(() => {}); }, []);
 
   const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
   const isUnreviewed = tc => tc.status === "Draft";
+
+  const toggleFocus = (f) => setFocuses(prev => { const next = new Set(prev); next.has(f) ? next.delete(f) : next.add(f); return next; });
+  const focusArray = [...focuses];
 
   const generate = async () => {
     if (!selectedReqId) return;
     setGenerating(true); setApiError(null);
     try {
-      const newTcs = await api.generateTestCases(selectedReqId, depth);
+      const newTcs = await api.generateTestCases(selectedReqId, depth, focusArray);
       setSessionTcIds(newTcs.map(tc => tc.tc_id));
       setViewMode("session");
       refresh();
@@ -979,7 +986,7 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
     if (!selectedReqId) return;
     setCopyState("copying");
     try {
-      const data = await api.getPrompt(selectedReqId, depth);
+      const data = await api.getPrompt(selectedReqId, depth, focusArray);
       await navigator.clipboard.writeText(data.prompt);
       setCopyState("copied");
       setTimeout(() => setCopyState("idle"), 2000);
@@ -1069,6 +1076,26 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
         <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} style={{ minWidth: 280 }} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
         <Select label="Depth" value={depth} onChange={setDepth} style={{ minWidth: 180 }} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
         <Button onClick={generate} disabled={!selectedReqId || generating}>{generating ? "Generating..." : "Generate Drafts"}</Button>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Test Focus</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {[
+            { key: "safety_critical", label: "Safety Critical" },
+            { key: "ui_ux_validation", label: "UI/UX Validation" },
+            { key: "boundary_analysis", label: "Boundary Analysis" },
+            { key: "error_recovery", label: "Error Recovery" },
+            { key: "regression", label: "Regression" },
+          ].map(f => {
+            const active = focuses.has(f.key);
+            return <span key={f.key} onClick={() => toggleFocus(f.key)} style={{
+              padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, cursor: "pointer", userSelect: "none",
+              background: active ? COLORS.accentDim : COLORS.surface,
+              color: active ? COLORS.accent : COLORS.textMuted,
+              border: `1px solid ${active ? COLORS.accent + "66" : COLORS.border}`,
+            }}>{f.label}</span>;
+          })}
+        </div>
       </div>
       {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
       {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
@@ -1212,7 +1239,12 @@ const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
                   </Button>
                   <Button small variant="ghost" disabled={refineLoading} onClick={e => { e.stopPropagation(); setRefiningTcId(null); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Cancel</Button>
                 </div>
-              </div> : <div style={{ display: "flex" }}><Button small variant="secondary" onClick={e => { e.stopPropagation(); setRefiningTcId(tc.tc_id); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Refine</Button></div>}
+              </div> : <div style={{ display: "flex", gap: 8 }}>
+                <Button small variant="secondary" onClick={e => { e.stopPropagation(); setRefiningTcId(tc.tc_id); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Refine</Button>
+                <Button small variant="ghost" onClick={async e => { e.stopPropagation(); try { await api.setExampleTc(tc.tc_id); setExampleTcId(tc.tc_id); } catch {} }}>
+                  {exampleTcId === tc.tc_id ? "Example TC" : "Use as Example"}
+                </Button>
+              </div>}
             </div>
           </div>;
         })()}
@@ -1259,6 +1291,11 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
   const [editingTags, setEditingTags] = useState(null); // kb_id being edited
   const [tagInput, setTagInput] = useState("");
   const [editingReqs, setEditingReqs] = useState(null); // kb_id for related reqs editing
+  const [editingDesc, setEditingDesc] = useState(null); // { kbId, index }
+  const [descDraft, setDescDraft] = useState("");
+  const [descSaving, setDescSaving] = useState(false);
+  const [descRegenerating, setDescRegenerating] = useState(null); // "kbId-index"
+  const [expandedDescs, setExpandedDescs] = useState(new Set()); // "kbId-index" keys
 
   const save = async () => {
     setError("");
@@ -1341,6 +1378,25 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
     } catch (err) { setError(err.message); }
   };
 
+  const saveImageDescription = async (kbId, index) => {
+    setDescSaving(true);
+    try {
+      await api.updateImageDescription(kbId, index, descDraft);
+      setEditingDesc(null); setDescDraft("");
+      refresh();
+    } catch (err) { setError(err.message); }
+    setDescSaving(false);
+  };
+
+  const regenerateAllDescriptions = async (kbId) => {
+    setDescRegenerating(kbId);
+    try {
+      await api.regenerateAllImageDescriptions(kbId);
+      refresh();
+    } catch (err) { setError(err.message); }
+    setDescRegenerating(null);
+  };
+
   const removeRelatedReq = async (kbId, reqId) => {
     const entry = kbEntries.find(e => e.kb_id === kbId);
     if (!entry) return;
@@ -1413,21 +1469,52 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>{e.title}</div>
           <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>{e.content}</div>
-          {(e.images || []).length > 0 && <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            {e.images.map((img, i) => <div key={i} style={{ position: "relative", display: "inline-block" }}>
-              <img
-                src={`data:${img.media_type};base64,${img.data}`}
-                alt={img.name}
-                style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}
-                onClick={() => setPreviewImg(img)}
-                title={img.name}
-              />
-              <button
-                onClick={() => handleDeleteImage(e.kb_id, i)}
-                style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: COLORS.red || "#ef4444", color: "#fff", border: "none", cursor: "pointer", fontSize: 10, lineHeight: "18px", padding: 0, fontWeight: 700 }}
-                title="Remove image"
-              >&times;</button>
-            </div>)}
+          {(e.images || []).length > 0 && <div style={{ marginTop: 10 }}>
+            {e.images.map((img, i) => {
+              const isEditing = editingDesc && editingDesc.kbId === e.kb_id && editingDesc.index === i;
+              const regenKey = `${e.kb_id}-${i}`;
+              return <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, padding: 8, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <img
+                    src={`data:${img.media_type};base64,${img.data}`}
+                    alt={img.name}
+                    style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}
+                    onClick={() => setPreviewImg(img)}
+                    title={img.name}
+                  />
+                  <button
+                    onClick={() => handleDeleteImage(e.kb_id, i)}
+                    style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: COLORS.red || "#ef4444", color: "#fff", border: "none", cursor: "pointer", fontSize: 10, lineHeight: "18px", padding: 0, fontWeight: 700 }}
+                    title="Remove image"
+                  >&times;</button>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, marginBottom: 4 }}>{img.name}</div>
+                  {isEditing ? <div>
+                    <textarea
+                      value={descDraft}
+                      onChange={ev => setDescDraft(ev.target.value)}
+                      style={{ width: "100%", minHeight: 80, fontSize: 11, fontFamily: mono, padding: 8, background: COLORS.surfaceRaised, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 4, resize: "vertical", boxSizing: "border-box" }}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                      <Button small onClick={() => saveImageDescription(e.kb_id, i)} disabled={descSaving}>{descSaving ? "Saving..." : "Save"}</Button>
+                      <Button small variant="ghost" onClick={() => { setEditingDesc(null); setDescDraft(""); }}>Cancel</Button>
+                    </div>
+                  </div> : <div>
+                    {img.description ? <>
+                      <div onClick={() => setExpandedDescs(prev => { const next = new Set(prev); next.has(regenKey) ? next.delete(regenKey) : next.add(regenKey); return next; })} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", fontWeight: 600, userSelect: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ display: "inline-block", transform: expandedDescs.has(regenKey) ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>&#9654;</span>
+                        Description
+                      </div>
+                      {expandedDescs.has(regenKey) && <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.5, whiteSpace: "pre-wrap", marginTop: 4, paddingLeft: 14 }}>{img.description}</div>}
+                    </> : <div style={{ fontSize: 11, color: COLORS.textMuted, fontStyle: "italic" }}>No description generated</div>}
+                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                      <span onClick={() => { setEditingDesc({ kbId: e.kb_id, index: i }); setDescDraft(img.description || ""); }} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", fontWeight: 600 }}>Edit</span>
+                    </div>
+                  </div>}
+                </div>
+              </div>;
+            })}
           </div>}
           <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
             <Badge color="purple">{e.type}</Badge>
@@ -1451,6 +1538,12 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
                 disabled={uploading === e.kb_id}
               />
             </label>
+            {(e.images || []).length > 0 && <span
+              onClick={() => descRegenerating !== e.kb_id && regenerateAllDescriptions(e.kb_id)}
+              style={{ fontSize: 11, color: COLORS.purple, cursor: descRegenerating === e.kb_id ? "not-allowed" : "pointer", marginLeft: 8, fontWeight: 600, opacity: descRegenerating === e.kb_id ? 0.5 : 1 }}
+            >
+              {descRegenerating === e.kb_id ? "Generating Descriptions..." : "Generate Descriptions"}
+            </span>}
           </div>
           {editingTags === e.kb_id && <div style={{ marginTop: 8, padding: 10, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
             <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 6, fontWeight: 600 }}>Tags</div>
@@ -2528,6 +2621,7 @@ const McpServerConfigView = ({ currentUser }) => {
 
 const SETTINGS_SECTIONS = [
   { key: "preferences", label: "User Preferences", icon: "◎", adminOnly: false },
+  { key: "product",     label: "Product Context",   icon: "◈", adminOnly: false },
   { key: "users",       label: "User Management",  icon: "◯", adminOnly: true },
   { key: "mcp",         label: "MCP Server Setup",  icon: "◆", adminOnly: true },
   { key: "jama",        label: "Jama Connect",      icon: "◭", adminOnly: true },
@@ -2636,6 +2730,8 @@ const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requirement
             onThemeChange={onThemeChange}
           />
         );
+      case "product":
+        return <ProductContextPanel />;
       case "users":
         return <UserManagementView currentUser={currentUser} />;
       case "mcp":
@@ -2673,6 +2769,96 @@ const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requirement
   );
 };
 
+
+// ─── PRODUCT CONTEXT PANEL ──────────────────────────────────────────────────
+
+const ProductContextPanel = () => {
+  const COLORS = useTheme();
+  const [productContext, setProductContext] = useState("");
+  const [keyTerms, setKeyTerms] = useState("");
+  const [exampleTc, setExampleTc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    Promise.all([api.getProductContext(), api.getExampleTc()])
+      .then(([ctx, ex]) => {
+        setProductContext(ctx.product_context || "");
+        setKeyTerms(ctx.key_terms || "");
+        setExampleTc(ex.example_tc || null);
+      }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setSaved(false);
+    try {
+      await api.updateProductContext({ product_context: productContext, key_terms: keyTerms });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {}
+    setSaving(false);
+  };
+
+  return <div>
+    <div style={{ marginBottom: 28 }}>
+      <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Product Context</h2>
+      <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>
+        Provide context about your product to improve AI-generated test cases and image descriptions.
+      </p>
+    </div>
+
+    {loading ? <Spinner /> : <>
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Product Description</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
+          Describe your product, who uses it, and what it does. This context is included in all AI prompts.
+        </div>
+        <textarea
+          value={productContext}
+          onChange={e => setProductContext(e.target.value)}
+          placeholder={"e.g., Mobius is a desktop application for autonomous mower fleet management. It is used by field operators to plan mowing missions, monitor mower status, and manage waypoints across multiple job sites.\n\nKey subsystems include WAT (Wireless Acceptance Testing) and Offline Planner (mission path planning)."}
+          style={{ width: "100%", minHeight: 120, fontSize: 12, fontFamily: mono, padding: 12, background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, resize: "vertical", boxSizing: "border-box", outline: "none" }}
+        />
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Key Terms</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
+          Define domain-specific terminology so the AI uses correct vocabulary. One term per line, in the format: <span style={{ fontFamily: mono, color: COLORS.accent }}>Term — Definition</span>
+        </div>
+        <textarea
+          value={keyTerms}
+          onChange={e => setKeyTerms(e.target.value)}
+          placeholder={"e.g.,\nWAT — Wireless Acceptance Testing, validates RF communication between mower and base station\nResume Point — GPS coordinate where the mower returns after an interruption\nOffline Planner — Desktop module for creating mowing mission paths without connectivity\nGeofence — Virtual boundary that restricts mower operating area"}
+          style={{ width: "100%", minHeight: 120, fontSize: 12, fontFamily: mono, padding: 12, background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, resize: "vertical", boxSizing: "border-box", outline: "none" }}
+        />
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Example Test Case</div>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
+          A real test case used as a few-shot example in generation prompts. Set this from any test case card using the "Use as Example" button.
+        </div>
+        {exampleTc ? <div style={{ background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}`, padding: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.accent, marginBottom: 4 }}>{exampleTc.tc_id}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 8 }}>{exampleTc.title}</div>
+          {exampleTc.type && <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>Type: {exampleTc.type}</div>}
+          {(() => { try { const d = typeof exampleTc.description === "string" ? JSON.parse(exampleTc.description) : exampleTc.description; return d?.objective ? <div style={{ fontSize: 11, color: COLORS.text, marginBottom: 4 }}>Objective: {d.objective}</div> : null; } catch { return null; } })()}
+          {(() => { try { const s = typeof exampleTc.steps === "string" ? JSON.parse(exampleTc.steps) : exampleTc.steps; return s?.length ? <div style={{ fontSize: 11, color: COLORS.textMuted }}>{s.length} step(s)</div> : null; } catch { return null; } })()}
+          <Button small variant="ghost" style={{ marginTop: 8 }} onClick={async () => { try { await api.clearExampleTc(); setExampleTc(null); } catch {} }}>Clear Example</Button>
+        </div> : <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic", padding: "12px 0" }}>
+          No example set. Open any test case and click "Use as Example" to set one.
+        </div>}
+      </Card>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <Button onClick={save} disabled={saving}>{saving ? "Saving..." : saved ? "Saved!" : "Save"}</Button>
+        {saved && <span style={{ fontSize: 12, color: COLORS.green, fontFamily: mono }}>Changes saved</span>}
+      </div>
+    </>}
+  </div>;
+};
 
 // ─── USER PREFERENCES PANEL ─────────────────────────────────────────────────
 //
