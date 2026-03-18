@@ -151,10 +151,7 @@ ${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT (entries matching this requirement 
     return entry;
   }).join("\n")}` : ""}
 
-GENERATION DEPTH: ${depth || "standard"}
-- basic: 2-3 test cases covering happy path and one negative case
-- standard: 4-6 test cases covering happy path, negative, boundary conditions
-- comprehensive: 6-10 test cases covering happy path, negative, boundary, edge cases, error recovery
+GENERATION DEPTH: ${{ basic: "basic — generate 2-3 test cases covering happy path and one negative case", standard: "standard — generate 4-6 test cases covering happy path, negative, boundary conditions", comprehensive: "comprehensive — generate 6-10 test cases covering happy path, negative, boundary, edge cases, error recovery" }[depth || "standard"]}
 
 Generate test cases as a JSON array. Each test case must have:
 - title: string
