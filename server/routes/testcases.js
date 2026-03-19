@@ -766,10 +766,21 @@ router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) 
         const existing = db.prepare("SELECT tc_id FROM test_cases WHERE tc_id = ?").get(currentTc.tcId);
         if (existing) { skipped.push(currentTc.tcId); return; }
 
+        // Match upstream relationship IDs to existing requirements
+        const reqDb = getReqDb();
+        let linkedReqIds = [];
+        try {
+          const upstreamRels = JSON.parse(currentTc.upstream || "[]");
+          for (const rel of upstreamRels) {
+            const match = reqDb.prepare("SELECT req_id FROM requirements WHERE req_id = ?").get(rel.id);
+            if (match) linkedReqIds.push(match.req_id);
+          }
+        } catch {}
+
         db.prepare(
           "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
         ).run(
-          currentTc.tcId, currentTc.title, currentTc.tcId, "[]",
+          currentTc.tcId, currentTc.title, currentTc.tcId, JSON.stringify(linkedReqIds),
           JSON.stringify({ preconditions: [], environment: [], equipment: [], testData: [] }),
           JSON.stringify(currentTc.steps), currentTc.descJson,
           "Happy Path", "standard", "",
@@ -1018,10 +1029,20 @@ router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) 
 
         const tcStatus = status === "Approved" ? "Reviewed" : "Draft";
 
+        // Match upstream relationship IDs to existing requirements
+        const reqDb = getReqDb();
+        let linkedReqIds = [];
+        try {
+          for (const rel of upstreamRels) {
+            const match = reqDb.prepare("SELECT req_id FROM requirements WHERE req_id = ?").get(rel.id);
+            if (match) linkedReqIds.push(match.req_id);
+          }
+        } catch {}
+
         db.prepare(
           "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         ).run(
-          projectId, title, projectId, "[]",
+          projectId, title, projectId, JSON.stringify(linkedReqIds),
           setupJson, JSON.stringify(steps), descJson,
           "Happy Path", "standard", "",
           "[]", upstream, tcStatus,
