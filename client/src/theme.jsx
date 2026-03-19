@@ -523,6 +523,58 @@ export const THEMES = {
     hover: "rgba(212,132,90,0.06)",
   },
 
+  // ── URGENT PUMPKIN ─────────────────────────────────────────────────────────
+  // Deep navy base with hot orange and amber pops. Urgency meets warmth.
+  urgentPumpkin: {
+    name: "Urgent Pumpkin", emoji: "🎃",
+    bg: "#020617", surface: "#0F172A", surfaceRaised: "#1A2540",
+    border: "#1E293B", text: "#FED7AA", textMuted: "#C8976A",
+    textBright: "#FFFBEB", accent: "#F97316", accentDim: "rgba(249,115,22,0.14)",
+    accentGlow: "rgba(249,115,22,0.28)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
+    red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
+    amberDim: "rgba(251,191,36,0.12)", purple: "#C084FC", purpleDim: "rgba(192,132,252,0.12)",
+    hover: "rgba(249,115,22,0.06)",
+  },
+
+  // ── EMERALD OPS ──────────────────────────────────────────────────────────
+  // Cool slate-navy command center with emerald green accent. Calm and focused.
+  emeraldOps: {
+    name: "Emerald Ops", emoji: "💚",
+    bg: "#020617", surface: "#0B1220", surfaceRaised: "#131D2E",
+    border: "#1E293B", text: "#E2E8F0", textMuted: "#94A3B8",
+    textBright: "#F1F5F9", accent: "#10B981", accentDim: "rgba(16,185,129,0.12)",
+    accentGlow: "rgba(16,185,129,0.25)", green: "#10B981", greenDim: "rgba(16,185,129,0.12)",
+    red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
+    amberDim: "rgba(251,191,36,0.12)", purple: "#A78BFA", purpleDim: "rgba(167,139,250,0.12)",
+    hover: "rgba(16,185,129,0.06)",
+  },
+
+  // ── SUNSHINE HUES ────────────────────────────────────────────────────────
+  // Warm cream base with teal accent, coral red, and sunny yellow highlights.
+  sunshineHues: {
+    name: "Sunshine Hues", emoji: "🌞",
+    bg: "#FFFEF5", surface: "#FFFFEA", surfaceRaised: "#FFFFFF",
+    border: "#D8D8D8", text: "#4A4A42", textMuted: "#8A8A80",
+    textBright: "#1A1A14", accent: "#00CECB", accentDim: "rgba(0,206,203,0.10)",
+    accentGlow: "rgba(0,206,203,0.22)", green: "#2EAA6E", greenDim: "rgba(46,170,110,0.10)",
+    red: "#FF5E5B", redDim: "rgba(255,94,91,0.10)", amber: "#D4AA00",
+    amberDim: "rgba(212,170,0,0.10)", purple: "#8B6CC4", purpleDim: "rgba(139,108,196,0.10)",
+    hover: "rgba(0,206,203,0.06)",
+  },
+
+  // ── SCOOBY DOO ───────────────────────────────────────────────────────────
+  // Cartoon-saturated gold, red, lime, and indigo on a deep purple-navy base.
+  scoobyDoo: {
+    name: "Scooby Doo", emoji: "🐕",
+    bg: "#0E0A1E", surface: "#16122A", surfaceRaised: "#1E1A36",
+    border: "#2E2A4A", text: "#D8D4E8", textMuted: "#8A86A8",
+    textBright: "#F0EEF8", accent: "#F6B72A", accentDim: "rgba(246,183,42,0.14)",
+    accentGlow: "rgba(246,183,42,0.30)", green: "#C4F862", greenDim: "rgba(196,248,98,0.12)",
+    red: "#F63C3C", redDim: "rgba(246,60,60,0.12)", amber: "#F77D3B",
+    amberDim: "rgba(247,125,59,0.12)", purple: "#6562F8", purpleDim: "rgba(101,98,248,0.12)",
+    hover: "rgba(246,183,42,0.06)",
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // HIDDEN EASTER EGG THEMES
   // ═══════════════════════════════════════════════════════════════════════════
@@ -584,13 +636,14 @@ export const THEME_CATEGORIES = [
       "midnight", "nord", "solarized", "catppuccin", "slateEmber",
       "dracula", "monochrome", "nautical",
       "rosePine", "gruvboxDark", "tokyoNight", "monokai", "cobalt", "copper",
+      "emeraldOps",
     ],
   },
   {
     label: "Light",
     keys: [
       "light", "cherry", "lavender", "frutigerAero", "windowsXP", "pastel",
-      "solarizedLight", "gruvboxLight", "paper",
+      "solarizedLight", "gruvboxLight", "paper", "sunshineHues",
     ],
   },
   {
@@ -598,6 +651,7 @@ export const THEME_CATEGORIES = [
     keys: [
       "forest", "ocean", "sunset", "retro", "cyberpunk",
       "neonMint", "wacky", "eyebleed", "hotDog",
+      "urgentPumpkin", "scoobyDoo",
     ],
   },
   {
