@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
-const { getDb, logAudit, nextKbId, getProductContext, setSetting } = require("../db");
+const { getDb, getKbDb, getTcDb, getReqDb, logAudit, nextKbId, getProductContext, setSetting, getSetting, saveImage, readImageBase64, readImage, deleteImage, deleteImageDir } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
 
 const MAX_DESCRIBE_DIM = 1568;
@@ -59,14 +59,22 @@ Notable States: [Any visible states, selections, errors, or data shown]`;
   return prompt;
 }
 
+// Load image data from filesystem for API calls
+function loadImageData(kbId, img) {
+  const data = readImageBase64(kbId, img.name);
+  return data ? { name: img.name, media_type: img.media_type, data } : null;
+}
+
 // Describe multiple images in one API call with full KB context
-async function describeImages(images, kbEntry) {
+async function describeImages(kbId, images, kbEntry) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return images.map(() => null);
 
   const content = [{ type: "text", text: buildDescribePrompt(kbEntry, images.map(img => img.name)) }];
   for (const img of images) {
-    const resized = await resizeIfNeeded(img.data, img.media_type);
+    const data = img.data || readImageBase64(kbId, img.name);
+    if (!data) continue;
+    const resized = await resizeIfNeeded(data, img.media_type);
     content.push({ type: "text", text: `Image: ${img.name}` });
     content.push({ type: "image", source: { type: "base64", media_type: img.media_type, data: resized } });
   }
@@ -99,18 +107,11 @@ async function describeImages(images, kbEntry) {
     if (start === -1) { descriptions.push(null); continue; }
 
     const contentStart = start + marker.length;
-    // Find the next === marker or end of text
     const nextMarker = fullText.indexOf("===", contentStart + 1);
     const end = nextMarker !== -1 ? fullText.lastIndexOf("\n", nextMarker) : fullText.length;
     descriptions.push(fullText.slice(contentStart, end).trim() || null);
   }
   return descriptions;
-}
-
-// Describe a single image with full KB context (for regeneration)
-async function describeSingleImage(image, kbEntry) {
-  const results = await describeImages([image], kbEntry);
-  return results[0];
 }
 
 const router = express.Router();
@@ -120,7 +121,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 // GET /api/kb
 router.get("/kb", requireAuth, (req, res) => {
-  const rows = getDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
+  const rows = getKbDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
   res.json(rows.map(kb => ({
     ...kb,
     tags: JSON.parse(kb.tags || "[]"),
@@ -136,55 +137,81 @@ router.post("/kb", requireAuth, (req, res) => {
   if (!title || !content) return res.status(400).json({ error: "Title and content are required" });
 
   const kbId = nextKbId();
-  getDb().prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
+  getKbDb().prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .run(kbId, title, type || "Defect History", content, JSON.stringify(tags || []), JSON.stringify(related_reqs || []), req.session.name);
 
   logAudit(req.session.name, "KB_CREATED", `Created KB entry ${kbId}: ${title}`);
   res.json({ ok: true, kb_id: kbId });
 });
 
+// GET /api/kb/:kbId/images/:index/file — serve an image file
+router.get("/kb/:kbId/images/:index/file", requireAuth, (req, res) => {
+  const db = getKbDb();
+  const entry = db.prepare("SELECT images FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
+  if (!entry) return res.status(404).json({ error: "KB entry not found" });
+
+  const images = JSON.parse(entry.images || "[]");
+  const idx = parseInt(req.params.index);
+  if (idx < 0 || idx >= images.length) return res.status(400).json({ error: "Invalid image index" });
+
+  const img = images[idx];
+  const buf = readImage(req.params.kbId, img.name);
+  if (!buf) return res.status(404).json({ error: "Image file not found" });
+
+  res.set("Content-Type", img.media_type);
+  res.set("Cache-Control", "public, max-age=86400");
+  res.send(buf);
+});
+
 // POST /api/kb/:kbId/images — upload images to a KB entry, auto-generate descriptions
 router.post("/kb/:kbId/images", requireAuth, upload.array("images", 10), async (req, res) => {
   if (!req.files || req.files.length === 0) return res.status(400).json({ error: "No images uploaded" });
 
-  const db = getDb();
+  const db = getKbDb();
   const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
   if (!entry) return res.status(404).json({ error: "KB entry not found" });
 
   const existing = JSON.parse(entry.images || "[]");
-  const newImages = req.files.map(f => ({
-    name: f.originalname,
+  const kbId = req.params.kbId;
+
+  // Save files to disk and build metadata
+  const newImages = req.files.map(f => {
+    const savedName = saveImage(kbId, f.originalname, f.buffer.toString("base64"));
+    return { name: savedName, media_type: f.mimetype, description: null };
+  });
+
+  // Auto-generate descriptions — pass raw base64 for new uploads (still in memory)
+  const imagesWithData = req.files.map((f, i) => ({
+    name: newImages[i].name,
     media_type: f.mimetype,
     data: f.buffer.toString("base64"),
-    description: null,
   }));
 
-  // Auto-generate descriptions in one batch call with full KB context
   try {
-    const descriptions = await describeImages(newImages, entry);
+    const descriptions = await describeImages(kbId, imagesWithData, entry);
     for (let i = 0; i < newImages.length; i++) {
       if (descriptions[i]) newImages[i].description = descriptions[i];
     }
   } catch (e) { console.error("Image describe failed:", e.message); }
 
   const updated = [...existing, ...newImages];
-  db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(updated), req.params.kbId);
+  db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(updated), kbId);
 
-  logAudit(req.session.name, "KB_IMAGE_ADDED", `Added ${newImages.length} image(s) to ${req.params.kbId}`);
+  logAudit(req.session.name, "KB_IMAGE_ADDED", `Added ${newImages.length} image(s) to ${kbId}`);
   res.json({ ok: true, imageCount: updated.length, images: updated.map(img => ({ name: img.name, description: img.description || null })) });
 });
 
 // POST /api/kb/:kbId/images/describe-all — regenerate all image descriptions for a KB entry
 // NOTE: must be registered before :index routes to avoid Express matching "describe-all" as :index
 router.post("/kb/:kbId/images/describe-all", requireAuth, async (req, res) => {
-  const db = getDb();
+  const db = getKbDb();
   const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
   if (!entry) return res.status(404).json({ error: "KB entry not found" });
 
   const images = JSON.parse(entry.images || "[]");
   if (images.length === 0) return res.status(400).json({ error: "No images to describe" });
 
-  const descriptions = await describeImages(images, entry);
+  const descriptions = await describeImages(req.params.kbId, images, entry);
   for (let i = 0; i < images.length; i++) {
     if (descriptions[i]) images[i].description = descriptions[i];
   }
@@ -196,7 +223,7 @@ router.post("/kb/:kbId/images/describe-all", requireAuth, async (req, res) => {
 
 // DELETE /api/kb/:kbId/images/:index — remove an image from a KB entry
 router.delete("/kb/:kbId/images/:index", requireAuth, (req, res) => {
-  const db = getDb();
+  const db = getKbDb();
   const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
   if (!entry) return res.status(404).json({ error: "KB entry not found" });
 
@@ -205,6 +232,7 @@ router.delete("/kb/:kbId/images/:index", requireAuth, (req, res) => {
   if (idx < 0 || idx >= images.length) return res.status(400).json({ error: "Invalid image index" });
 
   const removed = images.splice(idx, 1);
+  deleteImage(req.params.kbId, removed[0].name);
   db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(images), req.params.kbId);
 
   logAudit(req.session.name, "KB_IMAGE_REMOVED", `Removed image "${removed[0].name}" from ${req.params.kbId}`);
@@ -216,7 +244,7 @@ router.put("/kb/:kbId/images/:index/description", requireAuth, (req, res) => {
   const { description } = req.body;
   if (typeof description !== "string") return res.status(400).json({ error: "description is required" });
 
-  const db = getDb();
+  const db = getKbDb();
   const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
   if (!entry) return res.status(404).json({ error: "KB entry not found" });
 
@@ -233,7 +261,7 @@ router.put("/kb/:kbId/images/:index/description", requireAuth, (req, res) => {
 
 // POST /api/kb/:kbId/images/:index/describe — regenerate an image description via Claude
 router.post("/kb/:kbId/images/:index/describe", requireAuth, async (req, res) => {
-  const db = getDb();
+  const db = getKbDb();
   const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
   if (!entry) return res.status(404).json({ error: "KB entry not found" });
 
@@ -242,7 +270,8 @@ router.post("/kb/:kbId/images/:index/describe", requireAuth, async (req, res) =>
   if (idx < 0 || idx >= images.length) return res.status(400).json({ error: "Invalid image index" });
 
   const img = images[idx];
-  const description = await describeSingleImage(img, entry);
+  const results = await describeImages(req.params.kbId, [img], entry);
+  const description = results[0];
   if (!description) return res.status(500).json({ error: "Failed to generate description. Check ANTHROPIC_API_KEY." });
 
   images[idx].description = description;
@@ -255,7 +284,7 @@ router.post("/kb/:kbId/images/:index/describe", requireAuth, async (req, res) =>
 // PUT /api/kb/:kbId — update KB entry tags and/or related requirements
 router.put("/kb/:kbId", requireAuth, (req, res) => {
   const { tags, related_reqs } = req.body;
-  const db = getDb();
+  const db = getKbDb();
   const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
   if (!entry) return res.status(404).json({ error: "KB entry not found" });
 
@@ -280,10 +309,13 @@ router.delete("/kb", requireAuth, (req, res) => {
   const { kbIds } = req.body;
   if (!Array.isArray(kbIds) || kbIds.length === 0) return res.status(400).json({ error: "kbIds array is required" });
 
-  const db = getDb();
+  const db = getKbDb();
   const deleteStmt = db.prepare("DELETE FROM kb_entries WHERE kb_id = ?");
   const deleteMany = db.transaction((ids) => {
-    for (const id of ids) deleteStmt.run(id);
+    for (const id of ids) {
+      deleteStmt.run(id);
+      deleteImageDir(id);
+    }
   });
   deleteMany(kbIds);
 
@@ -327,11 +359,13 @@ router.get("/jama/log", requireAuth, (req, res) => {
 
 // POST /api/jama/export — simulate Jama export (QA Manager+ per UM-004)
 router.post("/jama/export", requireRole("Admin", "QA Manager"), (req, res) => {
-  const db = getDb();
+  const coreDb = getDb();
+  const tcDb = getTcDb();
+  const reqDb = getReqDb();
 
   // JM-004: Pre-export validation — check for orphaned TCs
-  const allTcs = db.prepare("SELECT * FROM test_cases").all();
-  const allReqIds = db.prepare("SELECT req_id FROM requirements").all().map(r => r.req_id);
+  const allTcs = tcDb.prepare("SELECT * FROM test_cases").all();
+  const allReqIds = reqDb.prepare("SELECT req_id FROM requirements").all().map(r => r.req_id);
 
   const orphaned = allTcs.filter(tc => {
     const linked = JSON.parse(tc.linked_req_ids || "[]");
@@ -339,7 +373,7 @@ router.post("/jama/export", requireRole("Admin", "QA Manager"), (req, res) => {
   });
 
   if (orphaned.length > 0) {
-    db.prepare("INSERT INTO jama_export_log (user_name, action, details, status, tc_count) VALUES (?, ?, ?, ?, ?)")
+    coreDb.prepare("INSERT INTO jama_export_log (user_name, action, details, status, tc_count) VALUES (?, ?, ?, ?, ?)")
       .run(req.session.name, "VALIDATION FAILED", `${orphaned.length} orphaned TC(s). Export blocked per JM-004.`, "error", 0);
     logAudit(req.session.name, "JAMA_EXPORT_BLOCKED", `Pre-export validation failed: ${orphaned.length} orphaned TCs`, "error");
     return res.json({ status: "error", details: `${orphaned.length} orphaned TC(s) detected. Export blocked per JM-004.` });
@@ -351,7 +385,7 @@ router.post("/jama/export", requireRole("Admin", "QA Manager"), (req, res) => {
     return linked.length > 0 && tc.status === "Reviewed";
   });
 
-  db.prepare("INSERT INTO jama_export_log (user_name, action, details, status, tc_count) VALUES (?, ?, ?, ?, ?)")
+  coreDb.prepare("INSERT INTO jama_export_log (user_name, action, details, status, tc_count) VALUES (?, ?, ?, ?, ?)")
     .run(req.session.name, "EXPORT TO JAMA", `${exportable.length} reviewed TCs exported with REQ links intact. JM-007 field mapping applied.`, "success", exportable.length);
   logAudit(req.session.name, "JAMA_EXPORT", `Exported ${exportable.length} reviewed TCs to Jama`);
 
@@ -390,7 +424,7 @@ router.put("/example-tc", requireAuth, (req, res) => {
     return res.json({ ok: true });
   }
 
-  const tc = getDb().prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(tc_id);
+  const tc = getTcDb().prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(tc_id);
   if (!tc) return res.status(404).json({ error: "Test case not found" });
 
   // Store a clean version with only prompt-relevant fields
