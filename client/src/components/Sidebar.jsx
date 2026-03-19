@@ -1,6 +1,6 @@
 import { useTheme, font, mono } from "../theme";
 
-const NAV_ITEMS = [
+export const NAV_ITEMS = [
   { key: "dashboard",     label: "Coverage Dashboard",   icon: "◫", reqs: "RS-007" },
   { key: "requirements",  label: "Requirements",         icon: "◧", reqs: "RS-001 – RS-006" },
   { key: "testcases",     label: "Test Cases",           icon: "◨", reqs: "TC-001 – TC-009" },

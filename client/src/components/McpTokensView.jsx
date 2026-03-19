@@ -30,6 +30,7 @@ export const McpTokensView = ({ currentUser }) => {
 
   useEffect(() => { loadTokens(); }, [loadTokens]);
 
+  // Auto-detect OS for install command tabs
   useEffect(() => {
     if (typeof navigator !== "undefined") {
       const ua = navigator.userAgent.toLowerCase();
@@ -51,6 +52,7 @@ export const McpTokensView = ({ currentUser }) => {
       const data = await api.createMcpToken(tokenName.trim());
       setNewToken({ ...data, bridgePath: bridgePath.trim() });
       setTokenName("");
+      // Keep bridgePath so the user can reuse it for another token
       loadTokens();
     } catch (err) { setError(err.message); }
   };
@@ -68,6 +70,8 @@ export const McpTokensView = ({ currentUser }) => {
       });
     }
   };
+
+  // ── Config generation — uses the bridgePath captured at creation time ──
 
   const getDesktopConfigJson = (token, path) => {
     return JSON.stringify({
@@ -166,6 +170,7 @@ echo "\\033[33mRestart Claude Desktop to activate.\\033[0m"`;
     });
   };
 
+  // Config snippets use the path captured at token creation time
   const configSnippets = {
     desktop: getDesktopConfigJson(newToken?.token, newToken?.bridgePath),
     code: `# Claude Code — run in terminal
@@ -179,6 +184,8 @@ Header:  Authorization: Bearer ${newToken?.token || "tfmcp_your_token_here"}
 In Claude.ai → Settings → Connected Apps → Add MCP Server
 Paste the URL above and add the Authorization header.`,
   };
+
+  // ── Render ──────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -250,6 +257,7 @@ Paste the URL above and add the Authorization header.`,
           Tokens authenticate your Claude client with TestForge. Each token is tied to your account ({currentUser.name} / {currentUser.role}).
         </div>
 
+        {/* Create new token — name + bridge path + button */}
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 10 }}>
           <Input
             label="Token Name"
@@ -279,6 +287,7 @@ Paste the URL above and add the Authorization header.`,
         </div>
         <ErrorBanner msg={error} />
 
+        {/* ══ New token display — shown only once ══ */}
         {newToken && (
           <div style={{ marginBottom: 16, padding: 16, background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.green}44` }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.green, marginBottom: 10 }}>Token Created — Copy It Now</div>
@@ -286,6 +295,7 @@ Paste the URL above and add the Authorization header.`,
               This token will not be shown again. Copy it or install before dismissing.
             </div>
 
+            {/* Token value */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <div style={{
                 flex: 1, fontFamily: mono, fontSize: 12, color: COLORS.accent,
@@ -298,11 +308,13 @@ Paste the URL above and add the Authorization header.`,
               <Button small onClick={copyToken}>{copied ? "Copied!" : "Copy Token"}</Button>
             </div>
 
+            {/* Show the path that was captured */}
             <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.bg, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
               <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Bridge Path (from your input above)</div>
               <div style={{ fontFamily: mono, fontSize: 11, color: COLORS.textBright, wordBreak: "break-all" }}>{newToken.bridgePath}</div>
             </div>
 
+            {/* ── Quick Install section ── */}
             <div style={{
               padding: 16, background: COLORS.bg, borderRadius: 8,
               border: `1px solid ${COLORS.accent}33`, marginBottom: 16,
@@ -312,6 +324,7 @@ Paste the URL above and add the Authorization header.`,
                 Claude Desktop uses a local bridge script that connects to your TestForge server.
               </div>
 
+              {/* Method A: Download */}
               <div style={{
                 display: "flex", alignItems: "center", gap: 12,
                 padding: "12px 14px", background: COLORS.surfaceRaised, borderRadius: 6,
@@ -326,6 +339,7 @@ Paste the URL above and add the Authorization header.`,
                 <Button small onClick={downloadConfig}>Download Config</Button>
               </div>
 
+              {/* Method B: Terminal command */}
               <div style={{
                 padding: "12px 14px", background: COLORS.surfaceRaised, borderRadius: 6,
                 border: `1px solid ${COLORS.border}`, marginBottom: 10,
@@ -342,6 +356,7 @@ Paste the URL above and add the Authorization header.`,
                   </Button>
                 </div>
 
+                {/* OS selector */}
                 <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
                   {[
                     { key: "windows", label: "PowerShell (Windows)" },
@@ -371,6 +386,7 @@ Paste the URL above and add the Authorization header.`,
                 </pre>
               </div>
 
+              {/* Config folder reference */}
               <div style={{ fontSize: 10, color: COLORS.textMuted, lineHeight: 1.7, marginBottom: 10 }}>
                 <span style={{ fontFamily: mono, color: COLORS.accent, fontWeight: 600 }}>Config file locations:</span>
                 <div style={{ marginTop: 4, paddingLeft: 12 }}>
@@ -389,6 +405,7 @@ Paste the URL above and add the Authorization header.`,
               </div>
             </div>
 
+            {/* ── Manual config reference ── */}
             <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, marginBottom: 8, fontFamily: mono, textTransform: "uppercase" }}>Manual Config Reference</div>
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
               {[
@@ -430,6 +447,7 @@ Paste the URL above and add the Authorization header.`,
           </div>
         )}
 
+        {/* ══ Existing tokens list ══ */}
         {loading ? (
           <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic" }}>Loading tokens...</div>
         ) : tokens.length === 0 ? (
@@ -499,7 +517,7 @@ Paste the URL above and add the Authorization header.`,
         ))}
       </Card>
 
-      {/* In-App User Guide */}
+      {/* ══ In-App User Guide ══ */}
       <Card style={{ marginTop: 20 }}>
         <div
           onClick={() => setShowGuide(prev => !prev)}

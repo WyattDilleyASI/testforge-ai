@@ -51,6 +51,7 @@ export const McpServerConfigView = ({ currentUser }) => {
   const saveEdit = async () => {
     setError("");
     const payload = { ...editForm };
+    // Only send auth_token if the user typed something (avoid clearing on edit)
     if (!payload.auth_token) delete payload.auth_token;
     try {
       await api.updateMcpServer(editId, payload);
@@ -128,6 +129,7 @@ export const McpServerConfigView = ({ currentUser }) => {
         </Card>
       )}
 
+      {/* Add form */}
       {showAdd && isAdmin && (
         <Card glow style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.accent, marginBottom: 14 }}>Add MCP Server</div>
@@ -139,6 +141,7 @@ export const McpServerConfigView = ({ currentUser }) => {
         </Card>
       )}
 
+      {/* Server list */}
       {servers.length === 0 && !showAdd && (
         <EmptyState icon="◆" title="No MCP Servers Configured"
           subtitle={isAdmin ? "Add a server connection above" : "An administrator needs to configure MCP servers"} />
@@ -158,6 +161,7 @@ export const McpServerConfigView = ({ currentUser }) => {
           }}
             onClick={() => isAdmin && !isEditing && startEdit(s)}>
 
+            {/* Read-only header */}
             <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
               <span style={{
                 fontFamily: mono, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
@@ -197,6 +201,7 @@ export const McpServerConfigView = ({ currentUser }) => {
               </div>
             </div>
 
+            {/* Test result banner */}
             {test && !test.testing && (
               <div style={{
                 marginTop: 10, padding: "6px 12px", borderRadius: 6, fontSize: 11, fontFamily: mono,
@@ -211,6 +216,7 @@ export const McpServerConfigView = ({ currentUser }) => {
               </div>
             )}
 
+            {/* Inline edit form */}
             {isEditing && isAdmin && (
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}
                 onClick={e => e.stopPropagation()}>
@@ -239,6 +245,7 @@ export const McpServerConfigView = ({ currentUser }) => {
         );
       })}
 
+      {/* Role permissions reference */}
       <Card style={{ marginTop: 24, padding: "14px 16px" }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, marginBottom: 8, textTransform: "uppercase" }}>
           Access Control

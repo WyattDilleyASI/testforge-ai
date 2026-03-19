@@ -13,7 +13,7 @@ export const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) =>
   const [apiError, setApiError] = useState(null);
   const [sessionTcIds, setSessionTcIds] = useState(null);
   const [viewMode, setViewMode] = useState("library");
-  const [copyState, setCopyState] = useState("idle");
+  const [copyState, setCopyState] = useState("idle"); // idle | copying | copied | error
   const [showImport, setShowImport] = useState(false);
   const [importJson, setImportJson] = useState("");
   const [importError, setImportError] = useState("");
@@ -267,7 +267,7 @@ export const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) =>
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
             <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
-            <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Rejected"); }}>✗</Button>
+            <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Rejected"); }}>&#10007;</Button>
             <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
           </div>
         </div>

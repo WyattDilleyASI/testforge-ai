@@ -14,14 +14,14 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [editingTags, setEditingTags] = useState(null);
+  const [editingTags, setEditingTags] = useState(null); // kb_id being edited
   const [tagInput, setTagInput] = useState("");
-  const [editingReqs, setEditingReqs] = useState(null);
-  const [editingDesc, setEditingDesc] = useState(null);
+  const [editingReqs, setEditingReqs] = useState(null); // kb_id for related reqs editing
+  const [editingDesc, setEditingDesc] = useState(null); // { kbId, index }
   const [descDraft, setDescDraft] = useState("");
   const [descSaving, setDescSaving] = useState(false);
-  const [descRegenerating, setDescRegenerating] = useState(null);
-  const [expandedDescs, setExpandedDescs] = useState(new Set());
+  const [descRegenerating, setDescRegenerating] = useState(null); // "kbId-index"
+  const [expandedDescs, setExpandedDescs] = useState(new Set()); // "kbId-index" keys
 
   const save = async () => {
     setError("");

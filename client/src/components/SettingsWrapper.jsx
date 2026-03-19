@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
-import { useTheme, THEMES, font, mono } from "../theme";
-import { Card, Badge, Button, Spinner } from "./shared";
+import { useTheme, THEMES, THEME_CATEGORIES, ThemeSwatch, font, mono } from "../theme";
+import { Card, Badge, Button, Input, Select, Spinner } from "./shared";
 import { UserManagementView } from "./UserManagementView";
 import { McpTokensView } from "./McpTokensView";
 import { JamaView } from "./JamaView";
@@ -19,13 +19,17 @@ export const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requ
   const [activeSection, setActiveSection] = useState("preferences");
   const isAdmin = currentUser.role === "Admin";
 
+  // Filter sections by role
   const visibleSections = SETTINGS_SECTIONS.filter(s => !s.adminOnly || isAdmin);
 
+  // If the active section becomes hidden (e.g. role change), reset to preferences
   useEffect(() => {
     if (!visibleSections.find(s => s.key === activeSection)) {
       setActiveSection("preferences");
     }
   }, [isAdmin, activeSection]);
+
+  // ── Sub-nav renderer ──────────────────────────────────────────────────
 
   const SubNav = () => (
     <div style={{
@@ -102,6 +106,8 @@ export const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requ
     </div>
   );
 
+  // ── Panel renderer ────────────────────────────────────────────────────
+
   const renderPanel = () => {
     switch (activeSection) {
       case "preferences":
@@ -130,6 +136,8 @@ export const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requ
     }
   };
 
+  // ── Layout ────────────────────────────────────────────────────────────
+
   return (
     <div style={{
       display: "flex",
@@ -148,6 +156,8 @@ export const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requ
   );
 };
 
+
+// ─── PRODUCT CONTEXT PANEL ──────────────────────────────────────────────────
 
 const ProductContextPanel = () => {
   const COLORS = useTheme();
@@ -237,12 +247,25 @@ const ProductContextPanel = () => {
   </div>;
 };
 
+// ── Upgraded UserPreferencesPanel ────────────────────────────────────────────
 
 const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
   const COLORS = useTheme();
+  const [searchFilter, setSearchFilter] = useState("");
+
+  // Filter themes by search
+  const matchesSearch = (key, theme) => {
+    if (!searchFilter) return true;
+    const q = searchFilter.toLowerCase();
+    return (
+      key.toLowerCase().includes(q) ||
+      theme.name.toLowerCase().includes(q)
+    );
+  };
 
   return (
     <div>
+      {/* ── Header ── */}
       <div style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>
           User Preferences
@@ -258,41 +281,148 @@ const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
       </div>
 
       <Card>
-        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>
-          Theme
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright }}>
+            Theme
+          </div>
+          <div style={{ fontSize: 11, fontFamily: mono, color: COLORS.textMuted }}>
+            {Object.keys(THEMES).filter(k => !THEMES[k]._hidden).length} themes
+          </div>
         </div>
-        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 14 }}>
           Choose your preferred interface appearance.
         </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-         {Object.entries(THEMES).filter(([, t]) => !t._hidden).map(([key, t]) => (
-            <button
-              key={key}
-              onClick={() => onThemeChange(key)}
-              style={{
-                padding: "14px 16px",
-                borderRadius: 8,
-                border: `1.5px solid ${currentTheme === key ? COLORS.accent : COLORS.border}`,
-                background: currentTheme === key ? COLORS.accentDim : COLORS.surface,
-                cursor: "pointer",
-                textAlign: "left",
-                transition: "all 0.15s ease",
-                minWidth: 120,
-              }}
-            >
-              <div style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: currentTheme === key ? COLORS.accent : COLORS.textBright,
-                marginBottom: 4,
-              }}>
-                {t.emoji} {t.name}
-              </div>
-            </button>
-          ))}
+
+        {/* ── Search / filter ── */}
+        <div style={{ marginBottom: 18 }}>
+          <input
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            placeholder="Search themes..."
+            style={{
+              fontFamily: mono,
+              fontSize: 12,
+              color: COLORS.textBright,
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 6,
+              padding: "8px 12px",
+              outline: "none",
+              width: 220,
+            }}
+          />
         </div>
+
+        {/* ── Categorized grid ── */}
+        {THEME_CATEGORIES.map(cat => {
+          const visibleThemes = cat.keys.filter(k =>
+            THEMES[k] && !THEMES[k]._hidden && matchesSearch(k, THEMES[k])
+          );
+          if (visibleThemes.length === 0) return null;
+
+          return (
+            <div key={cat.label} style={{ marginBottom: 22 }}>
+              {/* Category label */}
+              <div style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: COLORS.textMuted,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                fontFamily: mono,
+                marginBottom: 10,
+                paddingBottom: 6,
+                borderBottom: `1px solid ${COLORS.border}`,
+              }}>
+                {cat.label}
+              </div>
+
+              {/* Theme cards grid */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+                gap: 10,
+              }}>
+                {visibleThemes.map(key => {
+                  const t = THEMES[key];
+                  const isActive = currentTheme === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => onThemeChange(key)}
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: 8,
+                        border: `1.5px solid ${isActive ? COLORS.accent : COLORS.border}`,
+                        background: isActive ? COLORS.accentDim : COLORS.surface,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "all 0.15s ease",
+                        position: "relative",
+                      }}
+                      onMouseEnter={e => {
+                        if (!isActive) e.currentTarget.style.borderColor = COLORS.accent + "66";
+                        if (!isActive) e.currentTarget.style.background = COLORS.hover || COLORS.accentDim;
+                      }}
+                      onMouseLeave={e => {
+                        if (!isActive) e.currentTarget.style.borderColor = COLORS.border;
+                        if (!isActive) e.currentTarget.style.background = COLORS.surface;
+                      }}
+                    >
+                      {/* Active indicator */}
+                      {isActive && (
+                        <div style={{
+                          position: "absolute",
+                          top: 8,
+                          right: 10,
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: COLORS.accent,
+                          boxShadow: `0 0 6px ${COLORS.accentGlow}`,
+                        }} />
+                      )}
+
+                      {/* Theme name */}
+                      <div style={{
+                        fontSize: 13,
+                        fontWeight: isActive ? 700 : 500,
+                        color: isActive ? COLORS.accent : COLORS.textBright,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        paddingRight: isActive ? 16 : 0,
+                      }}>
+                        {t.emoji} {t.name}
+                      </div>
+
+                      {/* Mini swatch preview */}
+                      <ThemeSwatch theme={t} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* ── No results state ── */}
+        {searchFilter && THEME_CATEGORIES.every(cat =>
+          cat.keys.filter(k => THEMES[k] && !THEMES[k]._hidden && matchesSearch(k, THEMES[k])).length === 0
+        ) && (
+          <div style={{
+            padding: 24,
+            textAlign: "center",
+            color: COLORS.textMuted,
+            fontSize: 13,
+            fontStyle: "italic",
+          }}>
+            No themes match "{searchFilter}"
+          </div>
+        )}
       </Card>
 
+      {/* ── Language (placeholder) ── */}
       <Card style={{ marginTop: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>
           Language
@@ -301,28 +431,15 @@ const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
           Interface language preference.
         </div>
         <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "12px 16px",
-          background: COLORS.bg,
-          borderRadius: 8,
+          padding: "10px 14px",
+          background: COLORS.surface,
+          borderRadius: 6,
           border: `1px solid ${COLORS.border}`,
+          fontSize: 12,
+          color: COLORS.textMuted,
+          fontStyle: "italic",
         }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>
-            English (US)
-          </span>
-          <span style={{
-            marginLeft: "auto",
-            fontSize: 10,
-            fontFamily: mono,
-            color: COLORS.textMuted,
-            background: COLORS.surface,
-            padding: "2px 8px",
-            borderRadius: 4,
-          }}>
-            ONLY AVAILABLE LANGUAGE
-          </span>
+          English (default) — additional languages coming soon.
         </div>
       </Card>
     </div>
