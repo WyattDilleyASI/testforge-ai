@@ -402,6 +402,19 @@ export const THEMES = {
     hover: "rgba(58,190,255,0.06)",
   },
 
+  // ── HOT DOG ─────────────────────────────────────────────────────────────
+  // The classic Microsoft Windows hot dog stand scheme: red bg, yellow text.
+  hotDog: {
+    name: "Hot Dog Stand", emoji: "🌭",
+    bg: "#CC0000", surface: "#E8B400", surfaceRaised: "#D4A300",
+    border: "#FFDD00", text: "#FFFF00", textMuted: "#E8C800",
+    textBright: "#FFFFFF", accent: "#FFD000", accentDim: "rgba(255,208,0,0.25)",
+    accentGlow: "rgba(255,208,0,0.45)", green: "#FFE033", greenDim: "rgba(255,224,51,0.20)",
+    red: "#FF0000", redDim: "rgba(255,0,0,0.20)", amber: "#FFEE55",
+    amberDim: "rgba(255,238,85,0.20)", purple: "#FFD000", purpleDim: "rgba(255,208,0,0.20)",
+    hover: "rgba(255,221,0,0.15)",
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // HIDDEN EASTER EGG THEMES
   // ═══════════════════════════════════════════════════════════════════════════
@@ -465,7 +478,7 @@ export const THEME_CATEGORIES = [
   },
   {
     label: "Vibrant",
-    keys: ["forest", "ocean", "sunset", "retro", "cyberpunk", "wacky", "eyebleed"],
+    keys: ["forest", "ocean", "sunset", "retro", "cyberpunk", "wacky", "eyebleed", "hotDog"],
   },
   {
     label: "Animated",
