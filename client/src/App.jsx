@@ -1,20 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
 import SysMLTraceability from "./SysMLTraceability";
-import { THEMES, THEME_CATEGORIES, ThemeSwatch, ThemeContext, useTheme } from "./themes";
+import { THEMES, THEME_CATEGORIES, ThemeSwatch, ThemeContext, useTheme, font, mono, DRAFT_DISCLAIMER, ROLE_PERMISSIONS } from "./theme";
 
 
 // Legacy alias so existing component code keeps working
 const COLORS = THEMES.midnight;
-const font = "'DM Sans', 'Segoe UI', system-ui, sans-serif";
-const mono = "'JetBrains Mono', 'Fira Code', monospace";
-const DRAFT_DISCLAIMER = "These test cases are AI-generated drafts and represent a suggested starting point only. QA Engineer review, augmentation, and approval are required before use.";
-
-const ROLE_PERMISSIONS = {
-  "QA Engineer": { label: "QA Engineer", color: "accent", permissions: ["Ingest & edit requirements", "Generate & edit test cases", "Add & tag KB entries", "View Traceability Matrix & Coverage Dashboard"], restricted: ["Approve TCs for export", "Modify Jama settings", "Access user management"] },
-  "QA Manager": { label: "QA Manager", color: "amber", permissions: ["All QA Engineer permissions", "Approve or reject TCs for export", "Initiate & review Jama exports", "View user activity logs"], restricted: ["Create/edit/deactivate accounts", "Configure Jama API credentials", "Access full audit log"] },
-  "Admin": { label: "Admin", color: "purple", permissions: ["All QA Manager permissions", "Create, edit, deactivate accounts", "Assign roles to users", "Configure Jama credentials", "Access full system audit log"], restricted: [] },
-};
 
 // ─── UTILITY COMPONENTS ─────────────────────────────────────────────────────
 
