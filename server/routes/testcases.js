@@ -4,7 +4,7 @@ const XLSX = require("xlsx");
 const cheerio = require("cheerio");
 const mammoth = require("mammoth");
 const sharp = require("sharp");
-const { getDb, logAudit, logTokenUsage, getProductContext, getSetting } = require("../db");
+const { getTcDb, getReqDb, getKbDb, logAudit, logTokenUsage, getProductContext, getSetting, readImageBase64 } = require("../db");
 const { requireAuth } = require("../auth");
 
 const MAX_IMAGE_DIM = 1568; // Claude API max for multi-image requests (safe under 2000px limit)
@@ -25,7 +25,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 // GET /api/testcases
 router.get("/", requireAuth, (req, res) => {
-  const rows = getDb().prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+  const rows = getTcDb().prepare("SELECT * FROM test_cases ORDER BY rowid").all();
   res.json(rows.map(tc => ({
     ...tc,
     linked_req_ids: JSON.parse(tc.linked_req_ids || "[]"),
@@ -78,15 +78,15 @@ const FOCUS_PROMPTS = {
 };
 
 // ─── Shared prompt builder ──────────────────────────────────────────────────
-function buildPrompt(db, reqId, depth, focuses = []) {
-  const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
+function buildPrompt(reqId, depth, focuses = []) {
+  const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
   if (!requirement) return null;
 
   const reqContext = JSON.parse(requirement.requirement_context || "[]");
   const tags = JSON.parse(requirement.tags || "[]");
 
   // Fetch KB entries that share a tag with this requirement or list it in related_reqs
-  const allKbRows = db.prepare("SELECT * FROM kb_entries").all();
+  const allKbRows = getKbDb().prepare("SELECT * FROM kb_entries").all();
   const allKb = allKbRows.filter(kb => {
     const kbTags = JSON.parse(kb.tags || "[]");
     const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
@@ -191,7 +191,8 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
     const images = JSON.parse(kb.images || "[]");
     for (const img of images) {
       if (!img.description) {
-        kbImages.push({ kb_id: kb.kb_id, name: img.name, media_type: img.media_type, data: img.data });
+        const data = readImageBase64(kb.kb_id, img.name);
+        if (data) kbImages.push({ kb_id: kb.kb_id, name: img.name, media_type: img.media_type, data });
       }
     }
   }
@@ -204,8 +205,8 @@ router.post("/generate", requireAuth, async (req, res) => {
   const { reqId, depth, focuses } = req.body;
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
-  const db = getDb();
-  const result = buildPrompt(db, reqId, depth, focuses || []);
+  const db = getTcDb();
+  const result = buildPrompt(reqId, depth, focuses || []);
   if (!result) return res.status(404).json({ error: "Requirement not found" });
 
   const { prompt, systemPrompt, requirement, allKb, kbImages } = result;
@@ -286,7 +287,7 @@ router.post("/generate", requireAuth, async (req, res) => {
     // Update KB usage counts based on what the AI actually referenced
     const referencedKbIds = new Set(tcsToInsert.flatMap(tc => JSON.parse(tc.kb_references || "[]")));
     if (referencedKbIds.size > 0) {
-      const updateKb = db.prepare("UPDATE kb_entries SET usage_count = usage_count + 1 WHERE kb_id = ?");
+      const updateKb = getKbDb().prepare("UPDATE kb_entries SET usage_count = usage_count + 1 WHERE kb_id = ?");
       for (const kbId of referencedKbIds) updateKb.run(kbId);
     }
 
@@ -313,8 +314,8 @@ router.get("/prompt", requireAuth, (req, res) => {
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
   const focusArray = focuses ? focuses.split(",").filter(Boolean) : [];
-  const db = getDb();
-  const result = buildPrompt(db, reqId, depth, focusArray);
+  const db = getTcDb();
+  const result = buildPrompt(reqId, depth, focusArray);
   if (!result) return res.status(404).json({ error: "Requirement not found" });
 
   const imageNote = result.kbImages.length > 0
@@ -330,8 +331,8 @@ router.post("/import", requireAuth, (req, res) => {
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
   if (!Array.isArray(tcs) || tcs.length === 0) return res.status(400).json({ error: "tcs must be a non-empty array" });
 
-  const db = getDb();
-  const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
+  const db = getTcDb();
+  const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
   if (!requirement) return res.status(404).json({ error: "Requirement not found" });
 
   const currentCount = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
@@ -381,7 +382,7 @@ router.post("/import", requireAuth, (req, res) => {
 
 // DELETE /api/testcases — clear all test cases
 router.delete("/", requireAuth, (req, res) => {
-  const db = getDb();
+  const db = getTcDb();
   const count = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
   db.prepare("DELETE FROM test_cases").run();
   logAudit(req.session.name, "TC_CLEAR_ALL", `Deleted all ${count} test cases`);
@@ -390,7 +391,7 @@ router.delete("/", requireAuth, (req, res) => {
 
 // DELETE /api/testcases/rejected — delete all rejected test cases
 router.delete("/rejected", requireAuth, (req, res) => {
-  const db = getDb();
+  const db = getTcDb();
   const count = db.prepare("SELECT COUNT(*) as count FROM test_cases WHERE status = 'Rejected'").get().count;
   db.prepare("DELETE FROM test_cases WHERE status = 'Rejected'").run();
   logAudit(req.session.name, "TC_CLEAR_REJECTED", `Deleted ${count} rejected test cases`);
@@ -403,7 +404,7 @@ router.post("/:tcId/refine", requireAuth, async (req, res) => {
   const { feedback } = req.body;
   if (!feedback) return res.status(400).json({ error: "feedback is required" });
 
-  const db = getDb();
+  const db = getTcDb();
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
   if (!tc) return res.status(404).json({ error: "Test case not found" });
 
@@ -411,7 +412,7 @@ router.post("/:tcId/refine", requireAuth, async (req, res) => {
   const linkedReqIds = JSON.parse(tc.linked_req_ids || "[]");
   let requirementContext = "";
   if (linkedReqIds.length > 0) {
-    const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
+    const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
     if (requirement) {
       requirementContext = `\nORIGINAL REQUIREMENT CONTEXT:
 - ID: ${requirement.req_id}
@@ -512,14 +513,14 @@ router.post("/:tcId/refine-prompt", requireAuth, (req, res) => {
   const { feedback } = req.body;
   if (!feedback) return res.status(400).json({ error: "feedback is required" });
 
-  const db = getDb();
+  const db = getTcDb();
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
   if (!tc) return res.status(404).json({ error: "Test case not found" });
 
   const linkedReqIds = JSON.parse(tc.linked_req_ids || "[]");
   let requirementContext = "";
   if (linkedReqIds.length > 0) {
-    const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
+    const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(linkedReqIds[0]);
     if (requirement) {
       requirementContext = `\nORIGINAL REQUIREMENT CONTEXT:
 - ID: ${requirement.req_id}
@@ -564,7 +565,7 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
   const { status } = req.body;
   if (!["Draft", "Reviewed", "Rejected"].includes(status)) return res.status(400).json({ error: "Invalid status" });
 
-  const db = getDb();
+  const db = getTcDb();
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
   if (!tc) return res.status(404).json({ error: "Test case not found" });
 
@@ -591,7 +592,7 @@ function stripHtmlForXlsx(str) {
 
 // GET /api/testcases/export/xlsx — export test cases in JAMA xlsx format (optionally filtered by ?ids=TC-001,TC-002)
 router.get("/export/xlsx", requireAuth, (req, res) => {
-  const db = getDb();
+  const db = getTcDb();
   let testCases;
   if (req.query.ids) {
     const ids = req.query.ids.split(",").map(id => id.trim()).filter(Boolean);
@@ -601,7 +602,7 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
   } else {
     testCases = db.prepare("SELECT * FROM test_cases ORDER BY rowid").all();
   }
-  const requirements = db.prepare("SELECT * FROM requirements").all();
+  const requirements = getReqDb().prepare("SELECT * FROM requirements").all();
   const reqMap = {};
   for (const r of requirements) reqMap[r.req_id] = r;
 
@@ -691,7 +692,7 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
 router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-  const db = getDb();
+  const db = getTcDb();
   const imported = [];
   const skipped = [];
 

@@ -1844,10 +1844,10 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
               return <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, padding: 8, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
                 <div style={{ position: "relative", flexShrink: 0 }}>
                   <img
-                    src={`data:${img.media_type};base64,${img.data}`}
+                    src={`/api/kb/${e.kb_id}/images/${i}/file`}
                     alt={img.name}
                     style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${COLORS.border}`, cursor: "pointer" }}
-                    onClick={() => setPreviewImg(img)}
+                    onClick={() => setPreviewImg({ kbId: e.kb_id, index: i, name: img.name })}
                     title={img.name}
                   />
                   <button
@@ -1939,7 +1939,7 @@ const KbView = ({ kbEntries, requirements, refresh }) => {
     </Card>)}
     {previewImg && <div onClick={() => setPreviewImg(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, cursor: "pointer" }}>
       <div style={{ maxWidth: "90vw", maxHeight: "90vh" }}>
-        <img src={`data:${previewImg.media_type};base64,${previewImg.data}`} alt={previewImg.name} style={{ maxWidth: "90vw", maxHeight: "85vh", borderRadius: 8 }} />
+        <img src={`/api/kb/${previewImg.kbId}/images/${previewImg.index}/file`} alt={previewImg.name} style={{ maxWidth: "90vw", maxHeight: "85vh", borderRadius: 8 }} />
         <div style={{ textAlign: "center", color: "#fff", marginTop: 8, fontSize: 13 }}>{previewImg.name}</div>
       </div>
     </div>}

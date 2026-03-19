@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const cheerio = require("cheerio");
-const { getDb, logAudit } = require("../db");
+const { getReqDb, getTcDb, logAudit } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
 
 const router = express.Router();
@@ -9,7 +9,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 // GET /api/requirements
 router.get("/", requireAuth, (req, res) => {
-  const rows = getDb().prepare("SELECT * FROM requirements ORDER BY rowid").all();
+  const rows = getReqDb().prepare("SELECT * FROM requirements ORDER BY rowid").all();
   res.json(rows.map(r => ({
     ...r,
     acceptance_criteria: JSON.parse(r.acceptance_criteria || "[]"),
@@ -24,7 +24,7 @@ router.post("/", requireAuth, (req, res) => {
   const { req_id, title, description, acceptance_criteria, priority, status, module } = req.body;
   if (!req_id || !title) return res.status(400).json({ error: "req_id and title are required" });
 
-  const db = getDb();
+  const db = getReqDb();
   const existing = db.prepare("SELECT id FROM requirements WHERE req_id = ?").get(req_id);
   if (existing) return res.status(400).json({ error: "Requirement ID already exists" });
 
@@ -38,7 +38,7 @@ router.post("/", requireAuth, (req, res) => {
 // PUT /api/requirements/:reqId
 router.put("/:reqId", requireAuth, (req, res) => {
   const { title, description, acceptance_criteria, priority, status, module } = req.body;
-  const db = getDb();
+  const db = getReqDb();
   const existing = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(req.params.reqId);
   if (!existing) return res.status(404).json({ error: "Requirement not found" });
 
@@ -51,12 +51,12 @@ router.put("/:reqId", requireAuth, (req, res) => {
 
 // DELETE /api/requirements/:reqId — QA Manager or Admin only
 router.delete("/:reqId", requireRole("Admin", "QA Manager"), (req, res) => {
-  const db = getDb();
+  const db = getReqDb();
   const existing = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(req.params.reqId);
   if (!existing) return res.status(404).json({ error: "Requirement not found" });
 
   // Check if any test cases are linked to this requirement
-  const linkedTcs = db.prepare("SELECT tc_id, linked_req_ids FROM test_cases").all()
+  const linkedTcs = getTcDb().prepare("SELECT tc_id, linked_req_ids FROM test_cases").all()
     .filter(tc => JSON.parse(tc.linked_req_ids || "[]").includes(req.params.reqId));
 
   db.prepare("DELETE FROM requirements WHERE req_id = ?").run(req.params.reqId);
@@ -67,7 +67,7 @@ router.delete("/:reqId", requireRole("Admin", "QA Manager"), (req, res) => {
 
 // DELETE /api/requirements — clear all requirements
 router.delete("/", requireRole("Admin", "QA Manager"), (req, res) => {
-  const db = getDb();
+  const db = getReqDb();
   const count = db.prepare("SELECT COUNT(*) as count FROM requirements").get().count;
   db.prepare("DELETE FROM requirements").run();
   logAudit(req.session.name, "REQ_CLEAR_ALL", `Deleted all ${count} requirements`);
@@ -91,7 +91,7 @@ router.post("/import-doc", requireAuth, upload.single("file"), (req, res) => {
     if (!bodyMatch) return res.status(400).json({ error: "Could not parse document — no HTML body found" });
 
     const $ = cheerio.load(bodyMatch[1], { decodeEntities: true });
-    const db = getDb();
+    const db = getReqDb();
 
     // Each requirement is in a div.Section1 (or there may be just one)
     // Each section has a main table.grid with fields, then a Relationships table
@@ -235,12 +235,13 @@ router.post("/import-doc", requireAuth, upload.single("file"), (req, res) => {
         r.group === "Verification Test Case" || r.direction === "Downstream"
       );
       for (const rel of tcRels) {
-        const tc = db.prepare("SELECT tc_id, linked_req_ids FROM test_cases WHERE tc_id = ? OR project_id = ?").get(rel.id, rel.id);
+        const tcDb = getTcDb();
+        const tc = tcDb.prepare("SELECT tc_id, linked_req_ids FROM test_cases WHERE tc_id = ? OR project_id = ?").get(rel.id, rel.id);
         if (tc) {
           const linkedIds = JSON.parse(tc.linked_req_ids || "[]");
           if (!linkedIds.includes(reqData.req_id)) {
             linkedIds.push(reqData.req_id);
-            db.prepare("UPDATE test_cases SET linked_req_ids = ? WHERE tc_id = ?").run(JSON.stringify(linkedIds), tc.tc_id);
+            tcDb.prepare("UPDATE test_cases SET linked_req_ids = ? WHERE tc_id = ?").run(JSON.stringify(linkedIds), tc.tc_id);
             linked.push({ tc: tc.tc_id, req: reqData.req_id });
           }
         }

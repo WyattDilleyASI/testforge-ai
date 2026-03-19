@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 const crypto = require("crypto");
-const { getDb, logAudit, nextKbId } = require("./db");
+const { getDb, getReqDb, getTcDb, getKbDb, logAudit, nextKbId, saveImage, deleteImage } = require("./db");
 
 // ─── CACHED ESM IMPORTS (MCP SDK is ESM-only) ──────────────────────────────
 
@@ -78,7 +78,7 @@ async function createMcpServer(user) {
         .describe("Filter by module name (case-insensitive partial match)"),
     },
     async ({ status, module }) => {
-      const db = getDb();
+      const db = getReqDb();
       let rows = db.prepare("SELECT * FROM requirements ORDER BY rowid").all();
 
       if (status && status !== "all") rows = rows.filter(r => r.status === status);
@@ -111,21 +111,20 @@ async function createMcpServer(user) {
       req_id: z.string().describe("The requirement ID, e.g. RS-001, TC-001, JM-004"),
     },
     async ({ req_id }) => {
-      const db = getDb();
-      const req = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(req_id);
+      const req = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(req_id);
       if (!req) {
         return { content: [{ type: "text", text: `Requirement '${req_id}' not found.` }] };
       }
 
       // Related KB entries (tagged with this req_id)
-      const allKb = db.prepare("SELECT * FROM kb_entries").all();
+      const allKb = getKbDb().prepare("SELECT * FROM kb_entries").all();
       const relatedKb = allKb.filter(kb => {
         const tags = JSON.parse(kb.tags || "[]");
         return tags.includes(req_id);
       });
 
       // Existing linked test cases
-      const allTcs = db.prepare("SELECT tc_id, title, status, type, description FROM test_cases").all();
+      const allTcs = getTcDb().prepare("SELECT tc_id, title, status, type, description FROM test_cases").all();
       const linkedTcs = allTcs.filter(tc => {
         const linked = JSON.parse(tc.linked_req_ids || "[]");
         return linked.includes(req_id);
@@ -185,14 +184,13 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       })).min(1).describe("Array of test cases to save"),
     },
     async ({ req_id, depth, test_cases }) => {
-      const db = getDb();
-
       // Validate requirement exists
-      const requirement = db.prepare("SELECT req_id FROM requirements WHERE req_id = ?").get(req_id);
+      const requirement = getReqDb().prepare("SELECT req_id FROM requirements WHERE req_id = ?").get(req_id);
       if (!requirement) {
         return { content: [{ type: "text", text: `Error: Requirement '${req_id}' not found. Cannot save test cases.` }] };
       }
 
+      const db = getTcDb();
       const currentCount = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
       const newTcIds = [];
 
@@ -236,7 +234,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       // Update KB usage counts
       const allRefs = [...new Set(test_cases.flatMap(tc => tc.kbReferences || []))];
       if (allRefs.length > 0) {
-        const updateKb = db.prepare("UPDATE kb_entries SET usage_count = usage_count + 1 WHERE kb_id = ?");
+        const updateKb = getKbDb().prepare("UPDATE kb_entries SET usage_count = usage_count + 1 WHERE kb_id = ?");
         for (const kbId of allRefs) updateKb.run(kbId);
       }
 
@@ -273,7 +271,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       reason: z.string().optional().describe("Reason for the status change"),
     },
     async ({ tc_id, status, reason }) => {
-      const db = getDb();
+      const db = getTcDb();
       const tc = db.prepare("SELECT tc_id, status FROM test_cases WHERE tc_id = ?").get(tc_id);
       if (!tc) {
         return { content: [{ type: "text", text: `Test case '${tc_id}' not found.` }] };
@@ -303,7 +301,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         .describe("Filter by review status"),
     },
     async ({ req_id, status }) => {
-      const db = getDb();
+      const db = getTcDb();
       let rows = db.prepare("SELECT * FROM test_cases ORDER BY rowid").all();
 
       if (req_id) {
@@ -347,7 +345,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         .describe("Filter by entry type"),
     },
     async ({ query, req_id, type }) => {
-      const db = getDb();
+      const db = getKbDb();
       let rows = db.prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
 
       if (req_id) {
@@ -411,9 +409,17 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         data: img.data,
       }));
 
-      getDb().prepare(
+      // Save images to filesystem
+      for (const img of imageData) {
+        if (img.data) {
+          saveImage(kbId, img.name, img.data);
+        }
+      }
+      const imageMeta = imageData.map(img => ({ name: img.name, media_type: img.media_type, description: null }));
+
+      getKbDb().prepare(
         "INSERT INTO kb_entries (kb_id, title, type, content, tags, images, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)"
-      ).run(kbId, title, type, content, JSON.stringify(tags || []), JSON.stringify(imageData), `${user.name} (via MCP)`);
+      ).run(kbId, title, type, content, JSON.stringify(tags || []), JSON.stringify(imageMeta), `${user.name} (via MCP)`);
 
       logAudit(user.name, "KB_CREATED_MCP", `Created KB entry ${kbId}: ${title}${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""} (via MCP)`);
 
@@ -443,7 +449,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         .describe("Module grouping, e.g. 'Requirement Ingestion', 'Test Case Generation'"),
     },
     async ({ req_id, title, description, acceptance_criteria, priority, status, module }) => {
-      const db = getDb();
+      const db = getReqDb();
       const existing = db.prepare("SELECT req_id FROM requirements WHERE req_id = ?").get(req_id);
       if (existing) {
         return { content: [{ type: "text", text: `Error: Requirement '${req_id}' already exists.` }] };
@@ -489,7 +495,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       verification_method: z.string().optional().describe("Updated verification method"),
     },
     async ({ req_id, title, description, acceptance_criteria, priority, status, module, tags, rationale, verification_method }) => {
-      const db = getDb();
+      const db = getReqDb();
       const existing = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(req_id);
       if (!existing) {
         return { content: [{ type: "text", text: `Requirement '${req_id}' not found.` }] };
@@ -572,7 +578,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         .describe("Updated acceptance criterion this TC validates"),
     },
     async ({ tc_id, title, type, description, setup, steps, req_attribute }) => {
-      const db = getDb();
+      const db = getTcDb();
       const existing = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(tc_id);
       if (!existing) {
         return { content: [{ type: "text", text: `Test case '${tc_id}' not found.` }] };
@@ -633,7 +639,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         .describe("Updated related requirement IDs (replaces existing)"),
     },
     async ({ kb_id, title, type, content, tags, related_reqs }) => {
-      const db = getDb();
+      const db = getKbDb();
       const existing = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
       if (!existing) {
         return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
@@ -686,18 +692,17 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       })).min(1).describe("Images to add (base64-encoded)"),
     },
     async ({ kb_id, images }) => {
-      const db = getDb();
+      const db = getKbDb();
       const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
       if (!entry) {
         return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
       }
 
       const existing = JSON.parse(entry.images || "[]");
-      const newImages = images.map(img => ({
-        name: img.name,
-        media_type: img.media_type,
-        data: img.data,
-      }));
+      const newImages = images.map(img => {
+        const savedName = saveImage(kb_id, img.name, img.data);
+        return { name: savedName, media_type: img.media_type, description: null };
+      });
 
       const updated = [...existing, ...newImages];
       db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(updated), kb_id);
@@ -722,7 +727,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       index: z.number().int().min(0).describe("Zero-based index of the image to remove"),
     },
     async ({ kb_id, index }) => {
-      const db = getDb();
+      const db = getKbDb();
       const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
       if (!entry) {
         return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
@@ -734,6 +739,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       }
 
       const removed = images.splice(index, 1);
+      deleteImage(kb_id, removed[0].name);
       db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(images), kb_id);
 
       logAudit(user.name, "KB_IMAGE_REMOVED_MCP", `Removed image "${removed[0].name}" from ${kb_id} (via MCP)`);
@@ -753,9 +759,8 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
     "Get a summary of requirement test coverage: which requirements have test cases, which are untested, and overall coverage percentage.",
     {},
     async () => {
-      const db = getDb();
-      const reqs = db.prepare("SELECT * FROM requirements ORDER BY rowid").all();
-      const tcs = db.prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+      const reqs = getReqDb().prepare("SELECT * FROM requirements ORDER BY rowid").all();
+      const tcs = getTcDb().prepare("SELECT * FROM test_cases ORDER BY rowid").all();
 
       const coverage = reqs.map(r => {
         const linked = tcs.filter(tc =>

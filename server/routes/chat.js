@@ -1,5 +1,5 @@
 const express = require("express");
-const { getDb } = require("../db");
+const { getReqDb, getTcDb, getKbDb } = require("../db");
 const { requireAuth } = require("../auth");
 
 const router = express.Router();
@@ -14,20 +14,18 @@ router.post("/", requireAuth, async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(503).json({ error: "NO_API_KEY" });
 
-  const db = getDb();
-
   let systemPrompt = `You are a senior QA engineer and testing expert embedded in TestForge AI, a test case management tool. Help the user think through test strategies, review test cases, analyze requirements, and answer QA questions. Be concise and practical.`;
 
   if (reqId) {
-    const requirement = db.prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
+    const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
     if (requirement) {
       const acceptanceCriteria = JSON.parse(requirement.acceptance_criteria || "[]");
-      const allKb = db.prepare("SELECT * FROM kb_entries").all();
+      const allKb = getKbDb().prepare("SELECT * FROM kb_entries").all();
       const relevantKb = allKb.filter(kb => {
         const tags = JSON.parse(kb.tags || "[]");
         return tags.includes(reqId);
       });
-      const linkedTcs = db.prepare("SELECT * FROM test_cases WHERE linked_req_ids LIKE ?").all(`%${reqId}%`);
+      const linkedTcs = getTcDb().prepare("SELECT * FROM test_cases WHERE linked_req_ids LIKE ?").all(`%${reqId}%`);
 
       systemPrompt += `\n\nACTIVE REQUIREMENT CONTEXT:
 - ID: ${requirement.req_id}
