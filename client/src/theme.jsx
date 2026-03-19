@@ -391,6 +391,19 @@ export const THEMES = {
     hover: "rgba(58,190,255,0.06)",
   },
 
+  // ── AUDIO VISUALIZER ─────────────────────────────────────────────────────
+  audioVisualizer: {
+    name: "Audio Visualizer", emoji: "🎧",
+    _audioVisualizer: true,
+    bg: "#0a0a12", surface: "#10101E", surfaceRaised: "#18182A",
+    border: "#252544", text: "#C0C0E0", textMuted: "#6A6A9E",
+    textBright: "#EEEEFF", accent: "#00F0FF", accentDim: "rgba(0,240,255,0.12)",
+    accentGlow: "rgba(0,240,255,0.28)", green: "#00FF99", greenDim: "rgba(0,255,153,0.12)",
+    red: "#FF2D95", redDim: "rgba(255,45,149,0.12)", amber: "#FFD93D",
+    amberDim: "rgba(255,217,61,0.12)", purple: "#7B2FF7", purpleDim: "rgba(123,47,247,0.12)",
+    hover: "rgba(0,240,255,0.06)",
+  },
+
   // ── HOT DOG STAND ────────────────────────────────────────────────────────
   hotDog: {
     name: "Hot Dog Stand", emoji: "🌭",
@@ -659,6 +672,7 @@ export const THEME_CATEGORIES = [
     keys: [
       "chromawave", "hyperdrive", "aurora", "vaporwave",
       "fireflies", "lavaLamp", "synthwave", "fishTank",
+      "audioVisualizer",
     ],
   },
   {
