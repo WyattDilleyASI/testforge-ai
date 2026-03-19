@@ -1,5 +1,5 @@
 import { useTheme, mono } from "../theme";
-import { Card, ReqIdTag } from "./shared";
+import { Card, Badge, ReqIdTag } from "./shared";
 
 export const TraceabilityView = ({ requirements, testCases }) => { const COLORS = useTheme(); return <div>
   <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Traceability Matrix</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-007</p></div>
