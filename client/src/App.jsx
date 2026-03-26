@@ -20,8 +20,43 @@ export default function App() {
   const [authState, setAuthState] = useState("loading");
   const [currentUser, setCurrentUser] = useState(null);
   const [pendingPw, setPendingPw] = useState(null);
-  const [page, setPage] = useState("dashboard");
   const [themeName, setThemeName] = useState(() => localStorage.getItem("tf-theme") || "midnight");
+
+  // Parse page and optional family ID from the URL hash.
+  // Supported formats:
+  //   #traceability/family/REQ-ID  → traceability page, auto-open family view for REQ-ID
+  //   #traceability                → traceability page, full view
+  //   #dashboard (etc.)            → named page, full view
+  const parseHash = () => {
+    const hash = window.location.hash.replace(/^#/, "");
+    const parts = hash.split("/");
+    const pg = parts[0] || "dashboard";
+    const familyId = parts[0] === "traceability" && parts[1] === "family" && parts[2]
+      ? decodeURIComponent(parts[2])
+      : null;
+    return { pg, familyId };
+  };
+
+  const [page, setPage] = useState(() => parseHash().pg);
+  const [initialFamilyId, setInitialFamilyId] = useState(() => parseHash().familyId);
+
+  // Wrap navigation so that clicking the sidebar also updates the URL hash.
+  const navigate = useCallback((newPage) => {
+    window.location.hash = newPage;
+    setPage(newPage);
+    setInitialFamilyId(null);
+  }, []);
+
+  // Keep React in sync if the user presses the browser Back/Forward buttons.
+  useEffect(() => {
+    const onHashChange = () => {
+      const { pg, familyId } = parseHash();
+      setPage(pg);
+      setInitialFamilyId(familyId);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   const [requirements, setRequirements] = useState([]);
   const [testCases, setTestCases] = useState([]);
@@ -114,7 +149,10 @@ useEffect(() => {
 
   const handleLogout = async () => {
     try { await api.logout(); } catch (e) {}
-    setCurrentUser(null); setAuthState("login"); setPage("dashboard");
+    setCurrentUser(null); setAuthState("login");
+    window.location.hash = "dashboard";
+    setPage("dashboard");
+    setInitialFamilyId(null);
   };
 
   if (authState === "loading") return <ThemeContext.Provider value={activeTheme}><div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: activeTheme.bg, color: activeTheme.accent, fontFamily: mono }}>Loading...</div></ThemeContext.Provider>;
@@ -229,12 +267,12 @@ useEffect(() => {
         setPreEasterEggTheme(null);
         setEasterEggToast("↩️ Theme restored");
       }} />}
-      <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
+      <Sidebar active={page} onNavigate={navigate} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
       <main style={{ flex: 1, padding: page === "traceability" ? 0 : "28px 36px", maxWidth: page === "traceability" ? "none" : 1100, overflowY: page === "traceability" ? "hidden" : "auto", display: page === "traceability" ? "flex" : "block", flexDirection: "column" }}>
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
         {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
         {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
-        {page === "traceability" && <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} />}
+        {page === "traceability" && <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
