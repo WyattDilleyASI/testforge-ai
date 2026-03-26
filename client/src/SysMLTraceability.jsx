@@ -520,7 +520,7 @@ function zoomFit(svgEl, zoomBehavior, positions, animate = true) {
 // MAIN REACT COMPONENT
 // ═══════════════════════════════════════════════════════════════
 
-export default function SysMLTraceability({ requirements: apiReqs, testCases: apiTcs, useTheme: useThemeFn, Badge, Card, Button, mono, font: fontFamily, refresh }) {
+export default function SysMLTraceability({ requirements: apiReqs, testCases: apiTcs, useTheme: useThemeFn, Badge, Card, Button, mono, font: fontFamily, refresh, initialFamilyId }) {
   const T = useThemeFn();
   const _isLight = isLightTheme(T);
   const themeForD3 = useMemo(() => ({ ...T, _isLight }), [T, _isLight]);
@@ -683,11 +683,28 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
       });
     }
 
+    // Update the URL hash so this view is shareable.
+    // Use replaceState (not window.location.hash) so we don't fire a hashchange
+    // event that would loop back through App's listener and call enterFamilyView again.
+    history.replaceState(null, "", `#traceability/family/${encodeURIComponent(rootId)}`);
+
     setViewMode("family"); setViewTarget(rootId);
     setActiveReqs(diagramData.requirements.filter((r) => familyIds.has(r.id)));
     setActiveRels(diagramData.relationships.filter((r) => familyIds.has(r.source) && familyIds.has(r.target)));
     setSelectedId(null);
   }, [diagramData]);
+
+  // If a family ID was supplied in the URL hash, auto-enter family view once data is loaded.
+  // NOTE: must be placed after enterFamilyView is declared above to avoid a ReferenceError.
+  const didAutoFamily = useRef(false);
+  useEffect(() => {
+    if (didAutoFamily.current) return;
+    if (!initialFamilyId) return;
+    if (!diagramData.requirements.length) return;
+    didAutoFamily.current = true;
+    // Small delay so the diagram has time to initialise before we filter it.
+    setTimeout(() => enterFamilyView(initialFamilyId), 50);
+  }, [initialFamilyId, diagramData, enterFamilyView]);
 
   const enterLevelView = useCallback((depth) => {
     const filtered = diagramData.requirements.filter((r) => !r._isTc && (diagramData.depths[r.id] || 0) === depth);
@@ -702,6 +719,8 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   }, [diagramData, showTcs]);
 
   const exitFilteredView = useCallback(() => {
+    // Return the URL to the plain traceability page (replaceState avoids firing hashchange).
+    history.replaceState(null, "", "#traceability");
     setViewMode("full"); setViewTarget(null);
     setActiveReqs(diagramData.requirements); setActiveRels(diagramData.relationships); setSelectedId(null);
   }, [diagramData]);
