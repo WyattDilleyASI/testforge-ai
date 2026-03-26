@@ -648,15 +648,41 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
     }
   }, [refresh, showTcs]);
 
-  // Family view
+  // Family view — walks up to true root(s), then shows the complete subtree beneath
   const enterFamilyView = useCallback((rootId) => {
-    const familyIds = new Set([rootId]);
+    // Step 1: BFS upward to collect all ancestors of the selected node
+    const ancestorIds = new Set([rootId]);
     const upQ = [rootId];
-    while (upQ.length) { const cur = upQ.shift(); diagramData.relationships.forEach((r) => { if (r.target === cur && !familyIds.has(r.source)) { familyIds.add(r.source); upQ.push(r.source); } }); }
-    const downQ = [rootId];
-    while (downQ.length) { const cur = downQ.shift(); diagramData.relationships.forEach((r) => { if (r.source === cur && !familyIds.has(r.target)) { familyIds.add(r.target); downQ.push(r.target); } }); }
-    const snap = new Set(familyIds);
-    snap.forEach((fid) => { diagramData.relationships.forEach((r) => { if (r.target === fid) { diagramData.relationships.forEach((r2) => { if (r2.source === r.source && !familyIds.has(r2.target)) familyIds.add(r2.target); }); } }); });
+    while (upQ.length) {
+      const cur = upQ.shift();
+      diagramData.relationships.forEach((r) => {
+        if (r.target === cur && !ancestorIds.has(r.source)) {
+          ancestorIds.add(r.source);
+          upQ.push(r.source);
+        }
+      });
+    }
+
+    // Step 2: Identify true roots — ancestors that have no parents in the full diagram
+    const trueRoots = [...ancestorIds].filter(
+      (id) => !diagramData.relationships.some((r) => r.target === id)
+    );
+    // Fall back to the selected node itself if no parents exist (it IS the root)
+    const startNodes = trueRoots.length > 0 ? trueRoots : [rootId];
+
+    // Step 3: BFS downward from each true root to collect the complete subtree
+    const familyIds = new Set(startNodes);
+    const downQ = [...startNodes];
+    while (downQ.length) {
+      const cur = downQ.shift();
+      diagramData.relationships.forEach((r) => {
+        if (r.source === cur && !familyIds.has(r.target)) {
+          familyIds.add(r.target);
+          downQ.push(r.target);
+        }
+      });
+    }
+
     setViewMode("family"); setViewTarget(rootId);
     setActiveReqs(diagramData.requirements.filter((r) => familyIds.has(r.id)));
     setActiveRels(diagramData.relationships.filter((r) => familyIds.has(r.source) && familyIds.has(r.target)));
@@ -898,26 +924,30 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
         )}
 
         {/* Context menu */}
-        {contextMenu && !contextMenu.req._isTc && (
+        {contextMenu && (
           <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 0", minWidth: 230, zIndex: 10000, boxShadow: _isLight ? "0 8px 32px rgba(0,0,0,0.12)" : "0 8px 32px rgba(0,0,0,0.7)" }}>
             <div style={{ padding: "6px 14px 5px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, marginBottom: 3 }}>{contextMenu.req.id}</div>
             <div onClick={() => { enterFamilyView(contextMenu.req.id); setContextMenu(null); }} style={{ padding: "8px 14px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 9 }}>
               <span style={{ fontSize: 14 }}>◈</span> View Requirement Family
             </div>
-            <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
-            <div style={{ padding: "6px 14px 4px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase" }}>Generate Test Cases</div>
-            {[
-              { depth: "basic", label: "Basic", desc: "2–3 TCs" },
-              { depth: "standard", label: "Standard", desc: "4–6 TCs" },
-              { depth: "comprehensive", label: "Comprehensive", desc: "6–10 TCs" },
-            ].map(opt => (
-              <div key={opt.depth}
-                onClick={() => handleGenerateTCs(contextMenu.req.id, opt.depth)}
-                style={{ padding: "7px 14px 7px 28px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 9 }}>
-                <span>◨ {opt.label}</span>
-                <span style={{ fontSize: 10, color: T.textMuted, fontFamily: mono }}>{opt.desc}</span>
-              </div>
-            ))}
+            {!contextMenu.req._isTc && (
+              <>
+                <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
+                <div style={{ padding: "6px 14px 4px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase" }}>Generate Test Cases</div>
+                {[
+                  { depth: "basic", label: "Basic", desc: "2–3 TCs" },
+                  { depth: "standard", label: "Standard", desc: "4–6 TCs" },
+                  { depth: "comprehensive", label: "Comprehensive", desc: "6–10 TCs" },
+                ].map(opt => (
+                  <div key={opt.depth}
+                    onClick={() => handleGenerateTCs(contextMenu.req.id, opt.depth)}
+                    style={{ padding: "7px 14px 7px 28px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 9 }}>
+                    <span>◨ {opt.label}</span>
+                    <span style={{ fontSize: 10, color: T.textMuted, fontFamily: mono }}>{opt.desc}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
