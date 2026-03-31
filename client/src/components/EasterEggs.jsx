@@ -814,3 +814,125 @@ export const FishTankCanvas = () => {
     />
   );
 };
+
+// ── FALLING HOT DOGS ─────────────────────────────────────────────────────────
+// Hot dog emojis rain down and pile up at the bottom of the screen.
+
+export const HotDogCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+
+    // Falling hotdogs
+    const falling = [];
+    const COUNT = 10;
+    // Landed hotdogs — stay on screen forever
+    const landed = [];
+    // Floor height per x-column (px from bottom). Divide screen into COLS buckets.
+    const COLS = 40;
+    let floorLevel = []; // floorLevel[col] = height of pile in that column (px)
+
+    const colWidth = () => canvas.width / COLS;
+    const getFloor = (x) => {
+      const col = Math.max(0, Math.min(COLS - 1, Math.floor(x / colWidth())));
+      return canvas.height - (floorLevel[col] || 0);
+    };
+    const raiseFloor = (x, amount) => {
+      // Spread landing impact across ~3 neighbouring columns
+      const col = Math.max(0, Math.min(COLS - 1, Math.floor(x / colWidth())));
+      for (let dc = -1; dc <= 1; dc++) {
+        const c = Math.max(0, Math.min(COLS - 1, col + dc));
+        const weight = dc === 0 ? 1 : 0.4;
+        floorLevel[c] = (floorLevel[c] || 0) + amount * weight;
+      }
+    };
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      floorLevel = new Array(COLS).fill(0);
+      landed.length = 0;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const spawnHotdog = () => ({
+      x: Math.random() * canvas.width,
+      y: -60 - Math.random() * 300,
+      speed: 2 + Math.random() * 2.5,
+      size: 26 + Math.random() * 24,
+      rot: (Math.random() - 0.5) * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.07,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleAmp: 0.5 + Math.random() * 1.0,
+      wobbleFreq: 0.02 + Math.random() * 0.03,
+    });
+
+    for (let i = 0; i < COUNT; i++) {
+      const h = spawnHotdog();
+      h.y = Math.random() * canvas.height * 0.8;
+      falling.push(h);
+    }
+
+    const drawDog = (x, y, rot, size) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      ctx.font = `${size}px serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("🌭", 0, 0);
+      ctx.restore();
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw landed pile
+      for (const h of landed) {
+        drawDog(h.x, h.y, h.rot, h.size);
+      }
+
+      // Update and draw falling
+      for (let i = 0; i < falling.length; i++) {
+        const h = falling[i];
+        h.y += h.speed;
+        h.rot += h.rotSpeed;
+        h.wobble += h.wobbleFreq;
+        h.x += Math.sin(h.wobble) * h.wobbleAmp;
+
+        const floor = getFloor(h.x);
+
+        if (h.y >= floor) {
+          // Land it — freeze rotation to a slight tilt
+          h.rot = (Math.random() - 0.5) * 0.6;
+          h.y = floor;
+          raiseFloor(h.x, h.size * 0.7);
+          landed.push({ x: h.x, y: h.y, rot: h.rot, size: h.size });
+          falling[i] = spawnHotdog();
+        } else {
+          drawDog(h.x, h.y, h.rot, h.size);
+        }
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};

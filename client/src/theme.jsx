@@ -414,6 +414,7 @@ export const THEMES = {
     red: "#FF0000", redDim: "rgba(255,0,0,0.20)", amber: "#FFEE55",
     amberDim: "rgba(255,238,85,0.20)", purple: "#FFD000", purpleDim: "rgba(255,208,0,0.20)",
     hover: "rgba(255,221,0,0.15)",
+    _hotDogs: true,
   },
 
   // ── ROSÉ PINE ────────────────────────────────────────────────────────────
