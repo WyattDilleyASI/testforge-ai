@@ -520,7 +520,7 @@ function zoomFit(svgEl, zoomBehavior, positions, animate = true) {
 // MAIN REACT COMPONENT
 // ═══════════════════════════════════════════════════════════════
 
-export default function SysMLTraceability({ requirements: apiReqs, testCases: apiTcs, useTheme: useThemeFn, Badge, Card, Button, mono, font: fontFamily, refresh }) {
+export default function SysMLTraceability({ requirements: apiReqs, testCases: apiTcs, useTheme: useThemeFn, Badge, Card, Button, mono, font: fontFamily, refresh, initialFamilyId }) {
   const T = useThemeFn();
   const _isLight = isLightTheme(T);
   const themeForD3 = useMemo(() => ({ ...T, _isLight }), [T, _isLight]);
@@ -648,20 +648,63 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
     }
   }, [refresh, showTcs]);
 
-  // Family view
+  // Family view — walks up to true root(s), then shows the complete subtree beneath
   const enterFamilyView = useCallback((rootId) => {
-    const familyIds = new Set([rootId]);
+    // Step 1: BFS upward to collect all ancestors of the selected node
+    const ancestorIds = new Set([rootId]);
     const upQ = [rootId];
-    while (upQ.length) { const cur = upQ.shift(); diagramData.relationships.forEach((r) => { if (r.target === cur && !familyIds.has(r.source)) { familyIds.add(r.source); upQ.push(r.source); } }); }
-    const downQ = [rootId];
-    while (downQ.length) { const cur = downQ.shift(); diagramData.relationships.forEach((r) => { if (r.source === cur && !familyIds.has(r.target)) { familyIds.add(r.target); downQ.push(r.target); } }); }
-    const snap = new Set(familyIds);
-    snap.forEach((fid) => { diagramData.relationships.forEach((r) => { if (r.target === fid) { diagramData.relationships.forEach((r2) => { if (r2.source === r.source && !familyIds.has(r2.target)) familyIds.add(r2.target); }); } }); });
+    while (upQ.length) {
+      const cur = upQ.shift();
+      diagramData.relationships.forEach((r) => {
+        if (r.target === cur && !ancestorIds.has(r.source)) {
+          ancestorIds.add(r.source);
+          upQ.push(r.source);
+        }
+      });
+    }
+
+    // Step 2: Identify true roots — ancestors that have no parents in the full diagram
+    const trueRoots = [...ancestorIds].filter(
+      (id) => !diagramData.relationships.some((r) => r.target === id)
+    );
+    // Fall back to the selected node itself if no parents exist (it IS the root)
+    const startNodes = trueRoots.length > 0 ? trueRoots : [rootId];
+
+    // Step 3: BFS downward from each true root to collect the complete subtree
+    const familyIds = new Set(startNodes);
+    const downQ = [...startNodes];
+    while (downQ.length) {
+      const cur = downQ.shift();
+      diagramData.relationships.forEach((r) => {
+        if (r.source === cur && !familyIds.has(r.target)) {
+          familyIds.add(r.target);
+          downQ.push(r.target);
+        }
+      });
+    }
+
+    // Update the URL hash so this view is shareable.
+    // Use replaceState (not window.location.hash) so we don't fire a hashchange
+    // event that would loop back through App's listener and call enterFamilyView again.
+    history.replaceState(null, "", `#traceability/family/${encodeURIComponent(rootId)}`);
+
     setViewMode("family"); setViewTarget(rootId);
     setActiveReqs(diagramData.requirements.filter((r) => familyIds.has(r.id)));
     setActiveRels(diagramData.relationships.filter((r) => familyIds.has(r.source) && familyIds.has(r.target)));
     setSelectedId(null);
   }, [diagramData]);
+
+  // If a family ID was supplied in the URL hash, auto-enter family view once data is loaded.
+  // NOTE: must be placed after enterFamilyView is declared above to avoid a ReferenceError.
+  const didAutoFamily = useRef(false);
+  useEffect(() => {
+    if (didAutoFamily.current) return;
+    if (!initialFamilyId) return;
+    if (!diagramData.requirements.length) return;
+    didAutoFamily.current = true;
+    // Small delay so the diagram has time to initialise before we filter it.
+    setTimeout(() => enterFamilyView(initialFamilyId), 50);
+  }, [initialFamilyId, diagramData, enterFamilyView]);
 
   const enterLevelView = useCallback((depth) => {
     const filtered = diagramData.requirements.filter((r) => !r._isTc && (diagramData.depths[r.id] || 0) === depth);
@@ -676,6 +719,8 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   }, [diagramData, showTcs]);
 
   const exitFilteredView = useCallback(() => {
+    // Return the URL to the plain traceability page (replaceState avoids firing hashchange).
+    history.replaceState(null, "", "#traceability");
     setViewMode("full"); setViewTarget(null);
     setActiveReqs(diagramData.requirements); setActiveRels(diagramData.relationships); setSelectedId(null);
   }, [diagramData]);
@@ -898,26 +943,30 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
         )}
 
         {/* Context menu */}
-        {contextMenu && !contextMenu.req._isTc && (
+        {contextMenu && (
           <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 0", minWidth: 230, zIndex: 10000, boxShadow: _isLight ? "0 8px 32px rgba(0,0,0,0.12)" : "0 8px 32px rgba(0,0,0,0.7)" }}>
             <div style={{ padding: "6px 14px 5px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, marginBottom: 3 }}>{contextMenu.req.id}</div>
             <div onClick={() => { enterFamilyView(contextMenu.req.id); setContextMenu(null); }} style={{ padding: "8px 14px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 9 }}>
               <span style={{ fontSize: 14 }}>◈</span> View Requirement Family
             </div>
-            <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
-            <div style={{ padding: "6px 14px 4px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase" }}>Generate Test Cases</div>
-            {[
-              { depth: "basic", label: "Basic", desc: "2–3 TCs" },
-              { depth: "standard", label: "Standard", desc: "4–6 TCs" },
-              { depth: "comprehensive", label: "Comprehensive", desc: "6–10 TCs" },
-            ].map(opt => (
-              <div key={opt.depth}
-                onClick={() => handleGenerateTCs(contextMenu.req.id, opt.depth)}
-                style={{ padding: "7px 14px 7px 28px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 9 }}>
-                <span>◨ {opt.label}</span>
-                <span style={{ fontSize: 10, color: T.textMuted, fontFamily: mono }}>{opt.desc}</span>
-              </div>
-            ))}
+            {!contextMenu.req._isTc && (
+              <>
+                <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
+                <div style={{ padding: "6px 14px 4px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase" }}>Generate Test Cases</div>
+                {[
+                  { depth: "basic", label: "Basic", desc: "2–3 TCs" },
+                  { depth: "standard", label: "Standard", desc: "4–6 TCs" },
+                  { depth: "comprehensive", label: "Comprehensive", desc: "6–10 TCs" },
+                ].map(opt => (
+                  <div key={opt.depth}
+                    onClick={() => handleGenerateTCs(contextMenu.req.id, opt.depth)}
+                    style={{ padding: "7px 14px 7px 28px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 9 }}>
+                    <span>◨ {opt.label}</span>
+                    <span style={{ fontSize: 10, color: T.textMuted, fontFamily: mono }}>{opt.desc}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
