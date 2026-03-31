@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
-const { getDb, getKbDb, getTcDb, getReqDb, logAudit, nextKbId, getProductContext, setSetting, getSetting, saveImage, readImageBase64, readImage, deleteImage, deleteImageDir } = require("../db");
+const { getDb, getKbDb, getTcDb, getReqDb, logAudit, nextKbId, nextSectionId, nextSubsectionId, getProductContext, setSetting, getSetting, saveImage, readImageBase64, readImage, deleteImage, deleteImageDir } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
 
 const MAX_DESCRIBE_DIM = 1568;
@@ -117,7 +117,191 @@ async function describeImages(kbId, images, kbEntry) {
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// ─── KNOWLEDGE BASE ─────────────────────────────────────────────────────────
+// ─── KB SECTIONS & SUBSECTIONS ──────────────────────────────────────────────
+// NOTE: These routes are registered BEFORE /kb/:kbId routes so Express
+// doesn't match "sections" or "subsections" as a :kbId parameter.
+
+// GET /api/kb/sections — full hierarchy: sections → subsections → entry counts
+router.get("/kb/sections", requireAuth, (req, res) => {
+  const db = getKbDb();
+  const sections = db.prepare("SELECT * FROM kb_sections ORDER BY sort_order, rowid").all();
+  const subsections = db.prepare("SELECT * FROM kb_subsections ORDER BY sort_order, rowid").all();
+
+  // Count entries per subsection
+  const subCounts = db.prepare(`
+    SELECT subsection_id, COUNT(*) as entry_count
+    FROM kb_entries
+    WHERE subsection_id IS NOT NULL
+    GROUP BY subsection_id
+  `).all();
+  const countMap = Object.fromEntries(subCounts.map(r => [r.subsection_id, r.entry_count]));
+
+  // Count uncategorized entries (subsection_id IS NULL)
+  const uncatCount = db.prepare("SELECT COUNT(*) as count FROM kb_entries WHERE subsection_id IS NULL").get().count;
+
+  const result = sections.map(sec => ({
+    section_id: sec.section_id,
+    name: sec.name,
+    is_default: !!sec.is_default,
+    sort_order: sec.sort_order,
+    created_by: sec.created_by,
+    created_at: sec.created_at,
+    // Default section gets uncategorized count instead of subsections
+    ...(sec.is_default
+      ? { entry_count: uncatCount, subsections: [] }
+      : {
+          subsections: subsections
+            .filter(sub => sub.section_id === sec.section_id)
+            .map(sub => ({
+              subsection_id: sub.subsection_id,
+              section_id: sub.section_id,
+              name: sub.name,
+              description: sub.description || "",
+              sort_order: sub.sort_order,
+              entry_count: countMap[sub.subsection_id] || 0,
+              created_by: sub.created_by,
+              created_at: sub.created_at,
+            })),
+        }
+    ),
+  }));
+
+  res.json(result);
+});
+
+// POST /api/kb/sections — create a new section
+router.post("/kb/sections", requireAuth, (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "Section name is required" });
+
+  const db = getKbDb();
+  const sectionId = nextSectionId();
+
+  // sort_order: place after all existing sections
+  const maxOrder = db.prepare("SELECT MAX(sort_order) as max FROM kb_sections").get().max || 0;
+
+  db.prepare("INSERT INTO kb_sections (section_id, name, sort_order, created_by) VALUES (?, ?, ?, ?)")
+    .run(sectionId, name.trim(), maxOrder + 1, req.session.name);
+
+  logAudit(req.session.name, "KB_SECTION_CREATED", `Created section ${sectionId}: ${name.trim()}`);
+  res.json({ ok: true, section_id: sectionId });
+});
+
+// PUT /api/kb/sections/:sectionId — rename a section
+router.put("/kb/sections/:sectionId", requireAuth, (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "Section name is required" });
+
+  const db = getKbDb();
+  const section = db.prepare("SELECT * FROM kb_sections WHERE section_id = ?").get(req.params.sectionId);
+  if (!section) return res.status(404).json({ error: "Section not found" });
+  if (section.is_default) return res.status(403).json({ error: "Cannot rename the default section" });
+
+  db.prepare("UPDATE kb_sections SET name = ? WHERE section_id = ?").run(name.trim(), req.params.sectionId);
+  logAudit(req.session.name, "KB_SECTION_RENAMED", `Renamed section ${req.params.sectionId}: "${section.name}" → "${name.trim()}"`);
+  res.json({ ok: true });
+});
+
+// DELETE /api/kb/sections/:sectionId — delete a section (must be empty)
+router.delete("/kb/sections/:sectionId", requireAuth, (req, res) => {
+  const db = getKbDb();
+  const section = db.prepare("SELECT * FROM kb_sections WHERE section_id = ?").get(req.params.sectionId);
+  if (!section) return res.status(404).json({ error: "Section not found" });
+  if (section.is_default) return res.status(403).json({ error: "Cannot delete the default section" });
+
+  // Block if section has subsections
+  const subCount = db.prepare("SELECT COUNT(*) as count FROM kb_subsections WHERE section_id = ?").get(req.params.sectionId).count;
+  if (subCount > 0) return res.status(400).json({ error: `Section has ${subCount} subsection(s). Remove them first.` });
+
+  db.prepare("DELETE FROM kb_sections WHERE section_id = ?").run(req.params.sectionId);
+  logAudit(req.session.name, "KB_SECTION_DELETED", `Deleted section ${req.params.sectionId}: ${section.name}`);
+  res.json({ ok: true });
+});
+
+// POST /api/kb/subsections — create a new subsection
+router.post("/kb/subsections", requireAuth, (req, res) => {
+  const { section_id, name, description } = req.body;
+  if (!section_id) return res.status(400).json({ error: "section_id is required" });
+  if (!name || !name.trim()) return res.status(400).json({ error: "Subsection name is required" });
+
+  const db = getKbDb();
+
+  const section = db.prepare("SELECT * FROM kb_sections WHERE section_id = ?").get(section_id);
+  if (!section) return res.status(404).json({ error: "Parent section not found" });
+  if (section.is_default) return res.status(400).json({ error: "Cannot add subsections to the default section" });
+
+  const subsectionId = nextSubsectionId();
+  const maxOrder = db.prepare("SELECT MAX(sort_order) as max FROM kb_subsections WHERE section_id = ?").get(section_id).max || 0;
+
+  db.prepare("INSERT INTO kb_subsections (subsection_id, section_id, name, description, sort_order, created_by) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(subsectionId, section_id, name.trim(), (description || "").trim(), maxOrder + 1, req.session.name);
+
+  logAudit(req.session.name, "KB_SUBSECTION_CREATED", `Created subsection ${subsectionId} in ${section_id}: ${name.trim()}`);
+  res.json({ ok: true, subsection_id: subsectionId });
+});
+
+// PUT /api/kb/subsections/:subsectionId — update a subsection (name and/or description)
+router.put("/kb/subsections/:subsectionId", requireAuth, (req, res) => {
+  const { name, description } = req.body;
+
+  const db = getKbDb();
+  const sub = db.prepare("SELECT * FROM kb_subsections WHERE subsection_id = ?").get(req.params.subsectionId);
+  if (!sub) return res.status(404).json({ error: "Subsection not found" });
+
+  const updates = [];
+  if (name !== undefined && name.trim()) {
+    db.prepare("UPDATE kb_subsections SET name = ? WHERE subsection_id = ?").run(name.trim(), req.params.subsectionId);
+    updates.push(`name: "${sub.name}" → "${name.trim()}"`);
+  }
+  if (description !== undefined) {
+    db.prepare("UPDATE kb_subsections SET description = ? WHERE subsection_id = ?").run(description.trim(), req.params.subsectionId);
+    updates.push("description updated");
+  }
+  if (updates.length > 0) {
+    logAudit(req.session.name, "KB_SUBSECTION_UPDATED", `Updated subsection ${req.params.subsectionId}: ${updates.join("; ")}`);
+  }
+  res.json({ ok: true });
+});
+
+// DELETE /api/kb/subsections/:subsectionId — delete a subsection (must have no entries)
+router.delete("/kb/subsections/:subsectionId", requireAuth, (req, res) => {
+  const db = getKbDb();
+  const sub = db.prepare("SELECT * FROM kb_subsections WHERE subsection_id = ?").get(req.params.subsectionId);
+  if (!sub) return res.status(404).json({ error: "Subsection not found" });
+
+  // Block if subsection has entries
+  const entryCount = db.prepare("SELECT COUNT(*) as count FROM kb_entries WHERE subsection_id = ?").get(req.params.subsectionId).count;
+  if (entryCount > 0) return res.status(400).json({ error: `Subsection has ${entryCount} KB entry/entries. Move or delete them first.` });
+
+  db.prepare("DELETE FROM kb_subsections WHERE subsection_id = ?").run(req.params.subsectionId);
+  logAudit(req.session.name, "KB_SUBSECTION_DELETED", `Deleted subsection ${req.params.subsectionId}: ${sub.name}`);
+  res.json({ ok: true });
+});
+
+// PUT /api/kb/:kbId/move — move a KB entry to a different subsection (or to Uncategorized)
+router.put("/kb/:kbId/move", requireAuth, (req, res) => {
+  const { subsection_id } = req.body;
+  // subsection_id = null → move to Uncategorized
+  // subsection_id = "KB-SS001" → move to that subsection
+
+  const db = getKbDb();
+  const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
+  if (!entry) return res.status(404).json({ error: "KB entry not found" });
+
+  if (subsection_id !== null && subsection_id !== undefined) {
+    const sub = db.prepare("SELECT * FROM kb_subsections WHERE subsection_id = ?").get(subsection_id);
+    if (!sub) return res.status(404).json({ error: "Target subsection not found" });
+  }
+
+  const targetId = subsection_id || null;
+  db.prepare("UPDATE kb_entries SET subsection_id = ? WHERE kb_id = ?").run(targetId, req.params.kbId);
+
+  const dest = targetId ? targetId : "Uncategorized";
+  logAudit(req.session.name, "KB_ENTRY_MOVED", `Moved ${req.params.kbId} to ${dest}`);
+  res.json({ ok: true });
+});
+
+// ─── KNOWLEDGE BASE ENTRIES ─────────────────────────────────────────────────
 
 // GET /api/kb
 router.get("/kb", requireAuth, (req, res) => {
@@ -127,20 +311,27 @@ router.get("/kb", requireAuth, (req, res) => {
     tags: JSON.parse(kb.tags || "[]"),
     related_reqs: JSON.parse(kb.related_reqs || "[]"),
     images: JSON.parse(kb.images || "[]"),
+    subsection_id: kb.subsection_id || null,
   })));
 });
 
 // POST /api/kb
 router.post("/kb", requireAuth, (req, res) => {
-  const { title, type, content, tags, related_reqs } = req.body;
+  const { title, type, content, tags, related_reqs, subsection_id } = req.body;
 
   if (!title || !content) return res.status(400).json({ error: "Title and content are required" });
 
-  const kbId = nextKbId();
-  getKbDb().prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(kbId, title, type || "Defect History", content, JSON.stringify(tags || []), JSON.stringify(related_reqs || []), req.session.name);
+  // Validate subsection exists if provided
+  if (subsection_id) {
+    const sub = getKbDb().prepare("SELECT * FROM kb_subsections WHERE subsection_id = ?").get(subsection_id);
+    if (!sub) return res.status(400).json({ error: "Invalid subsection_id" });
+  }
 
-  logAudit(req.session.name, "KB_CREATED", `Created KB entry ${kbId}: ${title}`);
+  const kbId = nextKbId();
+  getKbDb().prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs, subsection_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(kbId, title, type || "Defect History", content, JSON.stringify(tags || []), JSON.stringify(related_reqs || []), subsection_id || null, req.session.name);
+
+  logAudit(req.session.name, "KB_CREATED", `Created KB entry ${kbId}: ${title}${subsection_id ? ` in ${subsection_id}` : ""}`);
   res.json({ ok: true, kb_id: kbId });
 });
 
@@ -281,14 +472,26 @@ router.post("/kb/:kbId/images/:index/describe", requireAuth, async (req, res) =>
   res.json({ ok: true, description });
 });
 
-// PUT /api/kb/:kbId — update KB entry tags and/or related requirements
+// PUT /api/kb/:kbId — update KB entry fields (title, type, content, tags, related_reqs)
 router.put("/kb/:kbId", requireAuth, (req, res) => {
-  const { tags, related_reqs } = req.body;
+  const { title, type, content, tags, related_reqs } = req.body;
   const db = getKbDb();
   const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
   if (!entry) return res.status(404).json({ error: "KB entry not found" });
 
   const updates = [];
+  if (title !== undefined && title.trim()) {
+    db.prepare("UPDATE kb_entries SET title = ? WHERE kb_id = ?").run(title.trim(), req.params.kbId);
+    updates.push(`title: "${title.trim()}"`);
+  }
+  if (type !== undefined) {
+    db.prepare("UPDATE kb_entries SET type = ? WHERE kb_id = ?").run(type, req.params.kbId);
+    updates.push(`type: ${type}`);
+  }
+  if (content !== undefined && content.trim()) {
+    db.prepare("UPDATE kb_entries SET content = ? WHERE kb_id = ?").run(content.trim(), req.params.kbId);
+    updates.push("content updated");
+  }
   if (tags !== undefined) {
     db.prepare("UPDATE kb_entries SET tags = ? WHERE kb_id = ?").run(JSON.stringify(tags), req.params.kbId);
     updates.push(`tags: ${tags.join(", ")}`);
