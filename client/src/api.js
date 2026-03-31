@@ -96,6 +96,14 @@ export const api = {
   moveKbEntry: (kbId, subsection_id) => request(`/kb/${kbId}/move`, { method: "PUT", body: { subsection_id } }),
 
   // Knowledge Base — Entries
+  exportKbJson: () => {
+    const a = document.createElement("a");
+    a.href = `${BASE}/kb/export`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
   getKbEntries: () => request("/kb"),
   createKbEntry: (data) => request("/kb", { method: "POST", body: data }),
   uploadKbImages: async (kbId, files) => {

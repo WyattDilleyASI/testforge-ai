@@ -753,6 +753,9 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
           <Button variant="secondary" small onClick={toggleAll}>{allAreCollapsed ? "Expand All" : "Collapse All"}</Button>
         )}
         {!dragMode && kbEntries.length > 0 && (
+          <Button variant="secondary" small onClick={() => api.exportKbJson()}>Export JSON</Button>
+        )}
+        {!dragMode && kbEntries.length > 0 && (
           <Button variant="secondary" small onClick={() => { setDragMode(true); setAddingEntryTo(null); resetForm(); cancelEdit(); }}>Rearrange</Button>
         )}
         {dragMode && (
