@@ -74,7 +74,18 @@ export const api = {
     return data;
   },
 
-  // Knowledge Base
+  // Knowledge Base — Sections & Subsections
+  getKbSections: () => request("/kb/sections"),
+  createKbSection: (name) => request("/kb/sections", { method: "POST", body: { name } }),
+  renameKbSection: (sectionId, name) => request(`/kb/sections/${sectionId}`, { method: "PUT", body: { name } }),
+  deleteKbSection: (sectionId) => request(`/kb/sections/${sectionId}`, { method: "DELETE" }),
+  createKbSubsection: (section_id, name, description) => request("/kb/subsections", { method: "POST", body: { section_id, name, description } }),
+  renameKbSubsection: (subsectionId, name) => request(`/kb/subsections/${subsectionId}`, { method: "PUT", body: { name } }),
+  updateKbSubsection: (subsectionId, data) => request(`/kb/subsections/${subsectionId}`, { method: "PUT", body: data }),
+  deleteKbSubsection: (subsectionId) => request(`/kb/subsections/${subsectionId}`, { method: "DELETE" }),
+  moveKbEntry: (kbId, subsection_id) => request(`/kb/${kbId}/move`, { method: "PUT", body: { subsection_id } }),
+
+  // Knowledge Base — Entries
   getKbEntries: () => request("/kb"),
   createKbEntry: (data) => request("/kb", { method: "POST", body: data }),
   uploadKbImages: async (kbId, files) => {
@@ -109,8 +120,8 @@ export const api = {
 
   // Jama
   getJamaLog: () => request("/jama/log"),
-  exportToJama: () => request("/jama/export", { method: "POST" }), 
-   
+  exportToJama: () => request("/jama/export", { method: "POST" }),
+
   // MCP Tokens
   getMcpTokens: () => request("/mcp/tokens"),
   createMcpToken: (name) => request("/mcp/tokens", { method: "POST", body: { name } }),

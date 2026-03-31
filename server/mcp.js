@@ -52,8 +52,6 @@ function validateToken(token) {
 const activeSessions = new Map();
 
 // ─── MCP SERVER FACTORY ─────────────────────────────────────────────────────
-// Creates a fresh MCP server instance per connection, scoped to the
-// authenticated user. Each tool operates on TestForge's SQLite database.
 
 async function createMcpServer(user) {
   await ensureMcpImports();
@@ -116,14 +114,12 @@ async function createMcpServer(user) {
         return { content: [{ type: "text", text: `Requirement '${req_id}' not found.` }] };
       }
 
-      // Related KB entries (tagged with this req_id)
       const allKb = getKbDb().prepare("SELECT * FROM kb_entries").all();
       const relatedKb = allKb.filter(kb => {
         const tags = JSON.parse(kb.tags || "[]");
         return tags.includes(req_id);
       });
 
-      // Existing linked test cases
       const allTcs = getTcDb().prepare("SELECT tc_id, title, status, type, description FROM test_cases").all();
       const linkedTcs = allTcs.filter(tc => {
         const linked = JSON.parse(tc.linked_req_ids || "[]");
@@ -184,7 +180,6 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       })).min(1).describe("Array of test cases to save"),
     },
     async ({ req_id, depth, test_cases }) => {
-      // Validate requirement exists
       const requirement = getReqDb().prepare("SELECT req_id FROM requirements WHERE req_id = ?").get(req_id);
       if (!requirement) {
         return { content: [{ type: "text", text: `Error: Requirement '${req_id}' not found. Cannot save test cases.` }] };
@@ -231,7 +226,6 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
 
       insertMany(tcsToInsert);
 
-      // Update KB usage counts
       const allRefs = [...new Set(test_cases.flatMap(tc => tc.kbReferences || []))];
       if (allRefs.length > 0) {
         const updateKb = getKbDb().prepare("UPDATE kb_entries SET usage_count = usage_count + 1 WHERE kb_id = ?");
@@ -330,12 +324,57 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
   );
 
   // ════════════════════════════════════════════════════════════════════════
+  // TOOL: list_kb_sections
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "list_kb_sections",
+    "List all knowledge base sections and their subsections. Use this to understand the KB structure before creating or searching for entries. Each section represents a product or system area, and subsections represent modules within it.",
+    {},
+    async () => {
+      const db = getKbDb();
+      const sections = db.prepare("SELECT * FROM kb_sections ORDER BY sort_order, rowid").all();
+      const subsections = db.prepare("SELECT * FROM kb_subsections ORDER BY sort_order, rowid").all();
+
+      // Entry counts
+      const subCounts = db.prepare(`
+        SELECT subsection_id, COUNT(*) as entry_count
+        FROM kb_entries WHERE subsection_id IS NOT NULL
+        GROUP BY subsection_id
+      `).all();
+      const countMap = Object.fromEntries(subCounts.map(r => [r.subsection_id, r.entry_count]));
+      const uncatCount = db.prepare("SELECT COUNT(*) as count FROM kb_entries WHERE subsection_id IS NULL").get().count;
+
+      const result = sections.map(sec => ({
+        section_id: sec.section_id,
+        name: sec.name,
+        is_default: !!sec.is_default,
+        ...(sec.is_default
+          ? { entry_count: uncatCount, subsections: [] }
+          : {
+              subsections: subsections
+                .filter(sub => sub.section_id === sec.section_id)
+                .map(sub => ({
+                  subsection_id: sub.subsection_id,
+                  name: sub.name,
+                  description: sub.description || "",
+                  entry_count: countMap[sub.subsection_id] || 0,
+                })),
+            }
+        ),
+      }));
+
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
   // TOOL: search_knowledge_base
   // ════════════════════════════════════════════════════════════════════════
 
   server.tool(
     "search_knowledge_base",
-    "Search the knowledge base for entries relevant to a requirement, topic, or defect history. KB entries inform better test case generation.",
+    "Search the knowledge base for entries relevant to a requirement, topic, or defect history. Returns entries with their section and subsection context. KB entries inform better test case generation.",
     {
       query: z.string().optional()
         .describe("Free-text search across titles and content"),
@@ -343,8 +382,10 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         .describe("Find entries tagged with this requirement ID"),
       type: z.enum(["Defect History", "System Behavior", "Environment Constraint", "Business Rule", "Test Data Guideline", "all"]).optional()
         .describe("Filter by entry type"),
+      subsection_id: z.string().optional()
+        .describe("Filter to entries in a specific subsection (e.g. KB-SS001). Use list_kb_sections to find subsection IDs."),
     },
-    async ({ query, req_id, type }) => {
+    async ({ query, req_id, type, subsection_id }) => {
       const db = getKbDb();
       let rows = db.prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
 
@@ -354,6 +395,9 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       if (type && type !== "all") {
         rows = rows.filter(kb => kb.type === type);
       }
+      if (subsection_id) {
+        rows = rows.filter(kb => kb.subsection_id === subsection_id);
+      }
       if (query) {
         const q = query.toLowerCase();
         rows = rows.filter(kb =>
@@ -361,8 +405,17 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         );
       }
 
+      // Build lookup maps for section/subsection names
+      const subsections = db.prepare("SELECT * FROM kb_subsections").all();
+      const sections = db.prepare("SELECT * FROM kb_sections").all();
+      const subMap = Object.fromEntries(subsections.map(s => [s.subsection_id, s]));
+      const secMap = Object.fromEntries(sections.map(s => [s.section_id, s]));
+
       const result = rows.map(kb => {
         const images = JSON.parse(kb.images || "[]");
+        const sub = kb.subsection_id ? subMap[kb.subsection_id] : null;
+        const sec = sub ? secMap[sub.section_id] : sections.find(s => s.is_default);
+
         return {
           kb_id: kb.kb_id,
           title: kb.title,
@@ -372,6 +425,9 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
           usage_count: kb.usage_count,
           image_count: images.length,
           image_names: images.map(img => img.name),
+          // Section/subsection context
+          section: sec ? { section_id: sec.section_id, name: sec.name } : null,
+          subsection: sub ? { subsection_id: sub.subsection_id, name: sub.name } : null,
         };
       });
 
@@ -385,7 +441,7 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
 
   server.tool(
     "create_kb_entry",
-    "Add a new knowledge base entry. KB entries capture defect history, system behaviors, business rules, and other context that improves future test case generation.",
+    "Add a new knowledge base entry. KB entries capture defect history, system behaviors, business rules, and other context that improves future test case generation. Optionally place the entry into a specific subsection — use list_kb_sections to discover available subsections.",
     {
       title: z.string().describe("Concise entry title"),
       type: z.enum([
@@ -395,13 +451,25 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       content: z.string().describe("Detailed content of the entry"),
       tags: z.array(z.string()).optional()
         .describe("Requirement IDs to associate with this entry (e.g. ['RS-001', 'TC-003'])"),
+      subsection_id: z.string().optional()
+        .describe("Place entry in a specific subsection (e.g. KB-SS001). Omit for Uncategorized. Use list_kb_sections to find IDs."),
       images: z.array(z.object({
         name: z.string().describe("Image filename, e.g. 'screenshot.png'"),
         media_type: z.string().describe("MIME type, e.g. 'image/png', 'image/jpeg'"),
         data: z.string().describe("Base64-encoded image data"),
       })).optional().describe("Images to attach to this KB entry (base64-encoded)"),
     },
-    async ({ title, type, content, tags, images }) => {
+    async ({ title, type, content, tags, subsection_id, images }) => {
+      const db = getKbDb();
+
+      // Validate subsection if provided
+      if (subsection_id) {
+        const sub = db.prepare("SELECT * FROM kb_subsections WHERE subsection_id = ?").get(subsection_id);
+        if (!sub) {
+          return { content: [{ type: "text", text: `Error: Subsection '${subsection_id}' not found. Use list_kb_sections to see available subsections.` }] };
+        }
+      }
+
       const kbId = nextKbId();
       const imageData = (images || []).map(img => ({
         name: img.name,
@@ -417,14 +485,21 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       }
       const imageMeta = imageData.map(img => ({ name: img.name, media_type: img.media_type, description: null }));
 
-      getKbDb().prepare(
-        "INSERT INTO kb_entries (kb_id, title, type, content, tags, images, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)"
-      ).run(kbId, title, type, content, JSON.stringify(tags || []), JSON.stringify(imageMeta), `${user.name} (via MCP)`);
+      db.prepare(
+        "INSERT INTO kb_entries (kb_id, title, type, content, tags, images, subsection_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(kbId, title, type, content, JSON.stringify(tags || []), JSON.stringify(imageMeta), subsection_id || null, `${user.name} (via MCP)`);
 
-      logAudit(user.name, "KB_CREATED_MCP", `Created KB entry ${kbId}: ${title}${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""} (via MCP)`);
+      // Look up where it was placed for the response
+      let locationMsg = "Uncategorized";
+      if (subsection_id) {
+        const sub = db.prepare("SELECT s.name as sub_name, sec.name as sec_name FROM kb_subsections s JOIN kb_sections sec ON s.section_id = sec.section_id WHERE s.subsection_id = ?").get(subsection_id);
+        if (sub) locationMsg = `${sub.sec_name} → ${sub.sub_name}`;
+      }
+
+      logAudit(user.name, "KB_CREATED_MCP", `Created KB entry ${kbId}: ${title} in ${locationMsg}${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""} (via MCP)`);
 
       return {
-        content: [{ type: "text", text: `✓ Created KB entry ${kbId}: "${title}" [${type}]${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""}` }],
+        content: [{ type: "text", text: `✓ Created KB entry ${kbId}: "${title}" [${type}] in ${locationMsg}${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""}` }],
       };
     }
   );
@@ -799,12 +874,8 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
 }
 
 // ─── EXPRESS ROUTE MOUNTING ─────────────────────────────────────────────────
-// Adds /mcp/sse and /mcp/messages to the Express app for MCP transport,
-// plus /api/mcp/tokens/* for token management in the TestForge UI.
 
 function mountMcpRoutes(app) {
-
-  // ── SSE endpoint: Claude clients connect here ─────────────────────────
 
   app.get("/mcp/sse", async (req, res) => {
     const authHeader = req.headers.authorization;
@@ -840,8 +911,6 @@ function mountMcpRoutes(app) {
     }
   });
 
-  // ── Message endpoint: receives JSON-RPC from Claude ───────────────────
-
   app.post("/mcp/messages", async (req, res) => {
     const sessionId = req.query.sessionId;
     const session = activeSessions.get(sessionId);
@@ -860,9 +929,6 @@ function mountMcpRoutes(app) {
     }
   });
 
-  // ── Token management API (used by TestForge UI) ───────────────────────
-
-  // List current user's tokens (masked)
   app.get("/api/mcp/tokens", (req, res) => {
     if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
 
@@ -876,7 +942,6 @@ function mountMcpRoutes(app) {
     res.json(tokens);
   });
 
-  // Create a new token
   app.post("/api/mcp/tokens", (req, res) => {
     if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
     const { name } = req.body;
@@ -888,12 +953,9 @@ function mountMcpRoutes(app) {
     ).run(token, req.session.userId, name);
 
     logAudit(req.session.name, "MCP_TOKEN_CREATED", `Created MCP token "${name}"`);
-
-    // Full token returned ONLY at creation time
     res.json({ token, name });
   });
 
-  // Delete a token
   app.delete("/api/mcp/tokens/:id", (req, res) => {
     if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
     const db = getDb();
