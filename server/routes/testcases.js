@@ -1060,4 +1060,251 @@ router.post("/import-doc", requireAuth, upload.single("file"), async (req, res) 
   res.json({ imported: imported.length, skipped: skipped.length, tc_ids: imported });
 });
 
+// ─── TestLink XML Import ─────────────────────────────────────────────────────
+
+// Strip HTML tags and decode basic entities from CDATA content
+function stripHtml(html) {
+  if (!html) return "";
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Parse HTML list items into an array of strings
+function parseListItems(html) {
+  if (!html) return [];
+  const $ = cheerio.load(html);
+  const items = [];
+  $("li").each((_, el) => {
+    const text = stripHtml($(el).html());
+    if (text) items.push(text);
+  });
+  return items.length > 0 ? items : stripHtml(html) ? [stripHtml(html)] : [];
+}
+
+// POST /api/testcases/parse-xml — parse TestLink XML, return structured preview (no DB write)
+router.post("/parse-xml", requireAuth, upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  const xmlString = req.file.buffer.toString("utf-8");
+  const $ = cheerio.load(xmlString, { xmlMode: true });
+
+  const parsed = [];
+  $("testcase").each((_, tc) => {
+    const $tc = $(tc);
+
+    const name        = $tc.attr("name") || "";
+    const externalId  = stripHtml($tc.find("externalid").text());
+    const internalId  = $tc.attr("internalid") || "";
+    const summary     = stripHtml($tc.find("> summary").text());
+    const precondHtml = $tc.find("> preconditions").text();
+    const execType    = stripHtml($tc.find("> execution_type").first().text());
+    const importance  = stripHtml($tc.find("importance").text());
+
+    // Steps
+    const steps = [];
+    $tc.find("step").each((_, s) => {
+      const $s = $(s);
+      steps.push({
+        step: stripHtml($s.find("actions").text()),
+        expectedResult: stripHtml($s.find("expectedresults").text()),
+      });
+    });
+
+    // Keywords
+    const keywords = [];
+    $tc.find("keyword").each((_, k) => keywords.push($(k).attr("name") || ""));
+
+    // Requirements (linked from TestLink)
+    const requirements = [];
+    $tc.find("requirement").each((_, r) => {
+      const $r = $(r);
+      requirements.push({
+        doc_id: stripHtml($r.find("doc_id").text()),
+        title:  stripHtml($r.find("title").text()),
+        spec:   stripHtml($r.find("req_spec_title").text()),
+      });
+    });
+
+    const importanceMap = { "1": "Low", "2": "Medium", "3": "High" };
+    const typeMap       = { "1": "Manual", "2": "Automated" };
+
+    parsed.push({
+      internalId,
+      externalId,
+      name,
+      summary,
+      preconditions: parseListItems(precondHtml),
+      steps,
+      keywords,
+      requirements,
+      executionType: typeMap[execType] || "Manual",
+      importance: importanceMap[importance] || "Medium",
+    });
+  });
+
+  if (parsed.length === 0) return res.status(400).json({ error: "No test cases found in XML. Ensure this is a valid TestLink export." });
+
+  res.json({ testcases: parsed, count: parsed.length });
+});
+
+// POST /api/testcases/enhance-xml-tc — AI-enhance a single parsed TestLink TC using KB sections + product context
+router.post("/enhance-xml-tc", requireAuth, async (req, res) => {
+  const { testcase, kbEntryIds = [] } = req.body;
+  if (!testcase) return res.status(400).json({ error: "testcase is required" });
+
+  const { product_context, key_terms } = getProductContext();
+
+  // Load selected KB entries
+  const kbDb = getKbDb();
+  let kbContext = "";
+  if (kbEntryIds.length > 0) {
+    const placeholders = kbEntryIds.map(() => "?").join(",");
+    const entries = kbDb.prepare(`SELECT * FROM kb_entries WHERE kb_id IN (${placeholders})`).all(...kbEntryIds);
+    if (entries.length > 0) {
+      kbContext = `\nKNOWLEDGE BASE CONTEXT:\n${entries.map(kb => {
+        const images = JSON.parse(kb.images || "[]");
+        const describedImages = images.filter(img => img.description);
+        let entry = `- (${kb.type}) ${kb.title}: ${kb.content}`;
+        if (describedImages.length > 0) {
+          entry += `\n  UI References:\n${describedImages.map(img => `    [${img.name}]\n${img.description.split("\n").map(l => `    ${l}`).join("\n")}`).join("\n")}`;
+        }
+        return entry;
+      }).join("\n")}`;
+    }
+  }
+
+  // Build requirement reference string for the Objective section
+  const reqRefs = (testcase.requirements || []).map(r =>
+    `${r.spec ? r.spec + " — " : ""}${r.doc_id}: ${r.title}`
+  ).join("\n");
+
+  const prompt = `You are a senior QA engineer updating a legacy test case from TestLink into a current, detailed JAMA-style test case.
+
+The test case was written several years ago and may be missing context. Use the product context and knowledge base entries provided to fill in gaps, update terminology, and add missing detail. Do NOT invent system behavior — only expand on what is already described or supported by the KB context.
+
+${product_context ? `PRODUCT CONTEXT:\n${product_context}\n` : ""}${key_terms ? `KEY TERMS (use these where applicable):\n${key_terms}\n` : ""}${kbContext}
+
+ORIGINAL TESTLINK TEST CASE:
+Name: ${testcase.name}
+Summary: ${testcase.summary}
+Preconditions: ${testcase.preconditions.join("; ")}
+Steps:
+${testcase.steps.map((s, i) => `  ${i + 1}. Action: ${s.step}\n     Expected: ${s.expectedResult}`).join("\n")}
+Keywords: ${testcase.keywords.join(", ") || "none"}
+Execution Type: ${testcase.executionType}
+Priority: ${testcase.importance}
+${reqRefs ? `TestLink Requirements:\n${reqRefs}` : ""}
+
+Produce an enhanced test case as a JSON object with these exact fields:
+- title: string (clear, specific test case title)
+- type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
+- description: object with:
+    - objective: string (what this test verifies — include the TestLink requirement reference if provided)
+    - scope: array of strings (systems/components in scope)
+    - assumptions: array of strings
+- setup: object with:
+    - preconditions: array of strings
+    - environment: array of strings
+    - equipment: array of strings
+    - testData: array of strings
+- steps: array of { step: string, expectedResult: string } — expand steps with more detail where possible
+- reqAttribute: string (what aspect of the requirement this validates)
+- tags: array of strings (from keywords, normalized)
+
+Respond ONLY with valid JSON, no markdown, no preamble.`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+        max_tokens: 4000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      return res.status(500).json({ error: err.error?.message || "Claude API error" });
+    }
+
+    const data = await response.json();
+    const raw = data.content?.[0]?.text || "";
+    logTokenUsage(req.session.name, "testlink_enhance", data.usage?.input_tokens || 0, data.usage?.output_tokens || 0);
+
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+    const enhanced = JSON.parse(cleaned);
+
+    res.json({ enhanced });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/testcases/import-xml-confirmed — save a confirmed (possibly enhanced) TC to the DB
+router.post("/import-xml-confirmed", requireAuth, (req, res) => {
+  const { testcase, originalExternalId } = req.body;
+  if (!testcase) return res.status(400).json({ error: "testcase is required" });
+
+  const db = getTcDb();
+
+  // Generate tc_id: use TL- prefix + externalId if available, otherwise auto-increment
+  let tcId;
+  if (originalExternalId) {
+    const candidate = `TL-${originalExternalId}`;
+    const exists = db.prepare("SELECT tc_id FROM test_cases WHERE tc_id = ?").get(candidate);
+    tcId = exists ? `TL-${originalExternalId}-${Date.now()}` : candidate;
+  } else {
+    const last = db.prepare("SELECT tc_id FROM test_cases WHERE tc_id LIKE 'TL-%' ORDER BY rowid DESC").get();
+    const lastNum = last ? parseInt(last.tc_id.replace(/^TL-/, "")) || 0 : 0;
+    tcId = `TL-${String(lastNum + 1).padStart(3, "0")}`;
+  }
+
+  const preconditions = JSON.stringify({
+    preconditions: testcase.setup?.preconditions || [],
+    environment:   testcase.setup?.environment   || [],
+    equipment:     testcase.setup?.equipment     || [],
+    testData:      testcase.setup?.testData      || [],
+  });
+
+  const description = JSON.stringify({
+    objective:   testcase.description?.objective   || "",
+    scope:       testcase.description?.scope       || [],
+    assumptions: testcase.description?.assumptions || [],
+  });
+
+  db.prepare(
+    "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
+  ).run(
+    tcId,
+    testcase.title || "Untitled",
+    tcId,
+    "[]",
+    preconditions,
+    JSON.stringify(testcase.steps || []),
+    description,
+    testcase.type || "Happy Path",
+    "standard",
+    testcase.reqAttribute || "",
+    "[]",
+    "[]",
+    `${req.session.name} (TestLink import)`
+  );
+
+  logAudit(req.session.name, "TC_IMPORT_TESTLINK", `TestLink import: ${tcId} — ${testcase.title}`);
+  res.json({ tc_id: tcId, title: testcase.title });
+});
+
 module.exports = router;

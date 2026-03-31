@@ -73,6 +73,16 @@ export const api = {
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     return data;
   },
+  parseTestLinkXml: async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/testcases/parse-xml`, { method: "POST", credentials: "include", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  },
+  enhanceTestLinkTc: (testcase, kbEntryIds) => request("/testcases/enhance-xml-tc", { method: "POST", body: { testcase, kbEntryIds } }),
+  importTestLinkConfirmed: (testcase, originalExternalId) => request("/testcases/import-xml-confirmed", { method: "POST", body: { testcase, originalExternalId } }),
 
   // Knowledge Base — Sections & Subsections
   getKbSections: () => request("/kb/sections"),

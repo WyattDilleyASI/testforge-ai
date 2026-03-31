@@ -7,7 +7,7 @@ import { LoginScreen, PasswordChangeScreen } from "./components/LoginScreen";
 import { Sidebar } from "./components/Sidebar";
 import { DashboardView } from "./components/DashboardView";
 import { RequirementsView } from "./components/RequirementsView";
-import { TestCaseView } from "./components/TestCaseView";
+import { TestCasesWrapper } from "./components/TestCasesWrapper";
 import { TraceabilityView } from "./components/TraceabilityView";
 import { KbView } from "./components/KbView";
 import { DeferredView } from "./components/DeferredView";
@@ -269,10 +269,10 @@ useEffect(() => {
         setEasterEggToast("↩️ Theme restored");
       }} />}
       <Sidebar active={page} onNavigate={navigate} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
-      <main style={{ flex: 1, padding: page === "traceability" ? 0 : "28px 36px", maxWidth: page === "traceability" ? "none" : 1100, overflowY: page === "traceability" ? "hidden" : "auto", display: page === "traceability" ? "flex" : "block", flexDirection: "column" }}>
+      <main style={{ flex: 1, padding: page === "traceability" ? 0 : "28px 36px", overflowY: page === "traceability" ? "hidden" : "auto", display: page === "traceability" ? "flex" : "block", flexDirection: "column" }}>
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
         {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
-        {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
+        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
         {page === "traceability" && <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
         {page === "deferred" && <DeferredView />}
