@@ -764,7 +764,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
 
       {/* Header */}
-      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, background: T.surface }}>
+      <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, background: T.surface + "CC", backdropFilter: "blur(8px)" }}>
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: T.textBright, margin: 0 }}>SysML Requirements Diagram</h2>
           <p style={{ fontSize: 10, color: T.textMuted, margin: "2px 0 0", fontFamily: mono }}>
@@ -785,7 +785,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
 
       {/* Filtered view banner */}
       {viewMode !== "full" && (
-        <div style={{ padding: "6px 20px", background: _isLight ? "#e8f0ff" : "#0e1a38", borderBottom: `1px solid ${_isLight ? "#c0d0f0" : "#1e3068"}`, display: "flex", alignItems: "center", gap: 10, fontSize: 11, flexShrink: 0 }}>
+        <div style={{ padding: "6px 20px", background: _isLight ? "#e8f0ffCC" : "#0e1a38CC", backdropFilter: "blur(8px)", borderBottom: `1px solid ${_isLight ? "#c0d0f0" : "#1e3068"}`, display: "flex", alignItems: "center", gap: 10, fontSize: 11, flexShrink: 0 }}>
           <span style={{ color: _isLight ? "#4060a0" : "#6080c0", fontWeight: 700 }}>{viewMode === "family" ? "Family View" : "Level View"}</span>
           <span style={{ color: _isLight ? "#2050a0" : "#90b0f0", fontFamily: mono }}>{viewLabel}</span>
           <span style={{ color: _isLight ? "#6080b0" : "#4060a0", fontSize: 10 }}>({activeReqs.length} node{activeReqs.length !== 1 ? "s" : ""})</span>
@@ -794,7 +794,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
       )}
 
       {/* Diagram area */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: T.bg, minHeight: 0 }}>
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "transparent", minHeight: 0 }}>
         {!hasData && (
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, pointerEvents: "none" }}>
             <div style={{ fontSize: 64, opacity: 0.07 }}>◈</div>
@@ -991,8 +991,8 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
 
       {/* TACO Assessment pane — requirements only */}
       {hasData && (
-        <div style={{ maxHeight: 180, overflowY: "auto", borderTop: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
-          <div style={{ padding: "6px 12px", fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", background: T.surface, borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 1 }}>
+        <div style={{ maxHeight: 180, overflowY: "auto", borderTop: `1px solid ${T.border}`, background: T.surface + "CC", backdropFilter: "blur(8px)", flexShrink: 0 }}>
+          <div style={{ padding: "6px 12px", fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", background: T.surface + "CC", backdropFilter: "blur(8px)", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 1 }}>
             <span>TACO Assessment{tcCount > 0 ? ` · ${tcCount} TCs on diagram` : ""}</span>
             <span style={{ fontWeight: 400 }}>
               {(() => {

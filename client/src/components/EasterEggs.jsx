@@ -824,14 +824,15 @@ export const HotDogCanvas = () => {
     const ctx = canvas.getContext("2d");
     let animId;
 
-    // Falling hotdogs
+    // Offscreen canvas — landed pile is drawn here once per landing event,
+    // then blitted in one drawImage call per frame instead of re-drawing every hotdog.
+    const pile = document.createElement("canvas");
+    const pileCtx = pile.getContext("2d");
+
     const falling = [];
     const COUNT = 10;
-    // Landed hotdogs — stay on screen forever
-    const landed = [];
-    // Floor height per x-column (px from bottom). Divide screen into COLS buckets.
     const COLS = 40;
-    let floorLevel = []; // floorLevel[col] = height of pile in that column (px)
+    let floorLevel = [];
 
     const colWidth = () => canvas.width / COLS;
     const getFloor = (x) => {
@@ -839,7 +840,6 @@ export const HotDogCanvas = () => {
       return canvas.height - (floorLevel[col] || 0);
     };
     const raiseFloor = (x, amount) => {
-      // Spread landing impact across ~3 neighbouring columns
       const col = Math.max(0, Math.min(COLS - 1, Math.floor(x / colWidth())));
       for (let dc = -1; dc <= 1; dc++) {
         const c = Math.max(0, Math.min(COLS - 1, col + dc));
@@ -851,8 +851,10 @@ export const HotDogCanvas = () => {
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      pile.width = canvas.width;
+      pile.height = canvas.height;
       floorLevel = new Array(COLS).fill(0);
-      landed.length = 0;
+      pileCtx.clearRect(0, 0, pile.width, pile.height);
     };
     resize();
     window.addEventListener("resize", resize);
@@ -875,26 +877,24 @@ export const HotDogCanvas = () => {
       falling.push(h);
     }
 
-    const drawDog = (x, y, rot, size) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rot);
-      ctx.font = `${size}px serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("🌭", 0, 0);
-      ctx.restore();
+    const drawDog = (targetCtx, x, y, rot, size) => {
+      targetCtx.save();
+      targetCtx.translate(x, y);
+      targetCtx.rotate(rot);
+      targetCtx.font = `${size}px serif`;
+      targetCtx.textAlign = "center";
+      targetCtx.textBaseline = "middle";
+      targetCtx.fillText("🌭", 0, 0);
+      targetCtx.restore();
     };
 
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw landed pile
-      for (const h of landed) {
-        drawDog(h.x, h.y, h.rot, h.size);
-      }
+      // Blit the entire landed pile in one operation
+      ctx.drawImage(pile, 0, 0);
 
-      // Update and draw falling
+      // Update and draw only the falling hotdogs (small fixed number)
       for (let i = 0; i < falling.length; i++) {
         const h = falling[i];
         h.y += h.speed;
@@ -905,14 +905,14 @@ export const HotDogCanvas = () => {
         const floor = getFloor(h.x);
 
         if (h.y >= floor) {
-          // Land it — freeze rotation to a slight tilt
-          h.rot = (Math.random() - 0.5) * 0.6;
+          h.rot = h.rot + (Math.random() - 0.5) * 0.3;
           h.y = floor;
           raiseFloor(h.x, h.size * 0.7);
-          landed.push({ x: h.x, y: h.y, rot: h.rot, size: h.size });
+          // Paint directly onto the offscreen pile canvas — never redrawn again
+          drawDog(pileCtx, h.x, h.y, h.rot, h.size);
           falling[i] = spawnHotdog();
         } else {
-          drawDog(h.x, h.y, h.rot, h.size);
+          drawDog(ctx, h.x, h.y, h.rot, h.size);
         }
       }
 
