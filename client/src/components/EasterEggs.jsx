@@ -830,8 +830,8 @@ export const HotDogCanvas = () => {
     const pileCtx = pile.getContext("2d");
 
     const falling = [];
-    const COUNT = 10;
-    const COLS = 40;
+    const COUNT = 50;
+    const COLS = 55;
     let floorLevel = [];
 
     const colWidth = () => canvas.width / COLS;
@@ -841,9 +841,10 @@ export const HotDogCanvas = () => {
     };
     const raiseFloor = (x, amount) => {
       const col = Math.max(0, Math.min(COLS - 1, Math.floor(x / colWidth())));
-      for (let dc = -1; dc <= 1; dc++) {
+      const weights = { 0: 1, 1: 0.7, 2: 0.35 };
+      for (let dc = -2; dc <= 2; dc++) {
         const c = Math.max(0, Math.min(COLS - 1, col + dc));
-        const weight = dc === 0 ? 1 : 0.4;
+        const weight = weights[Math.abs(dc)] ?? 0;
         floorLevel[c] = (floorLevel[c] || 0) + amount * weight;
       }
     };
@@ -858,6 +859,27 @@ export const HotDogCanvas = () => {
     };
     resize();
     window.addEventListener("resize", resize);
+
+    // Pre-render emoji at discrete sizes so drawDog uses fast drawImage blits
+    // instead of expensive fillText emoji shaping every frame.
+    const SPRITE_SIZES = [28, 36, 44, 52];
+    const sprites = SPRITE_SIZES.map(sz => {
+      const pad = 4;
+      const dim = sz + pad * 2;
+      const oc = document.createElement("canvas");
+      oc.width = dim; oc.height = dim;
+      const octx = oc.getContext("2d");
+      octx.font = `${sz}px serif`;
+      octx.textAlign = "center";
+      octx.textBaseline = "middle";
+      octx.fillText("🌭", dim / 2, dim / 2);
+      return { canvas: oc, dim };
+    });
+    const getSprite = (size) => {
+      let best = sprites[0];
+      for (const s of sprites) if (Math.abs(s.dim - size) < Math.abs(best.dim - size)) best = s;
+      return best;
+    };
 
     const spawnHotdog = () => ({
       x: Math.random() * canvas.width,
@@ -878,13 +900,13 @@ export const HotDogCanvas = () => {
     }
 
     const drawDog = (targetCtx, x, y, rot, size) => {
+      const { canvas: spr, dim } = getSprite(size);
+      const scale = size / dim;
       targetCtx.save();
       targetCtx.translate(x, y);
       targetCtx.rotate(rot);
-      targetCtx.font = `${size}px serif`;
-      targetCtx.textAlign = "center";
-      targetCtx.textBaseline = "middle";
-      targetCtx.fillText("🌭", 0, 0);
+      targetCtx.scale(scale, scale);
+      targetCtx.drawImage(spr, -dim / 2, -dim / 2);
       targetCtx.restore();
     };
 
@@ -907,7 +929,7 @@ export const HotDogCanvas = () => {
         if (h.y >= floor) {
           h.rot = h.rot + (Math.random() - 0.5) * 0.3;
           h.y = floor;
-          raiseFloor(h.x, h.size * 0.7);
+          raiseFloor(h.x, h.size * 0.55);
           // Paint directly onto the offscreen pile canvas — never redrawn again
           drawDog(pileCtx, h.x, h.y, h.rot, h.size);
           falling[i] = spawnHotdog();
