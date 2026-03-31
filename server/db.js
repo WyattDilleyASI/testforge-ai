@@ -253,6 +253,47 @@ function initialize() {
   if (!kbCols.includes("images")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN images TEXT DEFAULT '[]'");
   if (!kbCols.includes("related_reqs")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN related_reqs TEXT DEFAULT '[]'");
 
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │  NEW: KB Sections & Subsections                                      │
+  // │  Sections = top-level containers (e.g. "Mobius", "VAI")              │
+  // │  Subsections = modules within a section (e.g. "Command", "Maps")     │
+  // │  kb_entries gain a subsection_id to place them in the hierarchy.     │
+  // │  subsection_id = NULL → entry lives in the Uncategorized section.    │
+  // └──────────────────────────────────────────────────────────────────────┘
+
+  kbDb.exec(`
+    CREATE TABLE IF NOT EXISTS kb_sections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      section_id TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS kb_subsections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subsection_id TEXT UNIQUE NOT NULL,
+      section_id TEXT NOT NULL REFERENCES kb_sections(section_id),
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Migration: add subsection_id to kb_entries (NULL = Uncategorized)
+  if (!kbCols.includes("subsection_id")) {
+    kbDb.exec("ALTER TABLE kb_entries ADD COLUMN subsection_id TEXT REFERENCES kb_subsections(subsection_id)");
+  }
+
+  // Migration: add description to kb_subsections
+  const subCols = kbDb.prepare("PRAGMA table_info(kb_subsections)").all().map(c => c.name);
+  if (!subCols.includes("description")) {
+    kbDb.exec("ALTER TABLE kb_subsections ADD COLUMN description TEXT DEFAULT ''");
+  }
+
   // ── Seed data ──
   const userCount = core.prepare("SELECT COUNT(*) as count FROM users").get().count;
   if (userCount === 0) {
@@ -273,6 +314,16 @@ function initialize() {
     ];
     const insert = kbDb.prepare("INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs) VALUES (?, ?, ?, ?, ?, ?)");
     for (const kb of seedKb) insert.run(kb.kb_id, kb.title, kb.type, kb.content, kb.tags, kb.related_reqs);
+  }
+
+  // Seed: Uncategorized section (always exists, cannot be deleted/renamed)
+  const uncatExists = kbDb.prepare("SELECT COUNT(*) as count FROM kb_sections WHERE is_default = 1").get().count;
+  if (uncatExists === 0) {
+    kbDb.prepare(`
+      INSERT INTO kb_sections (section_id, name, is_default, sort_order, created_by)
+      VALUES (?, ?, ?, ?, ?)
+    `).run("KB-S001", "Uncategorized", 1, 0, "System");
+    logAudit("System", "KB_SECTION_INIT", "Default Uncategorized section created");
   }
 
   console.log("✓ Databases initialized:");
@@ -419,6 +470,25 @@ function nextKbId() {
   return `KB-E${String(num).padStart(3, "0")}`;
 }
 
+// ── NEW: Section & Subsection ID generators ──────────────────────────────────
+// Follow the same pattern as nextKbId() — sequential, zero-padded, prefixed.
+// KB-S001, KB-S002, ...  for sections
+// KB-SS001, KB-SS002, ... for subsections
+
+function nextSectionId() {
+  const last = getKbDb().prepare("SELECT section_id FROM kb_sections ORDER BY rowid DESC LIMIT 1").get();
+  if (!last) return "KB-S001";
+  const num = parseInt(last.section_id.replace("KB-S", "")) + 1;
+  return `KB-S${String(num).padStart(3, "0")}`;
+}
+
+function nextSubsectionId() {
+  const last = getKbDb().prepare("SELECT subsection_id FROM kb_subsections ORDER BY rowid DESC LIMIT 1").get();
+  if (!last) return "KB-SS001";
+  const num = parseInt(last.subsection_id.replace("KB-SS", "")) + 1;
+  return `KB-SS${String(num).padStart(3, "0")}`;
+}
+
 // ─── MCP HELPERS ────────────────────────────────────────────────────────────
 
 function getMcpSettings() {
@@ -462,6 +532,7 @@ function getProductContext() {
 module.exports = {
   getDb, getCoreDb, getReqDb, getTcDb, getKbDb,
   initialize, logAudit, logTokenUsage, generateOtp, nextUserId, nextKbId,
+  nextSectionId, nextSubsectionId,
   getMcpSettings, getMcpSettingById, getMcpEnabledServers,
   getSetting, setSetting, getProductContext,
   saveImage, readImage, readImageBase64, deleteImage, deleteImageDir, getImageDir,
