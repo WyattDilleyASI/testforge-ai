@@ -303,6 +303,28 @@ router.put("/kb/:kbId/move", requireAuth, (req, res) => {
 
 // ─── KNOWLEDGE BASE ENTRIES ─────────────────────────────────────────────────
 
+// GET /api/kb/export — full export with base64-embedded images
+router.get("/kb/export", requireAuth, (req, res) => {
+  const rows = getKbDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
+  const entries = rows.map(kb => {
+    const images = JSON.parse(kb.images || "[]").map(img => {
+      const b64 = readImageBase64(kb.kb_id, img.name);
+      return { ...img, data: b64 ? `data:${img.media_type};base64,${b64}` : null };
+    });
+    return {
+      ...kb,
+      tags: JSON.parse(kb.tags || "[]"),
+      related_reqs: JSON.parse(kb.related_reqs || "[]"),
+      images,
+      subsection_id: kb.subsection_id || null,
+    };
+  });
+  const date = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Disposition", `attachment; filename="kb-export-${date}.json"`);
+  res.setHeader("Content-Type", "application/json");
+  res.send(JSON.stringify(entries, null, 2));
+});
+
 // GET /api/kb
 router.get("/kb", requireAuth, (req, res) => {
   const rows = getKbDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
