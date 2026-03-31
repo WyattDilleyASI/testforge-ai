@@ -753,6 +753,16 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
           <Button variant="secondary" small onClick={toggleAll}>{allAreCollapsed ? "Expand All" : "Collapse All"}</Button>
         )}
         {!dragMode && kbEntries.length > 0 && (
+          <Button variant="secondary" small onClick={() => {
+            const blob = new Blob([JSON.stringify(kbEntries, null, 2)], { type: "application/json" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `kb-export-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+          }}>Export JSON</Button>
+        )}
+        {!dragMode && kbEntries.length > 0 && (
           <Button variant="secondary" small onClick={() => { setDragMode(true); setAddingEntryTo(null); resetForm(); cancelEdit(); }}>Rearrange</Button>
         )}
         {dragMode && (
