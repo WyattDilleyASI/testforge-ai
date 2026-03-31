@@ -12,7 +12,7 @@ import { TraceabilityView } from "./components/TraceabilityView";
 import { KbView } from "./components/KbView";
 import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
-import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas } from "./components/EasterEggs";
+import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas } from "./components/EasterEggs";
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 
@@ -261,6 +261,7 @@ useEffect(() => {
       {activeTheme._vaporwave && <VaporwaveCanvas />}
       {activeTheme._fireflies && <FirefliesCanvas />}
       {activeTheme._fishTank && <FishTankCanvas />}
+      {activeTheme._hotDogs && <HotDogCanvas />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");
