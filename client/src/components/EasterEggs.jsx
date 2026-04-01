@@ -862,7 +862,7 @@ export const HotDogCanvas = () => {
 
     // Pre-render emoji at discrete sizes so drawDog uses fast drawImage blits
     // instead of expensive fillText emoji shaping every frame.
-    const SPRITE_SIZES = [28, 36, 44, 52];
+    const SPRITE_SIZES = [28, 36, 44, 52, 70, 90, 140, 240, 480];
     const sprites = SPRITE_SIZES.map(sz => {
       const pad = 4;
       const dim = sz + pad * 2;
@@ -881,17 +881,31 @@ export const HotDogCanvas = () => {
       return best;
     };
 
-    const spawnHotdog = () => ({
-      x: Math.random() * canvas.width,
-      y: -60 - Math.random() * 300,
-      speed: 2 + Math.random() * 2.5,
-      size: 26 + Math.random() * 24,
-      rot: (Math.random() - 0.5) * Math.PI * 2,
-      rotSpeed: (Math.random() - 0.5) * 0.07,
-      wobble: Math.random() * Math.PI * 2,
-      wobbleAmp: 0.5 + Math.random() * 1.0,
-      wobbleFreq: 0.02 + Math.random() * 0.03,
-    });
+    const spawnHotdog = () => {
+      const roll = Math.random();
+      // 0.01% chance: legendary hot dog
+      // 1% chance: giant hot dog
+      // 5% chance: large hot dog
+      // ~94% chance: normal hot dog
+      const size = roll < 0.0001
+        ? 400 + Math.random() * 120      // legendary: 400–520px
+        : roll < 0.01
+          ? 110 + Math.random() * 40     // giant: 110–150px
+          : roll < 0.06
+            ? 62 + Math.random() * 22    // large: 62–84px
+            : 26 + Math.random() * 24;   // normal: 26–50px
+      return {
+        x: Math.random() * canvas.width,
+        y: -60 - Math.random() * 300,
+        speed: 2 + Math.random() * 2.5,
+        size,
+        rot: (Math.random() - 0.5) * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.07,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleAmp: 0.5 + Math.random() * 1.0,
+        wobbleFreq: 0.02 + Math.random() * 0.03,
+      };
+    };
 
     for (let i = 0; i < COUNT; i++) {
       const h = spawnHotdog();
