@@ -862,7 +862,7 @@ export const HotDogCanvas = () => {
 
     // Pre-render emoji at discrete sizes so drawDog uses fast drawImage blits
     // instead of expensive fillText emoji shaping every frame.
-    const SPRITE_SIZES = [28, 36, 44, 52, 70, 90, 140, 240, 480];
+    const SPRITE_SIZES = [28, 36, 44, 52, 70, 90, 140, 240, 480, 960];
     const sprites = SPRITE_SIZES.map(sz => {
       const pad = 4;
       const dim = sz + pad * 2;
@@ -888,7 +888,7 @@ export const HotDogCanvas = () => {
       // 5% chance: large hot dog
       // ~94% chance: normal hot dog
       const size = roll < 0.0001
-        ? 400 + Math.random() * 120      // legendary: 400–520px
+        ? 900 + Math.random() * 100      // legendary: 900–1000px
         : roll < 0.01
           ? 110 + Math.random() * 40     // giant: 110–150px
           : roll < 0.06
