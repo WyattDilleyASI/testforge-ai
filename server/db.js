@@ -226,6 +226,7 @@ function initialize() {
   const tcCols = tcDb.prepare("PRAGMA table_info(test_cases)").all().map(c => c.name);
   if (!tcCols.includes("project_id")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN project_id TEXT");
   if (!tcCols.includes("upstream_relationship")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN upstream_relationship TEXT DEFAULT '[]'");
+  if (!tcCols.includes("testlink_requirements")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN testlink_requirements TEXT DEFAULT '[]'");
   if (tcCols.includes("pass_fail_criteria")) tcDb.exec("ALTER TABLE test_cases RENAME COLUMN pass_fail_criteria TO description");
 
   // ── Knowledge Base DB ──

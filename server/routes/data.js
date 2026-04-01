@@ -676,10 +676,13 @@ router.post("/jama/export", requireRole("Admin", "QA Manager"), (req, res) => {
   const allTcs = tcDb.prepare("SELECT * FROM test_cases").all();
   const allReqIds = reqDb.prepare("SELECT req_id FROM requirements").all().map(r => r.req_id);
 
-  const orphaned = allTcs.filter(tc => {
+  const hasReqLink = (tc) => {
     const linked = JSON.parse(tc.linked_req_ids || "[]");
-    return linked.length === 0 || linked.every(rid => !allReqIds.includes(rid));
-  });
+    const tlReqs = JSON.parse(tc.testlink_requirements || "[]");
+    return (linked.length > 0 && linked.some(rid => allReqIds.includes(rid))) || tlReqs.length > 0;
+  };
+
+  const orphaned = allTcs.filter(tc => !hasReqLink(tc));
 
   if (orphaned.length > 0) {
     coreDb.prepare("INSERT INTO jama_export_log (user_name, action, details, status, tc_count) VALUES (?, ?, ?, ?, ?)")
@@ -689,13 +692,17 @@ router.post("/jama/export", requireRole("Admin", "QA Manager"), (req, res) => {
   }
 
   // Only export reviewed TCs
-  const exportable = allTcs.filter(tc => {
-    const linked = JSON.parse(tc.linked_req_ids || "[]");
-    return linked.length > 0 && tc.status === "Reviewed";
-  });
+  const exportable = allTcs.filter(tc => hasReqLink(tc) && tc.status === "Reviewed");
+
+  const tlCount = exportable.filter(tc => JSON.parse(tc.testlink_requirements || "[]").length > 0).length;
+  const reqLinkedCount = exportable.length - tlCount;
+  const detailParts = [];
+  if (reqLinkedCount > 0) detailParts.push(`${reqLinkedCount} with Testforge REQ links`);
+  if (tlCount > 0) detailParts.push(`${tlCount} with TestLink requirements`);
+  const details = `${exportable.length} reviewed TCs exported (${detailParts.join(", ")}). JM-007 field mapping applied.`;
 
   coreDb.prepare("INSERT INTO jama_export_log (user_name, action, details, status, tc_count) VALUES (?, ?, ?, ?, ?)")
-    .run(req.session.name, "EXPORT TO JAMA", `${exportable.length} reviewed TCs exported with REQ links intact. JM-007 field mapping applied.`, "success", exportable.length);
+    .run(req.session.name, "EXPORT TO JAMA", details, "success", exportable.length);
   logAudit(req.session.name, "JAMA_EXPORT", `Exported ${exportable.length} reviewed TCs to Jama`);
 
   res.json({ status: "success", details: `${exportable.length} reviewed TCs exported.`, count: exportable.length });

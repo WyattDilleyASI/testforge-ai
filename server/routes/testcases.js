@@ -32,6 +32,7 @@ router.get("/", requireAuth, (req, res) => {
     steps: JSON.parse(tc.steps || "[]"),
     kb_references: JSON.parse(tc.kb_references || "[]"),
     upstream_relationship: JSON.parse(tc.upstream_relationship || "[]"),
+    testlink_requirements: JSON.parse(tc.testlink_requirements || "[]"),
   })));
 });
 
@@ -645,12 +646,14 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
     } catch {}
 
     // Unpack structured description and setup if JSON, otherwise use plain text
+    const tlReqs = JSON.parse(tc.testlink_requirements || "[]");
     let descText = tc.description || "";
     try {
       const d = JSON.parse(tc.description || "");
       if (d && typeof d === "object") {
         const parts = [];
         if (d.objective) parts.push(`Objective:\n${d.objective}`);
+        if (tlReqs.length > 0) parts.push(`TestLink Requirements:\n${tlReqs.map(r => `• ${r.doc_id}${r.title ? ` — ${r.title}` : ""}`).join("\n")}`);
         if (d.scope) parts.push(`Scope:\n${d.scope}`);
         if (d.assumptions && d.assumptions.length) parts.push(`Assumptions:\n${d.assumptions.map(a => `• ${a}`).join("\n")}`);
         descText = parts.join("\n\n");
@@ -1307,7 +1310,7 @@ router.post("/import-xml-confirmed", requireAuth, (req, res) => {
   });
 
   db.prepare(
-    "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
+    "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, testlink_requirements, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
   ).run(
     tcId,
     testcase.title || "Untitled",
@@ -1321,6 +1324,7 @@ router.post("/import-xml-confirmed", requireAuth, (req, res) => {
     testcase.reqAttribute || "",
     "[]",
     "[]",
+    JSON.stringify(testcase.testlinkRequirements || []),
     `${req.session.name} (TestLink import)`
   );
 

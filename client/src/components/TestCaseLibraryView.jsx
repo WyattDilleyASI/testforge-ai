@@ -241,6 +241,19 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                       {desc ? <>
                         <SL>Description</SL>
                         {desc.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.objective}</span></div>}
+                        {tc.testlink_requirements?.length > 0 && (
+                          <div style={{ marginBottom: 6 }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>TestLink Requirements: </span>
+                            <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>
+                              {tc.testlink_requirements.map((r, i) => (
+                                <li key={i} style={{ fontSize: 11, lineHeight: 1.6 }}>
+                                  <span style={{ fontFamily: mono, fontWeight: 600, color: COLORS.accent }}>{r.doc_id}</span>
+                                  {r.title ? <span style={{ color: COLORS.textMuted }}> — {r.title}</span> : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                         {desc.scope && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.scope}</span></div>}
                         {desc.assumptions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BL items={desc.assumptions} /></>}
                       </> : tc.description ? <><SL>Description</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.description}</div></> : null}
