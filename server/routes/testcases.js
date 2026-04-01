@@ -1235,7 +1235,7 @@ Produce an enhanced test case as a JSON object with these exact fields:
     - environment: array of strings
     - equipment: array of strings
     - testData: array of strings
-- steps: array of { step: string, expectedResult: string } — expand steps with more detail where possible
+- steps: array of { step: string, expectedResult: string } — for each step, the "step" field MUST include brief procedural instructions telling the tester exactly how to perform the action (e.g. which UI screen to navigate to, what to click, what to enter). Do not just restate the goal — tell the tester what to do. Use KB context and product context to infer the correct UI workflow where the original step is vague.
 - reqAttribute: string (what aspect of the requirement this validates)
 - tags: array of strings (from keywords, normalized)
 
