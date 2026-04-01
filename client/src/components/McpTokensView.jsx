@@ -8,6 +8,7 @@ const STEPS = [
   { key: "prereqs", label: "Prerequisites" },
   { key: "token", label: "Create Token" },
   { key: "configure", label: "Configure Claude" },
+  { key: "test", label: "Test Connection" },
 ];
 
 // ─── All MCP Tools (updated) ────────────────────────────────────────────────
@@ -73,6 +74,10 @@ export const McpTokensView = ({ currentUser }) => {
   const [showConfig, setShowConfig] = useState("desktop");
   const [copiedCmd, setCopiedCmd] = useState(false);
 
+  // Step 4: Connection test
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
+
   // Main view
   const [showGuide, setShowGuide] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(null);
@@ -87,7 +92,34 @@ export const McpTokensView = ({ currentUser }) => {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { loadTokens(); }, [loadTokens]);
+    const [allTokens, setAllTokens] = useState([]);
+  const [allTokensLoading, setAllTokensLoading] = useState(false);
+  const [adminConfirmRevoke, setAdminConfirmRevoke] = useState(null);
+
+  const loadAllTokens = useCallback(async () => {
+    if (currentUser?.role !== "Admin") return;
+    setAllTokensLoading(true);
+    try {
+      setAllTokens(await api.getAllMcpTokens());
+    } catch (err) {
+      console.error("Failed to load all tokens:", err);
+    } finally {
+      setAllTokensLoading(false);
+    }
+  }, [currentUser?.role]);
+
+  const adminRevokeToken = async (id) => {
+    try {
+      await api.adminRevokeMcpToken(id);
+      loadAllTokens();
+      loadTokens();
+      setAdminConfirmRevoke(null);
+    } catch (err) {
+      console.error("Admin revoke failed:", err);
+    }
+  };
+
+  useEffect(() => { loadTokens(); loadAllTokens(); }, [loadTokens, loadAllTokens]);
 
   // Auto-detect OS
   useEffect(() => {
@@ -99,10 +131,10 @@ export const McpTokensView = ({ currentUser }) => {
     }
   }, []);
 
-  // Auto-launch wizard if no tokens exist
+  // Auto-launch wizard if no tokens exist (skip for Admins so they can see All User Tokens)
   useEffect(() => {
-    if (!loading && tokens.length === 0 && !wizardActive) setWizardActive(true);
-  }, [loading, tokens.length, wizardActive]);
+    if (!loading && tokens.length === 0 && !wizardActive && currentUser?.role !== "Admin") setWizardActive(true);
+  }, [loading, tokens.length, wizardActive, currentUser?.role]);
 
   // ── Token actions ───────────────────────────────────────────────────────
 
@@ -335,7 +367,12 @@ Paste the URL above and add the Authorization header.`,
       </div>
 
       {!newToken ? <>
-        <Input label="Token Name" value={tokenName} onChange={setTokenName} placeholder='e.g. "My Claude Desktop", "Work Laptop"' style={{ marginBottom: 12 }} />
+        <Input label="Token Name" value={tokenName} onChange={setTokenName}
+          placeholder='e.g. My-Desktop, QA-Lab-Machine' />
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 6, lineHeight: 1.5 }}>
+          This name is for your reference only — it helps you identify which token belongs to which machine
+          or Claude client. Use something like <span style={{ fontFamily: mono, color: COLORS.accent }}>YourName-Desktop</span> or <span style={{ fontFamily: mono, color: COLORS.accent }}>YourName-Code</span>.
+        </div>
         <ErrorBanner msg={error} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
           <Button variant="secondary" onClick={() => setWizardStep(0)}>Back</Button>
@@ -356,9 +393,9 @@ Paste the URL above and add the Authorization header.`,
           </div>
           <Button small onClick={copyToken}>{copied ? "Copied!" : "Copy"}</Button>
         </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-          <Button onClick={() => setWizardStep(2)}>Next — Configure Claude</Button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16 }}>
+        <Button variant="secondary" onClick={() => setWizardStep(0)}>Back</Button>
+        <Button onClick={() => setWizardStep(2)}>Next — Configure Claude</Button>
         </div>
       </>}
     </Card>
@@ -555,7 +592,105 @@ Paste the URL above and add the Authorization header.`,
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
         <Button variant="secondary" onClick={() => setWizardStep(1)}>Back</Button>
-        <Button onClick={finishWizard}>Done</Button>
+        <Button onClick={() => { setTestResult(null); setWizardStep(3); }}>Next — Test Connection</Button>
+      </div>
+    </Card>
+  );
+
+  // ── Render: Step 4 — Test Connection ─────────────────────────────────
+
+  const runConnectionTest = async () => {
+    if (!newToken?.token) {
+      setTestResult({ ok: false, message: "No token available to test. Go back and create a token first." });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await api.verifyMcpToken(newToken.token);
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({ ok: false, message: `Request failed: ${err.message}` });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const renderTestConnection = () => (
+    <Card>
+      <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.textBright, marginBottom: 6 }}>Test Your Connection</div>
+      <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 20, lineHeight: 1.5 }}>
+        Verify that your token can authenticate with TestForge before opening Claude Desktop.
+      </div>
+
+      {/* Test button */}
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <Button onClick={runConnectionTest} disabled={testing}>
+          {testing ? "Testing..." : "Test Connection"}
+        </Button>
+      </div>
+
+      {/* Result display */}
+      {testResult && (
+        <div style={{
+          marginTop: 8,
+          padding: "14px 18px",
+          borderRadius: 8,
+          border: `1px solid ${testResult.ok ? (COLORS.green || "#22c55e") + "60" : (COLORS.red || "#ef4444") + "60"}`,
+          background: testResult.ok ? (COLORS.green || "#22c55e") + "10" : (COLORS.red || "#ef4444") + "10",
+        }}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: testResult.ok ? (COLORS.green || "#22c55e") : (COLORS.red || "#ef4444"),
+            marginBottom: 6,
+          }}>
+            {testResult.ok ? "✓ Connection Successful" : "✗ Connection Failed"}
+          </div>
+          <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.5 }}>
+            {testResult.message}
+          </div>
+          {testResult.ok && testResult.user && (
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8, fontFamily: mono }}>
+              Authenticated as: {testResult.user.name} (@{testResult.user.username}) · {testResult.user.role}
+            </div>
+          )}
+          {!testResult.ok && testResult.reason === "inactive_user" && (
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>
+              Contact an Admin to activate your account, then try again.
+            </div>
+          )}
+          {!testResult.ok && testResult.reason === "invalid" && (
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>
+              If the Docker container was recently rebuilt, the database may have been reset.
+              Go back and create a new token.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Next steps hint on success */}
+      {testResult?.ok && (
+        <div style={{
+          marginTop: 16,
+          padding: "12px 16px",
+          background: COLORS.surface,
+          borderRadius: 8,
+          border: `1px solid ${COLORS.border}`,
+          fontSize: 12,
+          color: COLORS.text,
+          lineHeight: 1.6,
+        }}>
+          <div style={{ fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Next steps:</div>
+          <div>1. Open Claude Desktop and fully restart it (quit from system tray → reopen)</div>
+          <div>2. Go to Settings → Developer and confirm <span style={{ fontFamily: mono, color: COLORS.accent }}>testforge</span> appears</div>
+          <div>3. Start a conversation and ask Claude to list your requirements</div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
+        <Button variant="secondary" onClick={() => setWizardStep(2)}>Back</Button>
+        <Button onClick={finishWizard}>{testResult?.ok ? "Done" : "Skip & Finish"}</Button>
       </div>
     </Card>
   );
@@ -574,6 +709,7 @@ Paste the URL above and add the Authorization header.`,
       {wizardStep === 0 && renderPrereqs()}
       {wizardStep === 1 && renderCreateToken()}
       {wizardStep === 2 && renderConfigure()}
+      {wizardStep === 3 && renderTestConnection()}
     </div>
   );
 
@@ -646,6 +782,113 @@ Paste the URL above and add the Authorization header.`,
           </table>
         )}
       </Card>
+
+      {currentUser?.role === "Admin" && (
+  <Card style={{ marginBottom: 20 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>All User Tokens</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+          Admin view — manage MCP tokens across all users
+        </div>
+      </div>
+      <Button small variant="ghost" onClick={loadAllTokens} disabled={allTokensLoading}>
+        {allTokensLoading ? "Loading..." : "Refresh"}
+      </Button>
+    </div>
+
+    {allTokensLoading ? (
+      <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic" }}>Loading...</div>
+    ) : allTokens.length === 0 ? (
+      <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic" }}>
+        No MCP tokens exist across any users.
+      </div>
+    ) : (
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr>
+            {["User", "Status", "Token Name", "Token", "Created", "Last Used", ""].map((h, i) => (
+              <th key={i} style={{
+                textAlign: i === 6 ? "right" : "left",
+                padding: "8px 10px",
+                background: COLORS.surface,
+                color: COLORS.textMuted,
+                fontFamily: mono,
+                fontSize: 10,
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {allTokens.map(t => {
+            const isInactive = t.user_status !== "Active";
+            return (
+              <tr key={t.id} style={{
+                borderBottom: `1px solid ${COLORS.border}`,
+                opacity: isInactive ? 0.6 : 1,
+              }}>
+                <td style={{ padding: "10px" }}>
+                  <div style={{ color: COLORS.textBright, fontWeight: 600, fontSize: 12 }}>{t.user_name}</div>
+                  <div style={{ color: COLORS.textMuted, fontSize: 10 }}>@{t.username} · {t.user_role}</div>
+                </td>
+                <td style={{ padding: "10px" }}>
+                  <Badge color={isInactive ? (COLORS.red || "#ef4444") : (COLORS.green || "#22c55e")}>
+                    {t.user_status}
+                  </Badge>
+                </td>
+                <td style={{ padding: "10px", color: COLORS.text }}>{t.name}</td>
+                <td style={{ padding: "10px", fontFamily: mono, fontSize: 11, color: COLORS.textMuted }}>
+                  {t.token_preview}
+                </td>
+                <td style={{ padding: "10px", fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>
+                  {t.created_at ? new Date(t.created_at).toLocaleDateString() : "—"}
+                </td>
+                <td style={{ padding: "10px", fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>
+                  {t.last_used ? new Date(t.last_used).toLocaleString() : "Never"}
+                </td>
+                <td style={{ padding: "10px", textAlign: "right" }}>
+                  {adminConfirmRevoke === t.id ? (
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: COLORS.textMuted }}>Revoke?</span>
+                      <Button small onClick={() => adminRevokeToken(t.id)}
+                        style={{ background: COLORS.red || "#ef4444", color: "#fff" }}>
+                        Confirm
+                      </Button>
+                      <Button small variant="ghost" onClick={() => setAdminConfirmRevoke(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button small variant="danger" onClick={() => setAdminConfirmRevoke(t.id)}>
+                      Revoke
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    )}
+
+    {allTokens.some(t => t.user_status !== "Active") && (
+      <div style={{
+        marginTop: 12,
+        padding: "10px 14px",
+        background: `${COLORS.yellow || "#f59e0b"}15`,
+        border: `1px solid ${COLORS.yellow || "#f59e0b"}40`,
+        borderRadius: 6,
+        fontSize: 11,
+        color: COLORS.text,
+        lineHeight: 1.5,
+      }}>
+        <strong style={{ color: COLORS.yellow || "#f59e0b" }}>Note:</strong> Tokens belonging to
+        inactive users cannot authenticate but still exist in the database.
+        Consider revoking them to keep the token list clean.
+      </div>
+    )}
+  </Card>
+)}
 
       {/* Available tools */}
       <Card style={{ marginBottom: 20 }}>

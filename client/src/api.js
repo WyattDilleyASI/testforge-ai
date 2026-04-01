@@ -154,6 +154,11 @@ export const api = {
   createMcpToken: (name) => request("/mcp/tokens", { method: "POST", body: { name } }),
   deleteMcpToken: (id) => request(`/mcp/tokens/${id}`, { method: "DELETE" }),
 
+  // MCP Tokens — Admin oversight
+  getAllMcpTokens: () => request("/mcp/tokens/all"),
+  adminRevokeMcpToken: (id) => request(`/mcp/tokens/${id}/admin`, { method: "DELETE" }),
+  verifyMcpToken: (token) => request("/mcp/tokens/verify", { method: "POST", body: { token } }),
+
   // MCP Settings
   getMcpSettings: () => request("/mcp/settings"),
   createMcpServer: (data) => request("/mcp/settings", { method: "POST", body: data }),

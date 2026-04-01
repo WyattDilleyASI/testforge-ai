@@ -32,7 +32,7 @@ function generateMcpToken() {
 }
 
 function validateToken(token) {
-  if (!token) return null;
+  if (!token) return { user: null, reason: "missing" };
   const db = getDb();
   const row = db.prepare(`
     SELECT t.*, u.username, u.name, u.role, u.status
@@ -41,10 +41,14 @@ function validateToken(token) {
     WHERE t.token = ?
   `).get(token);
 
-  if (!row || row.status !== "Active") return null;
+  if (!row) return { user: null, reason: "invalid" };
+  if (row.status !== "Active") return { user: null, reason: "inactive_user", username: row.username };
 
   db.prepare("UPDATE mcp_tokens SET last_used = datetime('now') WHERE token = ?").run(token);
-  return { userId: row.user_id, username: row.username, name: row.name, role: row.role };
+  return {
+    user: { userId: row.user_id, username: row.username, name: row.name, role: row.role },
+    reason: null,
+  };
 }
 
 // ─── ACTIVE SESSION TRACKING ────────────────────────────────────────────────
@@ -880,23 +884,47 @@ function mountMcpRoutes(app) {
   app.get("/mcp/sse", async (req, res) => {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    const mcpUser = validateToken(token);
+    const { user: mcpUser, reason, username } = validateToken(token);
 
     if (!mcpUser) {
+      const messages = {
+        missing: "No MCP token provided. Generate one in TestForge → Settings → MCP Setup.",
+        invalid: "MCP token not recognized. It may have been revoked or the database was rebuilt.",
+        inactive_user: `Account "${username}" is not active. Complete the password setup flow or contact an Admin.`,
+      };
       return res.status(401).json({
-        error: "Invalid or missing MCP token.",
+        error: messages[reason] || "Authentication failed.",
+        reason,
         help: "Generate a token in TestForge → Settings → MCP Tokens.",
       });
     }
 
     try {
+      // Disable timeouts — SSE connections must stay open indefinitely
+      req.setTimeout(0);
+      res.setTimeout(0);
+
+      // Prevent proxy buffering (Caddy, Nginx, Azure load balancers)
+      res.setHeader("X-Accel-Buffering", "no");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+
       await ensureMcpImports();
       const server = await createMcpServer(mcpUser);
       const transport = new _SSEServerTransport("/mcp/messages", res);
 
+      // SSE keepalive — send a comment every 25s to prevent connection drops
+      const keepalive = setInterval(() => {
+        if (!res.writableEnded) {
+          res.write(": keepalive\n\n");
+        } else {
+          clearInterval(keepalive);
+        }
+      }, 25000);
+
       activeSessions.set(transport.sessionId, { transport, server, user: mcpUser });
 
       res.on("close", () => {
+        clearInterval(keepalive);
         activeSessions.delete(transport.sessionId);
         logAudit(mcpUser.name, "MCP_DISCONNECTED", `MCP session ended`);
       });
@@ -947,8 +975,17 @@ function mountMcpRoutes(app) {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Token name is required" });
 
+    // Check that the user's account is Active before allowing token creation
+    const db = getDb();
+    const user = db.prepare("SELECT status FROM users WHERE id = ?").get(req.session.userId);
+    if (!user || user.status !== "Active") {
+      return res.status(403).json({
+        error: "Your account is not active. Complete password setup before creating MCP tokens.",
+      });
+    }
+
     const token = generateMcpToken();
-    getDb().prepare(
+    db.prepare(
       "INSERT INTO mcp_tokens (token, user_id, name) VALUES (?, ?, ?)"
     ).run(token, req.session.userId, name);
 
@@ -968,6 +1005,83 @@ function mountMcpRoutes(app) {
     db.prepare("DELETE FROM mcp_tokens WHERE id = ?").run(req.params.id);
     logAudit(req.session.name, "MCP_TOKEN_DELETED", `Deleted MCP token "${existing.name}"`);
     res.json({ ok: true });
+  });
+
+  // ─── GET /api/mcp/tokens/all — Admin: list ALL tokens across users ─────
+
+  app.get("/api/mcp/tokens/all", (req, res) => {
+    if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
+    if (req.session.role !== "Admin") return res.status(403).json({ error: "Requires role: Admin" });
+
+    const tokens = getDb().prepare(`
+      SELECT t.id, t.name, substr(t.token, 1, 10) || '...' as token_preview,
+             t.created_at, t.last_used,
+             u.id as user_id, u.name as user_name, u.username, u.role as user_role, u.status as user_status
+      FROM mcp_tokens t
+      JOIN users u ON t.user_id = u.id
+      ORDER BY t.created_at DESC
+    `).all();
+
+    res.json(tokens);
+  });
+
+
+  // ─── DELETE /api/mcp/tokens/:id/admin — Admin: revoke ANY token ────────
+
+  app.delete("/api/mcp/tokens/:id/admin", (req, res) => {
+    if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
+    if (req.session.role !== "Admin") return res.status(403).json({ error: "Requires role: Admin" });
+
+    const db = getDb();
+    const existing = db.prepare(`
+      SELECT t.*, u.name as user_name
+      FROM mcp_tokens t
+      JOIN users u ON t.user_id = u.id
+      WHERE t.id = ?
+    `).get(req.params.id);
+
+    if (!existing) return res.status(404).json({ error: "Token not found" });
+
+    db.prepare("DELETE FROM mcp_tokens WHERE id = ?").run(req.params.id);
+    logAudit(
+      req.session.name,
+      "MCP_TOKEN_REVOKED_ADMIN",
+      `Admin revoked MCP token "${existing.name}" belonging to ${existing.user_name}`
+    );
+    res.json({ ok: true });
+  });
+
+  // ─── POST /api/mcp/tokens/verify — Test if a token can authenticate ─────
+  // Used by the wizard's connection test step. Runs the same validateToken
+  // logic the SSE endpoint uses, without establishing an MCP session.
+
+  app.post("/api/mcp/tokens/verify", (req, res) => {
+    if (!req.session?.userId) return res.status(401).json({ error: "Not authenticated" });
+
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: "Token is required" });
+
+    const { user, reason, username } = validateToken(token);
+
+    if (user) {
+      return res.json({
+        ok: true,
+        message: `Token authenticated successfully as ${user.name} (${user.role}).`,
+        user: { name: user.name, username: user.username, role: user.role },
+      });
+    }
+
+    const messages = {
+      missing: "No token provided.",
+      invalid: "Token not recognized. It may have been revoked or the database was rebuilt after creation.",
+      inactive_user: `Account "${username}" is not active. Complete the password setup flow or contact an Admin.`,
+    };
+
+    res.json({
+      ok: false,
+      reason,
+      message: messages[reason] || "Authentication failed.",
+    });
   });
 
   console.log("  ◈ MCP server mounted at /mcp/sse");
