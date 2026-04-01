@@ -178,7 +178,7 @@ GENERATION DEPTH: ${{ basic: "basic — generate 2-3 test cases covering happy p
 Generate test cases as a JSON array. Each test case must have:
 - title: string
 - type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
-- description: object with keys: objective (string), scope (string), assumptions (array of strings)
+- description: object with keys: objective (string), scope (array of strings), assumptions (array of strings)
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
 - reqAttribute: which requirement attribute or aspect this TC validates
@@ -444,7 +444,7 @@ ${feedback}
 Refine the test case based on the feedback. Return the improved test case as a single JSON object with these fields:
 - title: string
 - type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
-- description: object with keys: objective (string), scope (string), assumptions (array of strings)
+- description: object with keys: objective (string), scope (array of strings), assumptions (array of strings)
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
 - reqAttribute: which requirement attribute or aspect this TC validates
@@ -551,7 +551,7 @@ ${feedback}
 Refine the test case based on the feedback. Return the improved test case as a single JSON object with these fields:
 - title: string
 - type: "Happy Path" | "Negative" | "Boundary" | "Edge Case"
-- description: object with keys: objective (string), scope (string), assumptions (array of strings)
+- description: object with keys: objective (string), scope (array of strings), assumptions (array of strings)
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
 - reqAttribute: which requirement attribute or aspect this TC validates
@@ -654,7 +654,7 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
         const parts = [];
         if (d.objective) parts.push(`Objective:\n${d.objective}`);
         if (tlReqs.length > 0) parts.push(`TestLink Requirements:\n${tlReqs.map(r => `• ${r.doc_id}${r.title ? ` — ${r.title}` : ""}`).join("\n")}`);
-        if (d.scope) parts.push(`Scope:\n${d.scope}`);
+        if (d.scope?.length > 0) parts.push(`Scope:\n${Array.isArray(d.scope) ? d.scope.join(", ") : d.scope}`);
         if (d.assumptions && d.assumptions.length) parts.push(`Assumptions:\n${d.assumptions.map(a => `• ${a}`).join("\n")}`);
         descText = parts.join("\n\n");
       }
