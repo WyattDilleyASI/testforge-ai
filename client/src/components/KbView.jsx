@@ -68,6 +68,13 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
   const [editForm, setEditForm] = useState({ title: "", type: "", content: "" });
   const [confirmDeleteEntry, setConfirmDeleteEntry] = useState(null); // kb_id
 
+  // Import state
+  const importFileRef = useRef(null);
+  const [importPending, setImportPending] = useState(null); // { entries, fileName }
+  const [importMode, setImportMode] = useState("merge");
+  const [importWorking, setImportWorking] = useState(false);
+  const [importResult, setImportResult] = useState(null); // { imported, skipped }
+
   // ── Fetch sections ──────────────────────────────────────────────────────
 
   const refreshSections = useCallback(async () => {
@@ -184,6 +191,40 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
     } catch (err) { setError(err.message); }
 
     handleDragEnd();
+  };
+
+  const handleImportFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const entries = JSON.parse(ev.target.result);
+        if (!Array.isArray(entries)) throw new Error("Expected a JSON array");
+        setImportPending({ file, entries, fileName: file.name });
+        setImportResult(null);
+      } catch (err) {
+        setError("Invalid JSON file: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmImport = async () => {
+    if (!importPending) return;
+    setImportWorking(true);
+    try {
+      const result = await api.importKbJson(importPending.file, importMode);
+      setImportResult(result);
+      setImportPending(null);
+      refresh();
+      refreshSections();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImportWorking(false);
+    }
   };
 
   const exitDragMode = () => {
@@ -755,6 +796,9 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
         {!dragMode && kbEntries.length > 0 && (
           <Button variant="secondary" small onClick={() => api.exportKbJson()}>Export JSON</Button>
         )}
+        {!dragMode && (
+          <Button variant="secondary" small onClick={() => importFileRef.current?.click()}>Import JSON</Button>
+        )}
         {!dragMode && kbEntries.length > 0 && (
           <Button variant="secondary" small onClick={() => { setDragMode(true); setAddingEntryTo(null); resetForm(); cancelEdit(); }}>Rearrange</Button>
         )}
@@ -763,6 +807,56 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
         )}
       </div>
     </div>
+
+    <input
+      ref={importFileRef}
+      type="file"
+      accept=".json,application/json"
+      style={{ display: "none" }}
+      onChange={handleImportFileChange}
+    />
+
+    {importPending && (
+      <div style={{
+        marginBottom: 12, padding: "12px 16px", borderRadius: 8,
+        background: COLORS.surfaceRaised, border: `1px solid ${COLORS.border}`,
+        display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+      }}>
+        <span style={{ fontSize: 13, color: COLORS.textBright, fontWeight: 600 }}>
+          {importPending.entries.length} entries found in {importPending.fileName}
+        </span>
+        <select
+          value={importMode}
+          onChange={e => setImportMode(e.target.value)}
+          style={{
+            fontSize: 12, padding: "4px 8px", borderRadius: 6,
+            border: `1px solid ${COLORS.border}`, background: COLORS.surface,
+            color: COLORS.text, cursor: "pointer",
+          }}
+        >
+          <option value="merge">Merge (skip duplicates)</option>
+          <option value="replace">Replace (clear existing)</option>
+        </select>
+        <Button small onClick={confirmImport} disabled={importWorking}
+          style={{ background: COLORS.accent, color: "#fff" }}>
+          {importWorking ? "Importing…" : "Confirm Import"}
+        </Button>
+        <Button small variant="ghost" onClick={() => setImportPending(null)} disabled={importWorking}>Cancel</Button>
+      </div>
+    )}
+
+    {importResult && (
+      <div style={{
+        marginBottom: 12, padding: "10px 16px", borderRadius: 8,
+        background: COLORS.surfaceRaised, border: `1px solid ${COLORS.border}`,
+        display: "flex", alignItems: "center", gap: 12,
+      }}>
+        <span style={{ fontSize: 13, color: COLORS.textBright }}>
+          Import complete — {importResult.imported} imported, {importResult.skipped} skipped
+        </span>
+        <Button small variant="ghost" onClick={() => setImportResult(null)}>Dismiss</Button>
+      </div>
+    )}
 
     <div style={{ marginBottom: 16, position: "relative" }}>
       <input
