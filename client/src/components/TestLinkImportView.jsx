@@ -379,6 +379,17 @@ export const TestLinkImportView = ({ refresh }) => {
                                 </tr>
                               ))}</tbody>
                             </table>
+                            {tlSelected?.requirements?.length > 0 && <>
+                              <SL>TestLink Requirements</SL>
+                              <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>
+                                {tlSelected.requirements.map((r, i) => (
+                                  <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>
+                                    <span style={{ fontFamily: mono, fontWeight: 600, color: COLORS.accent }}>{r.doc_id}</span>
+                                    {r.title ? <span style={{ color: COLORS.textMuted }}> — {r.title}</span> : null}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>}
                           </div>
                         );
                       })()}
