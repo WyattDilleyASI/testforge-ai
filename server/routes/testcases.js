@@ -574,6 +574,27 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// PUT /api/testcases/:tcId — update test case content fields
+router.put("/:tcId", requireAuth, (req, res) => {
+  const { title, type, description, preconditions, steps } = req.body;
+  const db = getTcDb();
+  const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
+  if (!tc) return res.status(404).json({ error: "Test case not found" });
+
+  db.prepare("UPDATE test_cases SET title = ?, type = ?, description = ?, preconditions = ?, steps = ? WHERE tc_id = ?")
+    .run(
+      title ?? tc.title,
+      type ?? tc.type,
+      description !== undefined ? JSON.stringify(description) : tc.description,
+      preconditions !== undefined ? JSON.stringify(preconditions) : tc.preconditions,
+      steps !== undefined ? JSON.stringify(steps) : tc.steps,
+      req.params.tcId
+    );
+
+  logAudit(req.session.name, "TC_UPDATED", `Updated test case ${req.params.tcId}`);
+  res.json({ ok: true });
+});
+
 // Strip HTML tags and decode entities for plain-text XLSX cells
 function stripHtmlForXlsx(str) {
   if (!str) return "";

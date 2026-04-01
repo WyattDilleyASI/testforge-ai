@@ -46,6 +46,7 @@ export const api = {
   getTestCases: () => request("/testcases"),
   generateTestCases: (reqId, depth, focuses) => request("/testcases/generate", { method: "POST", body: { reqId, depth, focuses } }),
   updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
+  updateTestCase: (tcId, data) => request(`/testcases/${tcId}`, { method: "PUT", body: data }),
   getPrompt: (reqId, depth, focuses) => {
     const params = new URLSearchParams({ reqId, depth: depth || "standard" });
     if (focuses && focuses.length > 0) params.set("focuses", focuses.join(","));
