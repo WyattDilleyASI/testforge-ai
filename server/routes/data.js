@@ -325,6 +325,90 @@ router.get("/kb/export", requireAuth, (req, res) => {
   res.send(JSON.stringify(entries, null, 2));
 });
 
+// POST /api/kb/import — restore from a JSON export
+const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+
+router.post("/kb/import", requireAuth, importUpload.single("file"), (req, res) => {
+  try {
+    const mode = req.body.mode;
+    if (!["merge", "replace"].includes(mode)) return res.status(400).json({ error: "mode must be 'merge' or 'replace'" });
+
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    let entries;
+    try {
+      entries = JSON.parse(req.file.buffer.toString("utf8"));
+    } catch {
+      return res.status(400).json({ error: "Invalid JSON file" });
+    }
+
+    if (!Array.isArray(entries)) return res.status(400).json({ error: "entries must be an array" });
+    if (!Array.isArray(entries)) return res.status(400).json({ error: "entries must be an array" });
+    if (!["merge", "replace"].includes(mode)) return res.status(400).json({ error: "mode must be 'merge' or 'replace'" });
+
+    const db = getKbDb();
+
+    if (mode === "replace") {
+      const existing = db.prepare("SELECT kb_id FROM kb_entries").all();
+      for (const { kb_id } of existing) deleteImageDir(kb_id);
+      db.prepare("DELETE FROM kb_entries").run();
+    }
+
+    const insertStmt = db.prepare(
+      "INSERT INTO kb_entries (kb_id, title, type, content, tags, related_reqs, images, subsection_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (const entry of entries) {
+      const { kb_id, title, type, content, tags, related_reqs, images, subsection_id, created_by, created_at } = entry;
+      if (!title || !content) { skipped++; continue; }
+
+      if (mode === "merge" && kb_id) {
+        const exists = db.prepare("SELECT 1 FROM kb_entries WHERE kb_id = ?").get(kb_id);
+        if (exists) { skipped++; continue; }
+      }
+
+      const useId = kb_id || nextKbId();
+
+      try {
+        const savedImages = [];
+        for (const img of (images || [])) {
+          if (img.data) {
+            const b64 = img.data.replace(/^data:[^;]+;base64,/, "");
+            const savedName = saveImage(useId, img.name, b64);
+            savedImages.push({ name: savedName, media_type: img.media_type, description: img.description || "" });
+          } else if (img.name) {
+            savedImages.push({ name: img.name, media_type: img.media_type, description: img.description || "" });
+          }
+        }
+        insertStmt.run(
+          useId,
+          title,
+          type || "Defect History",
+          content,
+          JSON.stringify(Array.isArray(tags) ? tags : []),
+          JSON.stringify(Array.isArray(related_reqs) ? related_reqs : []),
+          JSON.stringify(savedImages),
+          subsection_id || null,
+          created_by || req.session.name,
+          created_at || new Date().toISOString()
+        );
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    logAudit(req.session.name, "KB_IMPORTED", `Imported ${imported} KB entries (mode: ${mode}), skipped ${skipped}`);
+    res.json({ ok: true, imported, skipped });
+  } catch (err) {
+    console.error("KB import error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/kb
 router.get("/kb", requireAuth, (req, res) => {
   const rows = getKbDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();

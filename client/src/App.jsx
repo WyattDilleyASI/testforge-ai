@@ -67,6 +67,7 @@ export default function App() {
 
   const [easterEggToast, setEasterEggToast] = useState(null);
   const [preEasterEggTheme, setPreEasterEggTheme] = useState(null);
+  const [hotDogOverlay, setHotDogOverlay] = useState(false);
 
   const handleThemeChange = (key) => {
     setThemeName(key);
@@ -83,11 +84,14 @@ useEffect(() => {
   };
 
   const handleKey = (e) => {
-    // Escape key resets to previous theme
-    if (e.key === "Escape" && preEasterEggTheme) {
-      handleThemeChange(preEasterEggTheme);
-      setPreEasterEggTheme(null);
-      setEasterEggToast("↩️ Theme restored");
+    // Escape key resets to previous theme and clears hot dog overlay
+    if (e.key === "Escape") {
+      if (preEasterEggTheme) {
+        handleThemeChange(preEasterEggTheme);
+        setPreEasterEggTheme(null);
+        setEasterEggToast("↩️ Theme restored");
+      }
+      setHotDogOverlay(false);
       return;
     }
 
@@ -97,6 +101,15 @@ useEffect(() => {
       if (!activeTheme._hidden) setPreEasterEggTheme(themeName);
       handleThemeChange("konami");
       setEasterEggToast("🔓 CLASSIFIED — Konami Code accepted");
+      buffer = "";
+      return;
+    }
+    if (buffer.toLowerCase().endsWith("hotdog")) {
+      setHotDogOverlay(prev => {
+        const next = !prev;
+        setEasterEggToast(next ? "🌭 Hot dogs incoming!" : "🌭 Hot dogs cleared");
+        return next;
+      });
       buffer = "";
       return;
     }
@@ -114,7 +127,7 @@ useEffect(() => {
 
   window.addEventListener("keydown", handleKey);
   return () => window.removeEventListener("keydown", handleKey);
-}, [preEasterEggTheme, themeName, activeTheme._hidden]);
+}, [preEasterEggTheme, themeName, activeTheme._hidden, hotDogOverlay]);
 
   const loadData = useCallback(async () => {
     try { setRequirements(await api.getRequirements()); }
@@ -261,7 +274,7 @@ useEffect(() => {
       {activeTheme._vaporwave && <VaporwaveCanvas />}
       {activeTheme._fireflies && <FirefliesCanvas />}
       {activeTheme._fishTank && <FishTankCanvas />}
-      {activeTheme._hotDogs && <HotDogCanvas />}
+      {(activeTheme._hotDogs || hotDogOverlay) && <HotDogCanvas />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");

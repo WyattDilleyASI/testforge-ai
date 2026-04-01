@@ -104,6 +104,15 @@ export const api = {
     a.click();
     document.body.removeChild(a);
   },
+  importKbJson: async (file, mode) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("mode", mode);
+    const res = await fetch(`${BASE}/kb/import`, { method: "POST", credentials: "include", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  },
   getKbEntries: () => request("/kb"),
   createKbEntry: (data) => request("/kb", { method: "POST", body: data }),
   uploadKbImages: async (kbId, files) => {
