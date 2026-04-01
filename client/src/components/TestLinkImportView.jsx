@@ -66,7 +66,11 @@ export const TestLinkImportView = ({ refresh }) => {
     setTlSaving(true);
     try {
       await api.importTestLinkConfirmed(
-        { ...tcToSave, testlinkRequirements: tlSelected?.requirements || [] },
+        {
+          ...tcToSave,
+          title: tcToSave.title + (tlSelected?.externalId ? ` (AG-${tlSelected.externalId})` : ""),
+          testlinkRequirements: tlSelected?.requirements || [],
+        },
         tlSelected?.externalId
       );
       setTlSaved(prev => new Set([...prev, tlSelected.externalId || tlSelected.internalId]));
@@ -363,7 +367,9 @@ export const TestLinkImportView = ({ refresh }) => {
                         const tc = tlEnhanced;
                         return (
                           <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textBright, marginBottom: 4 }}>{tc.title}</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textBright, marginBottom: 4 }}>
+                              {tc.title}{tlSelected?.externalId ? <span style={{ fontFamily: mono, fontWeight: 400, fontSize: 12, color: COLORS.textMuted, marginLeft: 8 }}>(AG-{tlSelected.externalId})</span> : null}
+                            </div>
                             <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type || "Happy Path"}</Badge>
                             <SL>Description</SL>
                             {tc.description?.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{tc.description.objective}</span></div>}
