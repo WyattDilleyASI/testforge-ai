@@ -65,7 +65,10 @@ export const TestLinkImportView = ({ refresh }) => {
     if (!tcToSave) return;
     setTlSaving(true);
     try {
-      await api.importTestLinkConfirmed(tcToSave, tlSelected?.externalId);
+      await api.importTestLinkConfirmed(
+        { ...tcToSave, testlinkRequirements: tlSelected?.requirements || [] },
+        tlSelected?.externalId
+      );
       setTlSaved(prev => new Set([...prev, tlSelected.externalId || tlSelected.internalId]));
       setTlSelected(null); setTlEnhanced(null); setTlEdited(null); setTlEditMode(false);
       refresh();
@@ -163,6 +166,19 @@ export const TestLinkImportView = ({ refresh }) => {
                 <div style={{ padding: 12, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}`, fontSize: 12, color: COLORS.text }}>
                   <div style={{ fontWeight: 700, color: COLORS.textBright, marginBottom: 6 }}>{tlSelected.name}</div>
                   {tlSelected.summary && <div style={{ marginBottom: 8, color: COLORS.textMuted }}>{tlSelected.summary}</div>}
+                  {tlSelected.requirements.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>TestLink Requirements</div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {tlSelected.requirements.map((r, i) => (
+                          <li key={i} style={{ fontSize: 11, lineHeight: 1.6 }}>
+                            <span style={{ fontFamily: mono, fontWeight: 600, color: COLORS.accent }}>{r.doc_id}</span>
+                            {r.title ? <span style={{ color: COLORS.textMuted }}> — {r.title}</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {tlSelected.preconditions.length > 0 && (
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Preconditions</div>
@@ -178,12 +194,6 @@ export const TestLinkImportView = ({ refresh }) => {
                           <div style={{ color: COLORS.textMuted, fontSize: 11 }}>→ {s.expectedResult}</div>
                         </div>
                       ))}
-                    </div>
-                  )}
-                  {tlSelected.requirements.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>TestLink Requirements</div>
-                      {tlSelected.requirements.map((r, i) => <div key={i} style={{ fontSize: 11, color: COLORS.accent, fontFamily: mono }}>{r.doc_id}: {r.title}</div>)}
                     </div>
                   )}
                 </div>
@@ -357,6 +367,19 @@ export const TestLinkImportView = ({ refresh }) => {
                             <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type || "Happy Path"}</Badge>
                             <SL>Description</SL>
                             {tc.description?.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{tc.description.objective}</span></div>}
+                            {tlSelected?.requirements?.length > 0 && (
+                              <div style={{ marginBottom: 6 }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>TestLink Requirements: </span>
+                                <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>
+                                  {tlSelected.requirements.map((r, i) => (
+                                    <li key={i} style={{ fontSize: 11, lineHeight: 1.6 }}>
+                                      <span style={{ fontFamily: mono, fontWeight: 600, color: COLORS.accent }}>{r.doc_id}</span>
+                                      {r.title ? <span style={{ color: COLORS.textMuted }}> — {r.title}</span> : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                             {tc.description?.scope?.length > 0 && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{Array.isArray(tc.description.scope) ? tc.description.scope.join(", ") : tc.description.scope}</span></div>}
                             {tc.description?.assumptions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BL items={tc.description.assumptions} /></>}
                             <SL>Setup</SL>

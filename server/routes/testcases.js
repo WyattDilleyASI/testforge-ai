@@ -32,6 +32,7 @@ router.get("/", requireAuth, (req, res) => {
     steps: JSON.parse(tc.steps || "[]"),
     kb_references: JSON.parse(tc.kb_references || "[]"),
     upstream_relationship: JSON.parse(tc.upstream_relationship || "[]"),
+    testlink_requirements: JSON.parse(tc.testlink_requirements || "[]"),
   })));
 });
 
@@ -574,6 +575,27 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// PUT /api/testcases/:tcId — update test case content fields
+router.put("/:tcId", requireAuth, (req, res) => {
+  const { title, type, description, preconditions, steps } = req.body;
+  const db = getTcDb();
+  const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
+  if (!tc) return res.status(404).json({ error: "Test case not found" });
+
+  db.prepare("UPDATE test_cases SET title = ?, type = ?, description = ?, preconditions = ?, steps = ? WHERE tc_id = ?")
+    .run(
+      title ?? tc.title,
+      type ?? tc.type,
+      description !== undefined ? JSON.stringify(description) : tc.description,
+      preconditions !== undefined ? JSON.stringify(preconditions) : tc.preconditions,
+      steps !== undefined ? JSON.stringify(steps) : tc.steps,
+      req.params.tcId
+    );
+
+  logAudit(req.session.name, "TC_UPDATED", `Updated test case ${req.params.tcId}`);
+  res.json({ ok: true });
+});
+
 // Strip HTML tags and decode entities for plain-text XLSX cells
 function stripHtmlForXlsx(str) {
   if (!str) return "";
@@ -624,12 +646,14 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
     } catch {}
 
     // Unpack structured description and setup if JSON, otherwise use plain text
+    const tlReqs = JSON.parse(tc.testlink_requirements || "[]");
     let descText = tc.description || "";
     try {
       const d = JSON.parse(tc.description || "");
       if (d && typeof d === "object") {
         const parts = [];
         if (d.objective) parts.push(`Objective:\n${d.objective}`);
+        if (tlReqs.length > 0) parts.push(`TestLink Requirements:\n${tlReqs.map(r => `• ${r.doc_id}${r.title ? ` — ${r.title}` : ""}`).join("\n")}`);
         if (d.scope) parts.push(`Scope:\n${d.scope}`);
         if (d.assumptions && d.assumptions.length) parts.push(`Assumptions:\n${d.assumptions.map(a => `• ${a}`).join("\n")}`);
         descText = parts.join("\n\n");
@@ -1214,7 +1238,7 @@ Produce an enhanced test case as a JSON object with these exact fields:
     - environment: array of strings
     - equipment: array of strings
     - testData: array of strings
-- steps: array of { step: string, expectedResult: string } — expand steps with more detail where possible
+- steps: array of { step: string, expectedResult: string } — for each step, the "step" field MUST include brief procedural instructions telling the tester exactly how to perform the action (e.g. which UI screen to navigate to, what to click, what to enter). Do not just restate the goal — tell the tester what to do. Use KB context and product context to infer the correct UI workflow where the original step is vague.
 - reqAttribute: string (what aspect of the requirement this validates)
 - tags: array of strings (from keywords, normalized)
 
@@ -1286,7 +1310,7 @@ router.post("/import-xml-confirmed", requireAuth, (req, res) => {
   });
 
   db.prepare(
-    "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
+    "INSERT INTO test_cases (tc_id, title, project_id, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, upstream_relationship, testlink_requirements, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)"
   ).run(
     tcId,
     testcase.title || "Untitled",
@@ -1300,6 +1324,7 @@ router.post("/import-xml-confirmed", requireAuth, (req, res) => {
     testcase.reqAttribute || "",
     "[]",
     "[]",
+    JSON.stringify(testcase.testlinkRequirements || []),
     `${req.session.name} (TestLink import)`
   );
 
