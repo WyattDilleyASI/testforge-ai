@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
   { key: "traceability",  label: "SysML Traceability",   icon: "◈", reqs: "TC-007" },
   { key: "kb",            label: "Knowledge Base",       icon: "◪", reqs: "KB-001 – KB-006" },
   { key: "settings",      label: "Settings",             icon: "⚙", reqs: "UM · JM · MCP" },
+  { key: "analytics",     label: "Learning Engine",      icon: "◉", reqs: "AL-002 – AL-004" },
   { key: "deferred",      label: "Deferred to v2",       icon: "◬", reqs: "AL-xxx · KB-007" },
 ];
 

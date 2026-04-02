@@ -8,10 +8,10 @@ import { Sidebar } from "./components/Sidebar";
 import { DashboardView } from "./components/DashboardView";
 import { RequirementsView } from "./components/RequirementsView";
 import { TestCasesWrapper } from "./components/TestCasesWrapper";
-import { TraceabilityView } from "./components/TraceabilityView";
 import { KbView } from "./components/KbView";
 import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
+import { AnalyticsView } from "./components/AnalyticsView";
 import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas } from "./components/EasterEggs";
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
@@ -288,6 +288,7 @@ useEffect(() => {
         {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
         {page === "traceability" && <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
+        {page === "analytics" && <AnalyticsView currentUser={currentUser} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
       </main>
