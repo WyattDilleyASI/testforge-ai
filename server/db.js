@@ -327,6 +327,9 @@ function initialize() {
     logAudit("System", "KB_SECTION_INIT", "Default Uncategorized section created");
   }
 
+  // ── Adaptive Learning Engine ──
+  require("./al/schema").initializeAL();
+
   console.log("✓ Databases initialized:");
   console.log("  Core:         ", DB_PATHS.core);
   console.log("  Requirements: ", DB_PATHS.requirements);

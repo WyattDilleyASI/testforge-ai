@@ -45,7 +45,7 @@ export const api = {
   // Test Cases
   getTestCases: () => request("/testcases"),
   generateTestCases: (reqId, depth, focuses) => request("/testcases/generate", { method: "POST", body: { reqId, depth, focuses } }),
-  updateTcStatus: (tcId, status) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status } }),
+  updateTcStatus: (tcId, status, rejectionReason) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status, ...(rejectionReason && { rejectionReason }) } }),
   updateTestCase: (tcId, data) => request(`/testcases/${tcId}`, { method: "PUT", body: data }),
   getPrompt: (reqId, depth, focuses) => {
     const params = new URLSearchParams({ reqId, depth: depth || "standard" });
@@ -167,4 +167,31 @@ export const api = {
   deleteMcpServer: (id) => request(`/mcp/settings/${id}`, { method: "DELETE" }),
   testMcpServer: (id) => request(`/mcp/settings/${id}/test`, { method: "POST" }),
   toggleMcpServer: (id) => request(`/mcp/settings/${id}/toggle`, { method: "PUT" }),
+
+  // ── Adaptive Learning Engine ──
+  // Dashboard (all auth users)
+  getAnalyticsDashboard: () => request("/analytics/dashboard"),
+  getAnalyticsSessions: (limit) => request(`/analytics/sessions${limit ? `?limit=${limit}` : ""}`),
+  getAnalyticsHints: (reqId) => request(`/analytics/hints/${reqId}`),
+  getRejectionReasons: () => request("/analytics/rejection-reasons"),
+  getFeedbackStats: () => request("/analytics/feedback/stats"),
+
+  // Rules (Admin + QA Manager)
+  getAnalyticsRules: () => request("/analytics/rules"),
+  getActiveRules: (scope) => request(`/analytics/rules/active${scope ? `?scope=${scope}` : ""}`),
+  getRulesMetadata: () => request("/analytics/rules/metadata"),
+  getRule: (ruleId) => request(`/analytics/rules/${ruleId}`),
+  createRule: (data) => request("/analytics/rules", { method: "POST", body: data }),
+  updateRule: (ruleId, data) => request(`/analytics/rules/${ruleId}`, { method: "PUT", body: data }),
+  deleteRule: (ruleId) => request(`/analytics/rules/${ruleId}`, { method: "DELETE" }),
+
+  // Exemplars (Admin + QA Manager)
+  getExemplars: () => request("/analytics/exemplars"),
+  addExemplar: (tcId, data) => request("/analytics/exemplars", { method: "POST", body: { tcId, ...data } }),
+  removeExemplar: (tcId) => request(`/analytics/exemplars/${tcId}`, { method: "DELETE" }),
+
+  // Maintenance (Admin only)
+  getAnalyticsHealth: () => request("/analytics/health"),
+  runMaintenance: (opts) => request("/analytics/maintenance", { method: "POST", body: opts || {} }),
+  resetModelVersion: () => request("/analytics/model-reset", { method: "POST" }),
 };

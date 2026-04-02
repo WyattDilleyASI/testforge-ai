@@ -6,6 +6,7 @@ const mammoth = require("mammoth");
 const sharp = require("sharp");
 const { getTcDb, getReqDb, getKbDb, logAudit, logTokenUsage, getProductContext, getSetting, readImageBase64 } = require("../db");
 const { requireAuth } = require("../auth");
+const al = require("../al");
 
 const MAX_IMAGE_DIM = 1568; // Claude API max for multi-image requests (safe under 2000px limit)
 
@@ -294,6 +295,34 @@ router.post("/generate", requireAuth, async (req, res) => {
 
     logAudit(req.session.name, "TC_GENERATED", `Generated ${newTcs.length} draft TCs for ${reqId} (depth: ${depth || "standard"})`);
 
+    // ── AL: Save generation snapshots + log session ──
+    const snapshotStmt = db.prepare(
+      "UPDATE test_cases SET generated_snapshot = ? WHERE tc_id = ?"
+    );
+    for (const tc of tcsToInsert) {
+      const snapshot = JSON.stringify({
+        title: tc.title,
+        steps: JSON.parse(tc.steps || "[]"),
+        preconditions: JSON.parse(tc.preconditions || "{}"),
+        description: JSON.parse(tc.description || "{}"),
+      });
+      snapshotStmt.run(snapshot, tc.tc_id);
+    }
+
+    const reqRow = getReqDb().prepare(
+      "SELECT title FROM requirements WHERE req_id = ?"
+    ).get(reqId);
+
+    al.logGenerationSession({
+      reqId,
+      reqTitle: reqRow?.title || "",
+      depth: depth || "standard",
+      tcIds: newTcs,
+      inputTokens: data.usage?.input_tokens || 0,
+      outputTokens: data.usage?.output_tokens || 0,
+      generatedBy: req.session.name,
+    });
+
     // Return the newly created TCs
     const created = db.prepare(`SELECT * FROM test_cases WHERE tc_id IN (${newTcs.map(() => "?").join(",")})`).all(...newTcs);
     res.json(created.map(tc => ({
@@ -563,8 +592,9 @@ Respond ONLY with valid JSON object, no markdown, no preamble.`;
 
 // PUT /api/testcases/:tcId/status — update TC status (Draft → Reviewed / Rejected)
 router.put("/:tcId/status", requireAuth, (req, res) => {
-  const { status } = req.body;
-  if (!["Draft", "Reviewed", "Rejected"].includes(status)) return res.status(400).json({ error: "Invalid status" });
+  const { status, rejectionReason } = req.body;
+  if (!["Draft", "Reviewed", "Rejected"].includes(status))
+    return res.status(400).json({ error: "Invalid status" });
 
   const db = getTcDb();
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
@@ -572,27 +602,64 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
 
   db.prepare("UPDATE test_cases SET status = ? WHERE tc_id = ?").run(status, req.params.tcId);
   logAudit(req.session.name, "TC_STATUS", `${req.params.tcId}: ${tc.status} → ${status}`);
-  res.json({ ok: true });
-});
 
-// PUT /api/testcases/:tcId — update test case content fields
-router.put("/:tcId", requireAuth, (req, res) => {
-  const { title, type, description, preconditions, steps } = req.body;
-  const db = getTcDb();
-  const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
-  if (!tc) return res.status(404).json({ error: "Test case not found" });
+  // ── AL: Log feedback event + update session counts ──
+  if (status === "Reviewed" || status === "Rejected") {
+    try {
+      const linkedReqs = JSON.parse(tc.linked_req_ids || "[]");
+      const reqId = linkedReqs[0] || "";
 
-  db.prepare("UPDATE test_cases SET title = ?, type = ?, description = ?, preconditions = ?, steps = ? WHERE tc_id = ?")
-    .run(
-      title ?? tc.title,
-      type ?? tc.type,
-      description !== undefined ? JSON.stringify(description) : tc.description,
-      preconditions !== undefined ? JSON.stringify(preconditions) : tc.preconditions,
-      steps !== undefined ? JSON.stringify(steps) : tc.steps,
-      req.params.tcId
-    );
+      if (status === "Reviewed") {
+        // Re-fetch the TC to get the UPDATED state (after any edits)
+        const updatedTc = db.prepare(
+          "SELECT * FROM test_cases WHERE tc_id = ?"
+        ).get(req.params.tcId);
 
-  logAudit(req.session.name, "TC_UPDATED", `Updated test case ${req.params.tcId}`);
+        // Compute diff between generated snapshot and current state
+        const diff = al.computeTcDiff(tc.generated_snapshot, updatedTc);
+        const eventType = (diff && diff.has_changes)
+          ? "approved_with_edits"
+          : "approved_unchanged";
+
+        al.logFeedbackEvent({
+          tcId: req.params.tcId,
+          reqId,
+          eventType,
+          diffSummary: diff,
+          userId: req.session.userId,
+          userName: req.session.name,
+          depth: tc.depth,
+          testType: tc.type,
+        });
+
+        // Clear the snapshot — the diff has been captured
+        db.prepare(
+          "UPDATE test_cases SET generated_snapshot = NULL WHERE tc_id = ?"
+        ).run(req.params.tcId);
+
+      } else {
+        // Rejected — capture the reason category
+        al.logFeedbackEvent({
+          tcId: req.params.tcId,
+          reqId,
+          eventType: "rejected",
+          rejectionReason: rejectionReason || null,
+          userId: req.session.userId,
+          userName: req.session.name,
+          depth: tc.depth,
+          testType: tc.type,
+        });
+      }
+
+      // Update the generation session's approved/rejected counter
+      al.updateSessionCountsForTc(req.params.tcId, status);
+
+    } catch (err) {
+      // AL feedback is non-critical — log the error but don't fail the request
+      console.error("AL feedback error:", err.message);
+    }
+  }
+
   res.json({ ok: true });
 });
 
