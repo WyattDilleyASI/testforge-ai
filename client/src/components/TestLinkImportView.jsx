@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button } from "./shared";
+import { Card, Badge, Button, AutoResizeTextarea } from "./shared";
 
 export const TestLinkImportView = ({ refresh }) => {
   const COLORS = useTheme();
@@ -276,7 +276,7 @@ export const TestLinkImportView = ({ refresh }) => {
                       {tlEditMode ? (() => {
                         const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", fontFamily: mono, letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
                         const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
-                        const ta = (val, onChange, rows = 3) => <textarea value={val} onChange={onChange} rows={rows} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", resize: "vertical", outline: "none" }} />;
+                        const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
                         // Array fields: one item per line
                         const arrVal = (arr) => (arr || []).join("\n");
                         const arrChange = (path, e) => {
