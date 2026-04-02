@@ -44,7 +44,7 @@ export const api = {
 
   // Test Cases
   getTestCases: () => request("/testcases"),
-  generateTestCases: (reqId, depth, focuses) => request("/testcases/generate", { method: "POST", body: { reqId, depth, focuses } }),
+  generateTestCases: (reqId, depth, focuses, kbEntryIds) => request("/testcases/generate", { method: "POST", body: { reqId, depth, focuses, kbEntryIds } }),
   updateTcStatus: (tcId, status, rejectionReason) => request(`/testcases/${tcId}/status`, { method: "PUT", body: { status, ...(rejectionReason && { rejectionReason }) } }),
   updateTestCase: (tcId, data) => request(`/testcases/${tcId}`, { method: "PUT", body: data }),
   getPrompt: (reqId, depth, focuses) => {

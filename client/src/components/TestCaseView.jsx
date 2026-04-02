@@ -1,41 +1,118 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState } from "./shared";
+import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea } from "./shared";
 
 export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const COLORS = useTheme();
+
+  // Generator state
   const [selectedReqId, setSelectedReqId] = useState("");
   const [depth, setDepth] = useState("standard");
   const [focuses, setFocuses] = useState(new Set());
   const [generating, setGenerating] = useState(false);
-  const [expandedTc, setExpandedTc] = useState(null);
   const [apiError, setApiError] = useState(null);
   const [sessionTcIds, setSessionTcIds] = useState(null);
+  const [selectedSessionTc, setSelectedSessionTc] = useState(null);
+
+  // KB selector state
+  const [kbSections, setKbSections] = useState([]);
+  const [kbExpanded, setKbExpanded] = useState(new Set());
+  const [kbSelected, setKbSelected] = useState(new Set());
+  const [allKbEntries, setAllKbEntries] = useState([]);
+
+  // Manual import / copy state
   const [copyState, setCopyState] = useState("idle");
   const [showImport, setShowImport] = useState(false);
   const [importJson, setImportJson] = useState("");
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
+
+  // JAMA doc import state
   const [showHtmlImport, setShowHtmlImport] = useState(false);
   const [htmlImportResult, setHtmlImportResult] = useState(null);
   const [htmlImporting, setHtmlImporting] = useState(false);
   const [htmlImportError, setHtmlImportError] = useState("");
+
+  // Export select state
   const [tcSelectMode, setTcSelectMode] = useState(false);
   const [selectedTcIds, setSelectedTcIds] = useState(new Set());
 
   const sessionTcs = sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : [];
   const sessionRejectedCount = sessionTcs.filter(tc => tc.status === "Rejected").length;
+  const focusArray = [...focuses];
+
+  // Load KB on mount
+  useEffect(() => {
+    Promise.all([api.getKbSections(), api.getKbEntries()]).then(([sections, entries]) => {
+      setAllKbEntries(entries);
+      setKbSections(sections.map(sec => ({
+        ...sec,
+        entries: sec.is_default ? entries.filter(e => !e.subsection_id) : [],
+        subsections: (sec.subsections || []).map(sub => ({
+          ...sub,
+          entries: entries.filter(e => e.subsection_id === sub.subsection_id),
+        })),
+      })));
+    }).catch(() => {});
+  }, []);
+
+  // Pre-select tag-matched KB entries when requirement changes
+  useEffect(() => {
+    if (!selectedReqId) { setKbSelected(new Set()); return; }
+    const req = requirements.find(r => r.req_id === selectedReqId);
+    if (!req) return;
+    const reqTags = Array.isArray(req.tags) ? req.tags : JSON.parse(req.tags || "[]");
+    const matched = new Set(
+      allKbEntries
+        .filter(kb => {
+          const kbTags = Array.isArray(kb.tags) ? kb.tags : JSON.parse(kb.tags || "[]");
+          const kbRelReqs = Array.isArray(kb.related_reqs) ? kb.related_reqs : JSON.parse(kb.related_reqs || "[]");
+          return kbTags.some(t => reqTags.includes(t)) || kbRelReqs.includes(selectedReqId);
+        })
+        .map(kb => kb.kb_id)
+    );
+    setKbSelected(matched);
+    // Auto-expand sections that have matched entries
+    setKbExpanded(new Set(
+      kbSections
+        .filter(sec => {
+          const allEntries = sec.is_default ? sec.entries : sec.subsections.flatMap(s => s.entries);
+          return allEntries.some(e => matched.has(e.kb_id));
+        })
+        .map(sec => sec.section_id)
+    ));
+  }, [selectedReqId, allKbEntries]);
+
+  // KB toggle helpers
+  const toggleKbEntry = (kbId) => setKbSelected(prev => { const n = new Set(prev); n.has(kbId) ? n.delete(kbId) : n.add(kbId); return n; });
+  const toggleKbSection = (sec) => {
+    const allEntries = sec.is_default ? sec.entries : sec.subsections.flatMap(s => s.entries);
+    const allSelected = allEntries.length > 0 && allEntries.every(e => kbSelected.has(e.kb_id));
+    setKbSelected(prev => {
+      const n = new Set(prev);
+      allEntries.forEach(e => allSelected ? n.delete(e.kb_id) : n.add(e.kb_id));
+      return n;
+    });
+  };
+  const toggleKbSubsection = (entries) => {
+    const allSelected = entries.length > 0 && entries.every(e => kbSelected.has(e.kb_id));
+    setKbSelected(prev => {
+      const n = new Set(prev);
+      entries.forEach(e => allSelected ? n.delete(e.kb_id) : n.add(e.kb_id));
+      return n;
+    });
+  };
 
   const toggleFocus = (f) => setFocuses(prev => { const next = new Set(prev); next.has(f) ? next.delete(f) : next.add(f); return next; });
-  const focusArray = [...focuses];
 
   const generate = async () => {
     if (!selectedReqId) return;
-    setGenerating(true); setApiError(null);
+    setGenerating(true); setApiError(null); setSelectedSessionTc(null);
     try {
-      const newTcs = await api.generateTestCases(selectedReqId, depth, focusArray);
+      const newTcs = await api.generateTestCases(selectedReqId, depth, focusArray, [...kbSelected]);
       setSessionTcIds(newTcs.map(tc => tc.tc_id));
+      setSelectedSessionTc(newTcs[0]?.tc_id || null);
       refresh();
     } catch (err) { setApiError(err.message); }
     finally { setGenerating(false); }
@@ -91,6 +168,15 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const selectAllTcs = () => setSelectedTcIds(prev => prev.size === sessionTcs.length ? new Set() : new Set(sessionTcs.map(tc => tc.tc_id)));
   const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); setTcSelectMode(false); setSelectedTcIds(new Set()); };
 
+  const selectedTc = selectedSessionTc ? testCases.find(tc => tc.tc_id === selectedSessionTc) : null;
+
+  const SL = ({ children }) => (
+    <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>
+  );
+  const BL = ({ items }) => items?.length > 0
+    ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul>
+    : null;
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
@@ -125,38 +211,111 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
         </Card>
       )}
 
-      {/* Generator */}
+      {/* Generator — two-panel */}
       <Card glow style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} style={{ minWidth: 280 }} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
-          <Select label="Depth" value={depth} onChange={setDepth} style={{ minWidth: 180 }} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
-          <Button onClick={generate} disabled={!selectedReqId || generating}>{generating ? "Generating..." : "Generate Drafts"}</Button>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Test Focus</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {[
-              { key: "safety_critical", label: "Safety Critical" },
-              { key: "ui_ux_validation", label: "UI/UX Validation" },
-              { key: "boundary_analysis", label: "Boundary Analysis" },
-              { key: "error_recovery", label: "Error Recovery" },
-              { key: "regression", label: "Regression" },
-            ].map(f => {
-              const active = focuses.has(f.key);
-              return (
-                <span key={f.key} onClick={() => toggleFocus(f.key)} style={{
-                  padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, cursor: "pointer", userSelect: "none",
-                  background: active ? COLORS.accentDim : COLORS.surface,
-                  color: active ? COLORS.accent : COLORS.textMuted,
-                  border: `1px solid ${active ? COLORS.accent + "66" : COLORS.border}`,
-                }}>{f.label}</span>
-              );
-            })}
+        <div style={{ display: "flex", gap: 20 }}>
+
+          {/* Left: controls */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ marginBottom: 12 }}>
+              <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <Select label="Depth" value={depth} onChange={setDepth} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Test Focus</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[
+                  { key: "safety_critical", label: "Safety Critical" },
+                  { key: "ui_ux_validation", label: "UI/UX Validation" },
+                  { key: "boundary_analysis", label: "Boundary Analysis" },
+                  { key: "error_recovery", label: "Error Recovery" },
+                  { key: "regression", label: "Regression" },
+                ].map(f => {
+                  const active = focuses.has(f.key);
+                  return (
+                    <span key={f.key} onClick={() => toggleFocus(f.key)} style={{
+                      padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, cursor: "pointer", userSelect: "none",
+                      background: active ? COLORS.accentDim : COLORS.surface,
+                      color: active ? COLORS.accent : COLORS.textMuted,
+                      border: `1px solid ${active ? COLORS.accent + "66" : COLORS.border}`,
+                    }}>{f.label}</span>
+                  );
+                })}
+              </div>
+            </div>
+            <Button onClick={generate} disabled={!selectedReqId || generating}>
+              {generating ? "Generating..." : "Generate Drafts"}
+            </Button>
+            {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
+            {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
+          </div>
+
+          {/* Right: KB selector */}
+          <div style={{ width: 280, flexShrink: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>
+              Knowledge Base Context
+              {kbSelected.size > 0 && <span style={{ color: COLORS.accent, marginLeft: 6 }}>({kbSelected.size} selected)</span>}
+            </div>
+            {kbSections.length === 0
+              ? <div style={{ fontSize: 11, color: COLORS.textMuted }}>No KB entries found.</div>
+              : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 240, overflowY: "auto", padding: 4, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
+                  {kbSections.map(sec => {
+                    const allEntries = sec.is_default ? sec.entries : sec.subsections.flatMap(s => s.entries);
+                    const secExpanded = kbExpanded.has(sec.section_id);
+                    const secAllSelected = allEntries.length > 0 && allEntries.every(e => kbSelected.has(e.kb_id));
+                    const secSomeSelected = allEntries.some(e => kbSelected.has(e.kb_id));
+                    return (
+                      <div key={sec.section_id}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", cursor: "pointer", borderRadius: 4, background: secSomeSelected ? COLORS.accentDim + "44" : "transparent" }}>
+                          <span onClick={() => setKbExpanded(prev => { const n = new Set(prev); n.has(sec.section_id) ? n.delete(sec.section_id) : n.add(sec.section_id); return n; })}
+                            style={{ fontSize: 10, color: COLORS.textMuted, width: 10, flexShrink: 0 }}>{secExpanded ? "▾" : "▸"}</span>
+                          <input type="checkbox" checked={secAllSelected} onChange={() => toggleKbSection(sec)}
+                            style={{ accentColor: COLORS.accent, cursor: "pointer", flexShrink: 0 }}
+                            ref={el => { if (el) el.indeterminate = !secAllSelected && secSomeSelected; }} />
+                          <span onClick={() => setKbExpanded(prev => { const n = new Set(prev); n.has(sec.section_id) ? n.delete(sec.section_id) : n.add(sec.section_id); return n; })}
+                            style={{ fontSize: 11, fontWeight: 600, color: COLORS.textBright, flex: 1 }}>{sec.name}</span>
+                        </div>
+                        {secExpanded && (
+                          sec.is_default
+                            ? sec.entries.map(e => (
+                              <div key={e.kb_id} onClick={() => toggleKbEntry(e.kb_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 22px", cursor: "pointer", borderRadius: 4, background: kbSelected.has(e.kb_id) ? COLORS.accentDim + "33" : "transparent" }}>
+                                <input type="checkbox" checked={kbSelected.has(e.kb_id)} onChange={() => toggleKbEntry(e.kb_id)} style={{ accentColor: COLORS.accent, cursor: "pointer" }} onClick={ev => ev.stopPropagation()} />
+                                <span style={{ fontSize: 11, color: COLORS.text, flex: 1 }}>{e.title}</span>
+                              </div>
+                            ))
+                            : sec.subsections.map(sub => {
+                              const subAllSelected = sub.entries.length > 0 && sub.entries.every(e => kbSelected.has(e.kb_id));
+                              const subSomeSelected = sub.entries.some(e => kbSelected.has(e.kb_id));
+                              return (
+                                <div key={sub.subsection_id}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 16px", cursor: "pointer", borderRadius: 4, background: subSomeSelected ? COLORS.accentDim + "22" : "transparent" }}>
+                                    <input type="checkbox" checked={subAllSelected} onChange={() => toggleKbSubsection(sub.entries)}
+                                      style={{ accentColor: COLORS.accent, cursor: "pointer" }}
+                                      ref={el => { if (el) el.indeterminate = !subAllSelected && subSomeSelected; }} />
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, flex: 1 }}>{sub.name}</span>
+                                    <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>{sub.entries.length}</span>
+                                  </div>
+                                  {sub.entries.map(e => (
+                                    <div key={e.kb_id} onClick={() => toggleKbEntry(e.kb_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 32px", cursor: "pointer", borderRadius: 4, background: kbSelected.has(e.kb_id) ? COLORS.accentDim + "33" : "transparent" }}>
+                                      <input type="checkbox" checked={kbSelected.has(e.kb_id)} onChange={() => toggleKbEntry(e.kb_id)} style={{ accentColor: COLORS.accent, cursor: "pointer" }} onClick={ev => ev.stopPropagation()} />
+                                      <span style={{ fontSize: 11, color: COLORS.text, flex: 1 }}>{e.title}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
           </div>
         </div>
-        {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
-        {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
       </Card>
 
       {/* Claude.ai manual workflow */}
@@ -182,9 +341,14 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
             <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
               Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
             </div>
-            <textarea value={importJson} onChange={e => setImportJson(e.target.value)}
-              placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "description": { "objective": "...", "scope": "...", "assumptions": [] },\n    "setup": { "preconditions": [], "environment": [], "equipment": [], "testData": [] },\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "reqAttribute": "..."\n  }\n]'}
-              style={{ width: "100%", minHeight: 160, fontFamily: mono, fontSize: 11, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${importError ? COLORS.red : COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", outline: "none", boxSizing: "border-box" }}
+            <AutoResizeTextarea
+              value={importJson}
+              onChange={e => setImportJson(e.target.value)}
+              placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "description": { "objective": "...", "scope": [], "assumptions": [] },\n    "setup": { "preconditions": [], "environment": [], "equipment": [], "testData": [] },\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "reqAttribute": "..."\n  }\n]'}
+              rows={8}
+              mono
+              error={!!importError}
+              style={{ borderRadius: 6, padding: "10px 12px" }}
             />
             {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
             <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -197,7 +361,7 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
         )}
       </Card>
 
-      {/* Session draft queue */}
+      {/* Session results */}
       {sessionTcIds === null ? (
         <EmptyState icon="◨" title="No Active Session" subtitle="Generate drafts above to begin reviewing" />
       ) : (
@@ -226,71 +390,92 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
           {sessionTcs.length === 0 ? (
             <EmptyState icon="◨" title="Session Empty" subtitle="All test cases have been cleared" />
           ) : (
-            sessionTcs.map(tc => {
-              let desc = null, setup = null;
-              try { desc = typeof tc.description === "string" && tc.description.startsWith("{") ? JSON.parse(tc.description) : null; } catch {}
-              try { setup = typeof tc.preconditions === "string" && tc.preconditions.startsWith("{") ? JSON.parse(tc.preconditions) : null; } catch {}
-              const isExpanded = expandedTc === tc.tc_id;
-              return (
-                <Card key={tc.tc_id} style={{ marginBottom: 10, border: tcSelectMode && selectedTcIds.has(tc.tc_id) ? `1px solid ${COLORS.accent}` : tc.status === "Reviewed" ? `1px solid ${COLORS.green}44` : tc.status === "Rejected" ? `1px solid ${COLORS.red}44` : undefined }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }} onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : setExpandedTc(isExpanded ? null : tc.tc_id)}>
-                    {tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
-                    <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}>{tc.tc_id}</span>
-                    <div style={{ flex: 1, cursor: "pointer" }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>{tc.title}</div>
-                      <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-                        {(tc.linked_req_ids || []).length > 0 && <><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</>}
-                        <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
-                        <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"}>{tc.status}</Badge>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                      <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>
-                        {tc.status === "Reviewed" ? "✓ Approved" : "Approve"}
-                      </Button>
-                      <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Rejected"); }}>&#10007;</Button>
-                    </div>
-                  </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-                  {isExpanded && (() => {
-                    const SL = ({ children }) => <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>;
-                    const BL = ({ items }) => items?.length > 0 ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul> : null;
-                    return (
-                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.border}` }}>
-                        {desc ? <>
-                          <SL>Description</SL>
-                          {desc.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.objective}</span></div>}
-                          {desc.scope && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.scope}</span></div>}
-                          {desc.assumptions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BL items={desc.assumptions} /></>}
-                        </> : tc.description ? <><SL>Description</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.description}</div></> : null}
-                        {setup ? <>
-                          <SL>Setup</SL>
-                          {setup.preconditions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Preconditions:</span><BL items={setup.preconditions} /></>}
-                          {setup.environment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Environment:</span><BL items={setup.environment} /></>}
-                          {setup.equipment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Equipment:</span><BL items={setup.equipment} /></>}
-                          {setup.testData?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Test Data:</span><BL items={setup.testData} /></>}
-                        </> : tc.preconditions ? <><SL>Setup</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.preconditions}</div></> : null}
-                        <SL>Test Steps</SL>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                          <thead><tr>
-                            <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>#</th>
-                            <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Step Action</th>
-                            <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Expected Result</th>
-                          </tr></thead>
-                          <tbody>{(tc.steps || []).map((s, i) => (
-                            <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                              <td style={{ padding: "8px 10px", color: COLORS.textMuted, fontFamily: mono, verticalAlign: "top" }}>{i + 1}</td>
-                              <td style={{ padding: "8px 10px", color: COLORS.text, verticalAlign: "top" }}>{s.step}</td>
-                              <td style={{ padding: "8px 10px", color: COLORS.green, verticalAlign: "top" }}>{s.expectedResult}</td>
-                            </tr>
-                          ))}</tbody>
-                        </table>
+              {/* TC list */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {sessionTcs.map(tc => {
+                  const isSelected = selectedSessionTc === tc.tc_id;
+                  return (
+                    <div
+                      key={tc.tc_id}
+                      onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : setSelectedSessionTc(isSelected ? null : tc.tc_id)}
+                      style={{
+                        padding: "8px 12px", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                        border: `1px solid ${isSelected ? COLORS.accent : tcSelectMode && selectedTcIds.has(tc.tc_id) ? COLORS.accent : tc.status === "Reviewed" ? COLORS.green + "44" : tc.status === "Rejected" ? COLORS.red + "44" : COLORS.border}`,
+                        background: isSelected ? COLORS.accentDim + "33" : COLORS.surfaceRaised,
+                      }}
+                    >
+                      {tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ accentColor: COLORS.accent }} onClick={e => e.stopPropagation()} />}
+                      <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "1px 6px", borderRadius: 3, flexShrink: 0 }}>{tc.tc_id}</span>
+                      <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.status}</Badge>
+                      <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.type}</Badge>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textBright, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.title}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* TC preview — full width */}
+              {!selectedTc ? (
+                <div style={{ padding: 32, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>Select a test case above to preview</div>
+              ) : (() => {
+                  let desc = null, setup = null;
+                  try { desc = typeof selectedTc.description === "string" && selectedTc.description.startsWith("{") ? JSON.parse(selectedTc.description) : null; } catch {}
+                  try { setup = typeof selectedTc.preconditions === "string" && selectedTc.preconditions.startsWith("{") ? JSON.parse(selectedTc.preconditions) : null; } catch {}
+                  return (
+                    <Card>
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textBright, marginBottom: 6 }}>{selectedTc.title}</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                            <Badge color={selectedTc.type === "Happy Path" ? "green" : selectedTc.type === "Negative" ? "red" : selectedTc.type === "Boundary" ? "amber" : "purple"}>{selectedTc.type}</Badge>
+                            <Badge color={selectedTc.status === "Reviewed" ? "green" : selectedTc.status === "Rejected" ? "red" : "amber"}>{selectedTc.status}</Badge>
+                            {(selectedTc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <Button small variant={selectedTc.status === "Reviewed" ? "primary" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Reviewed")}>
+                            {selectedTc.status === "Reviewed" ? "✓ Approved" : "Approve"}
+                          </Button>
+                          <Button small variant={selectedTc.status === "Rejected" ? "danger" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Rejected")}>&#10007; Reject</Button>
+                        </div>
                       </div>
-                    );
-                  })()}
-                </Card>
-              );
-            })
+
+                      {desc ? <>
+                        <SL>Description</SL>
+                        {desc.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.objective}</span></div>}
+                        {desc.scope?.length > 0 && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{Array.isArray(desc.scope) ? desc.scope.join(", ") : desc.scope}</span></div>}
+                        {desc.assumptions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BL items={desc.assumptions} /></>}
+                      </> : selectedTc.description ? <><SL>Description</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{selectedTc.description}</div></> : null}
+
+                      {setup ? <>
+                        <SL>Setup</SL>
+                        {setup.preconditions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Preconditions:</span><BL items={setup.preconditions} /></>}
+                        {setup.environment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Environment:</span><BL items={setup.environment} /></>}
+                        {setup.equipment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Equipment:</span><BL items={setup.equipment} /></>}
+                        {setup.testData?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Test Data:</span><BL items={setup.testData} /></>}
+                      </> : selectedTc.preconditions ? <><SL>Setup</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{selectedTc.preconditions}</div></> : null}
+
+                      <SL>Test Steps</SL>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead><tr>
+                          <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>#</th>
+                          <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Step Action</th>
+                          <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Expected Result</th>
+                        </tr></thead>
+                        <tbody>{(selectedTc.steps || []).map((s, i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                            <td style={{ padding: "8px 10px", color: COLORS.textMuted, fontFamily: mono, verticalAlign: "top" }}>{i + 1}</td>
+                            <td style={{ padding: "8px 10px", color: COLORS.text, verticalAlign: "top" }}>{s.step}</td>
+                            <td style={{ padding: "8px 10px", color: COLORS.green, verticalAlign: "top" }}>{s.expectedResult}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </Card>
+                  );
+                })()}
+            </div>
           )}
         </>
       )}

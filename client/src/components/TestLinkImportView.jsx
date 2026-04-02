@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button } from "./shared";
+import { Card, Badge, Button, AutoResizeTextarea } from "./shared";
 
 export const TestLinkImportView = ({ refresh }) => {
   const COLORS = useTheme();
@@ -162,7 +162,8 @@ export const TestLinkImportView = ({ refresh }) => {
             <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Step 3 — Enhance &amp; Import</div>
             <button onClick={() => { setTlSelected(null); setTlEnhanced(null); setTlEdited(null); setTlEditMode(false); }} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 11, fontFamily: mono, marginBottom: 12, padding: 0 }}>← Back to list</button>
 
-            <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+            {/* Top row — original + KB selector */}
+            <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: tlEnhanced ? 16 : 0 }}>
 
               {/* Left — original TestLink content (hidden while editing) */}
               <div style={{ flex: 1, minWidth: 280, display: tlEditMode ? "none" : undefined }}>
@@ -203,7 +204,7 @@ export const TestLinkImportView = ({ refresh }) => {
                 </div>
               </div>
 
-              {/* Right — KB selector + enhanced output */}
+              {/* Right — KB selector */}
               <div style={{ flex: 1, minWidth: 280 }}>
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Knowledge Base Context</div>
@@ -261,22 +262,24 @@ export const TestLinkImportView = ({ refresh }) => {
                   </div>
                   {tlEnhanceError && <div style={{ marginTop: 8, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{tlEnhanceError}</div>}
                 </div>
+              </div>
+            </div>
 
-                {/* Enhanced output */}
-                {tlEnhanced && (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.green, fontFamily: mono, textTransform: "uppercase" }}>Enhanced</div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <Button variant="secondary" small onClick={() => setTlEditMode(v => !v)}>{tlEditMode ? "View" : "Edit"}</Button>
-                        <Button variant="primary" small onClick={doTlSave} disabled={tlSaving}>{tlSaving ? "Saving..." : "Import as Draft"}</Button>
-                      </div>
-                    </div>
-                    <div style={{ padding: 12, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.text }}>
-                      {tlEditMode ? (() => {
+            {/* Enhanced output — full width */}
+            {tlEnhanced && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.green, fontFamily: mono, textTransform: "uppercase" }}>Enhanced</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button variant="secondary" small onClick={() => setTlEditMode(v => !v)}>{tlEditMode ? "View" : "Edit"}</Button>
+                    <Button variant="primary" small onClick={doTlSave} disabled={tlSaving}>{tlSaving ? "Saving..." : "Import as Draft"}</Button>
+                  </div>
+                </div>
+                <div style={{ padding: 12, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.text }}>
+                  {tlEditMode ? (() => {
                         const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", fontFamily: mono, letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
                         const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
-                        const ta = (val, onChange, rows = 3) => <textarea value={val} onChange={onChange} rows={rows} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", resize: "vertical", outline: "none" }} />;
+                        const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
                         // Array fields: one item per line
                         const arrVal = (arr) => (arr || []).join("\n");
                         const arrChange = (path, e) => {
@@ -414,7 +417,6 @@ export const TestLinkImportView = ({ refresh }) => {
                     </div>
                   </div>
                 )}
-              </div>
             </div>
           </div>
         )}

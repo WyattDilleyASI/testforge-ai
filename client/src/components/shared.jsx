@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { useTheme, font, mono, DRAFT_DISCLAIMER } from "../theme";
 
 export const Badge = ({ color = "accent", children, style }) => {
@@ -46,12 +46,51 @@ export const Card = ({ children, style, glow, ...rest }) => {
   );
 };
 
+export const AutoResizeTextarea = ({ value, onChange, rows = 2, mono: useMono, error, placeholder, disabled, style }) => {
+  const T = useTheme();
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = "auto";
+      ref.current.style.height = ref.current.scrollHeight + "px";
+    }
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      disabled={disabled}
+      rows={rows}
+      style={{
+        width: "100%",
+        boxSizing: "border-box",
+        background: T.surface,
+        border: `1px solid ${error ? T.red : T.border}`,
+        borderRadius: 4,
+        color: T.textBright,
+        fontSize: 12,
+        padding: "6px 10px",
+        resize: "none",
+        outline: "none",
+        overflow: "hidden",
+        fontFamily: useMono ? mono : "inherit",
+        lineHeight: 1.5,
+        opacity: disabled ? 0.5 : 1,
+        ...style,
+      }}
+    />
+  );
+};
+
 export const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => {
   const T = useTheme();
   return <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
     {label && <label style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    {textarea ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", minHeight: 80, outline: "none", opacity: disabled ? 0.5 : 1 }} />
-    : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
+    {textarea
+      ? <AutoResizeTextarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} mono={useMono} rows={3} style={{ fontSize: 13, padding: "10px 12px", borderRadius: 6 }} />
+      : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
   </div>;
 };
 
