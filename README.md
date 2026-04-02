@@ -1,8 +1,8 @@
 # ◈ TestForge AI — AI-Powered Test Case Generation Tool
 
-**v1.2** — Accelerating QA through intelligent automation with full requirement traceability.
+**v1.3** — Accelerating QA through intelligent automation with full requirement traceability.
 
-TestForge AI ingests requirements, leverages a Knowledge Base of historical defects and business rules, and generates structured draft test cases via the Claude API — giving QA engineers a starting point, not a finished product. Every generated test case traces back to specific requirement IDs, ensuring complete coverage visibility from ingestion through export.
+TestForge AI ingests requirements, leverages a hierarchical Knowledge Base of historical defects and business rules, and generates structured draft test cases via the Claude API — giving QA engineers a starting point, not a finished product. Every generated test case traces back to specific requirement IDs, ensuring complete coverage visibility from ingestion through export.
 
 ---
 
@@ -39,7 +39,7 @@ A clean, centered sign-in screen branded with the TestForge AI logo and version 
 
 <img width="2558" height="1283" alt="Dashboard" src="https://github.com/user-attachments/assets/4510e8ca-f358-46f0-9aa2-72ec1d6a4e7a" />
 
-The landing page for every session. At a glance you see requirement coverage percentage, draft test cases awaiting review, engineer-approved test cases, and knowledge base entry count — each linking to the relevant FRD requirement ID (RS-007, TC-003A, KB-001). Below that, Claude API usage metrics (tokens consumed, API calls, budget status) give visibility into generation costs. The bottom half lists every untested requirement sorted by priority (MUST HAVE / SHOULD HAVE) so engineers know exactly where to focus next.
+The landing page for every session. At a glance you see requirement coverage percentage, draft test cases awaiting review, engineer-approved test cases, and knowledge base entry count — each linking to the relevant FRD requirement ID (RS-007, TC-003A, KB-001). Below that, Claude API usage metrics (tokens consumed, API calls, budget status) give visibility into generation costs. The bottom half lists every untested requirement sorted by priority (MUST HAVE / SHOULD HAVE) so engineers know exactly where to focus next. Per-section KB coverage progress bars show how well each knowledge base section is populated relative to its linked requirements.
 
 ### Requirements
 
@@ -51,7 +51,7 @@ All ingested requirements in a single scrollable list. Each card shows the requi
 
 <img width="2558" height="1291" alt="Test_Cases" src="https://github.com/user-attachments/assets/9babe6ca-15fb-48c7-b01a-b93330e00a54" />
 
-The core workflow. Select a requirement from the dropdown, choose generation depth (Basic 2–3 / Standard 4–6 / Comprehensive 7–10), and optionally filter by test focus areas (Safety Critical, UI/UX Validation, Boundary Analysis, Error Recovery, Regression). Click **Generate Drafts** and the Claude API produces structured test cases — each with a unique ID (e.g. `TC-LFWM2-SubSys_Rqmt-186-001`), requirement traceability link, and test type badge (HAPPY PATH, NEGATIVE, BOUNDARY, EDGE CASE). A yellow DRAFT disclaimer banner reminds engineers that AI output requires human review. The Library / Session View tabs separate the full test case library from the current generation session. When no API key is configured, a fallback "Copy Prompt / Import Response" workflow lets teams use claude.ai manually.
+The core workflow. Select a requirement from the dropdown, choose generation depth (Basic 2–3 / Standard 4–6 / Comprehensive 7–10), and optionally filter by test focus areas (Safety Critical, UI/UX Validation, Boundary Analysis, Error Recovery, Regression). Click **Generate Drafts** and the Claude API produces structured test cases — each with a unique ID (e.g. `TC-LFWM2-SubSys_Rqmt-186-001`), requirement traceability link, and test type badge (HAPPY PATH, NEGATIVE, BOUNDARY, EDGE CASE). A yellow DRAFT disclaimer banner reminds engineers that AI output requires human review. The Library / Session View tabs separate the full test case library from the current generation session. When no API key is configured, a fallback "Copy Prompt / Import Response" workflow lets teams use claude.ai manually. TestLink XML import is also supported — upload an XML export, optionally enhance legacy test cases with KB context via the Claude API, and import them into the library with original external IDs preserved.
 
 ### SysML Traceability Diagram
 
@@ -63,7 +63,9 @@ A fully interactive D3-powered requirements diagram that visualizes the entire h
 
 <img width="2557" height="1280" alt="Knowledge_Base" src="https://github.com/user-attachments/assets/74e0e83b-1a6d-4baa-b115-031b8cbeda99" />
 
-Tagged entries that inform AI test case generation. Each entry has a structured ID (KB-E001 – KB-E005+), type badge (DEFECT HISTORY, SYSTEM BEHAVIOR, BUSINESS RULE), descriptive content, and linked tags for requirements (e.g. RS-001, RS-003), test cases (TC-002), Jama IDs (JM-007, JM-003), and custom tags (PDF, OCR, field-mapping, parsing, acceptance-criteria). Entries can include attached images with descriptions — useful for capturing UI screenshots of historical defects or setup procedures. The usage counter tracks how many times each entry has been injected into generation prompts.
+A hierarchical knowledge base organized into **sections → subsections → entries** (two-level max). Sections represent product or system areas (e.g. "Mobius", "VAI"), and subsections represent modules within them (e.g. "Command", "Maps", "PDF Processing"). Each entry has a structured ID (KB-E001+), type badge (DEFECT HISTORY, SYSTEM BEHAVIOR, BUSINESS RULE, ENVIRONMENT CONSTRAINT, TEST DATA GUIDELINE), descriptive content, and linked tags for requirements, test cases, Jama IDs, and custom tags. Entries can include attached images with descriptions — useful for capturing UI screenshots of historical defects or setup procedures. The usage counter tracks how many times each entry has been injected into generation prompts.
+
+The UI features a card-in-card nested layout, toggle-mode drag-and-drop with labeled drop zones and auto-scroll for reorganization, inline entry editing, search/filter with auto-expand, collapse/expand all controls, and subsection descriptions visible when collapsed. Uncategorized entries appear in a default section for entries not yet placed into the hierarchy.
 
 ### Settings — User Preferences & Themes
 
@@ -75,7 +77,9 @@ The Settings page (Admin-only for MCP and User Management sub-pages) opens to Us
 
 <img width="2557" height="1283" alt="MCP_Setup" src="https://github.com/user-attachments/assets/0d4f9823-fcf1-4b1e-bdc1-569c1d859f41" />
 
-The Admin-only MCP integration page. The top section explains the key value proposition: no API key needed, billing goes through the user's own Claude account, and Claude gets full tool access to read requirements, generate test cases, search the KB, and save results directly. The Prerequisites section walks through downloading the `mcp-bridge.mjs` bridge script (3 KB, zero dependencies, Node.js 18+) and verifying the TestForge server URL. Below that, the MCP Access Tokens panel provides a form to name a token, enter the local path to the bridge script, and generate a token — the full token value is shown only once at creation time. Existing tokens are listed in a table with name, masked preview, creation date, last-used timestamp, and a Revoke button. After token creation, auto-install terminal commands (PowerShell / bash) and downloadable config files are provided for Claude Desktop, Claude Code, and Claude Web.
+The Admin-only MCP integration page, rebuilt as a **4-step wizard** (Prerequisites → Create Token → Configure Claude → Test Connection) optimized for remote server deployments. The Prerequisites step explains the value proposition (no API key needed, billing through the user's own Claude account) and walks through downloading the `mcp-bridge.mjs` bridge script and verifying the TestForge server URL. The Create Token step provides a form to name a token and enter the local path to the bridge script — the full token value is shown only once at creation time. The Configure Claude step provides auto-install terminal commands (PowerShell / bash) and downloadable config files for Claude Desktop, Claude Code, and Claude Web. The Test Connection step verifies the integration is working end-to-end. Existing tokens are listed in a table with name, masked preview, creation date, last-used timestamp, and a Revoke button.
+
+The page also includes a complete **MCP Tools Reference** listing all 15 available tools with descriptions and example prompts, **Example Workflows** demonstrating multi-tool chains (e.g. "Generate test cases for all uncovered requirements and save them"), and a **Troubleshooting** section covering common issues like malformed config JSON, missing tools, expired tokens, and Windows Store config path differences.
 
 ### Deferred to v2
 
@@ -113,6 +117,8 @@ Open **http://localhost:3000** — that's it.
 - **Configurable port** — default `3000:3000`, easily placed behind nginx, Traefik, or a cloud load balancer
 
 > **Note:** Docker rebuilds wipe the container filesystem. Because the SQLite database lives on a named volume, your data persists — but MCP tokens stored only in the container's memory context (e.g. active sessions) will reset. Plan accordingly for deployment workflows.
+
+> **Gotcha:** Variables in `.env` must also be explicitly declared in the `environment` block of `docker-compose.yml` to reach the container. If something works locally but not in Docker, check this first.
 
 ---
 
@@ -158,6 +164,7 @@ Open **http://localhost:3000**.
 | `SERVER_ENCRYPTION_KEY` | Recommended | — | AES-256-GCM key for MCP auth token encryption at rest |
 | `PORT` | No | `3000` | Server port |
 | `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Model used for generation |
+| `TOKEN_BUDGET` | No | `200000` | Monthly token budget for Claude API usage tracking |
 | `DB_PATH` | No | `./data/testforge.db` | SQLite database file path |
 
 **Generate an encryption key:**
@@ -177,24 +184,30 @@ testforge-ai/
 │   ├── db.js               SQLite database layer (schema, seeds, helpers)
 │   ├── auth.js             Authentication middleware (session-based)
 │   ├── crypto.js           AES-256-GCM encryption for MCP auth tokens
-│   ├── mcp.js              MCP server (9 tools for Claude Desktop/Code/Web)
+│   ├── mcp.js              MCP server (15 tools for Claude Desktop/Code/Web)
 │   └── routes/
 │       ├── auth.js         Login, logout, password change
 │       ├── users.js        User CRUD, role changes, OTP reset
 │       ├── requirements.js Requirement ingestion and editing
-│       ├── testcases.js    TC generation via Claude API, status updates
+│       ├── testcases.js    TC generation via Claude API, status updates, TestLink import
 │       ├── mcp.js          MCP server configuration (Admin only)
-│       └── data.js         Knowledge Base, audit log, Jama export
+│       └── data.js         Knowledge Base (sections, subsections, entries), audit log, Jama export
 ├── client/
 │   ├── src/
-│   │   ├── App.jsx         Full React frontend (single-file SPA)
-│   │   ├── SysMLTraceability.jsx   Interactive D3 requirements diagram
+│   │   ├── App.jsx         Root component with routing
+│   │   ├── components/
+│   │   │   ├── McpTokensView.jsx       MCP setup wizard (4-step)
+│   │   │   ├── TestCaseView.jsx        Test case generation & library
+│   │   │   ├── KnowledgeBaseView.jsx   Hierarchical KB management
+│   │   │   ├── SysMLTraceability.jsx   Interactive D3 requirements diagram
+│   │   │   └── shared.jsx             Reusable UI components
 │   │   ├── api.js          API client helper
+│   │   ├── theme.jsx       Theme definitions (16 themes)
 │   │   └── main.jsx        Entry point
 │   ├── index.html
 │   └── vite.config.js      Build config with dev proxy
 ├── mcp-bridge.mjs          Stdio-to-SSE bridge for Claude Desktop
-├── data/                   SQLite databases (auto-created)
+├── data/                   SQLite databases + KB images (auto-created)
 ├── .env.example            Environment template
 ├── Dockerfile              Container build (Node 20 Alpine)
 ├── docker-compose.yml      One-command deployment
@@ -215,9 +228,15 @@ Ingest requirements via plain text, markdown, JSON, CSV, or PDF. Import directly
 
 Select a requirement, choose generation depth (basic / standard / comprehensive), and generate 2–10 draft test cases via the Claude API. Each test case includes a structured ID, title, linked requirement IDs, preconditions, steps, expected results, and pass/fail criteria. All AI-generated test cases are marked **DRAFT** with a disclaimer — engineers review, augment, then approve. Optional test focus filters (Safety Critical, UI/UX Validation, Boundary Analysis, Error Recovery, Regression) steer the AI toward specific coverage goals.
 
+### TestLink Import & Enhancement
+
+Import legacy test cases from TestLink XML exports. The import pipeline parses the XML, preserves original external IDs, and optionally enhances each test case with Knowledge Base context via the Claude API before saving — bridging the gap between legacy test suites and TestForge's structured format.
+
 ### Knowledge Base–Informed Generation (KB-001 – KB-006)
 
-Tag Knowledge Base entries (defect history, business rules, environment constraints) to requirement IDs. During generation, relevant KB context is injected into the Claude prompt, producing test cases informed by organizational memory. Entries support image attachments with AI-generated descriptions for visual context (e.g. UI screenshots of historical defects).
+The Knowledge Base uses a **hierarchical section → subsection → entry** structure. Sections represent product or system areas, subsections represent modules within them, and entries capture specific knowledge: defect history, system behaviors, business rules, environment constraints, and test data guidelines. Each entry is tagged with requirement IDs so that during test case generation, relevant KB context is automatically injected into the Claude prompt. Entries support image attachments with descriptions for visual context (e.g. UI screenshots of historical defects).
+
+The KB UI features card-in-card nesting, toggle-mode drag-and-drop with labeled drop zones and auto-scroll, inline editing, search/filter with auto-expand, and collapse/expand all controls. Subsection descriptions are visible when collapsed for quick scanning.
 
 ### SysML Traceability Diagram (TC-007)
 
@@ -225,7 +244,7 @@ An interactive D3-powered visualization of the full requirements hierarchy — p
 
 ### Coverage Dashboard (RS-007)
 
-Real-time metrics across the entire requirement set: coverage percentage, draft count, reviewed count, KB entry count, Claude API token usage, and a prioritized list of untested requirements. Each metric card links to its governing FRD requirement ID.
+Real-time metrics across the entire requirement set: coverage percentage, draft count, reviewed count, KB entry count, Claude API token usage, and a prioritized list of untested requirements. Each metric card links to its governing FRD requirement ID. Per-section KB coverage progress bars show knowledge base completeness relative to linked requirements.
 
 ### Review, Approve & Export (TC-003a, JM-001 – JM-009)
 
@@ -257,18 +276,42 @@ TestForge uses session-based authentication with a three-tier role model:
 
 TestForge exposes a Model Context Protocol (MCP) server so that **Claude calls TestForge** — no API key management on the client side. Claude Desktop, Claude Code, and Claude Web can interact with requirements, test cases, and the knowledge base directly.
 
-### MCP Tools (9 available)
+### MCP Tools (15 available)
 
-The MCP server (`server/mcp.js`) exposes tools for listing/searching requirements, listing/creating test cases, managing knowledge base entries, and checking coverage — all scoped to the authenticated user.
+The MCP server (`server/mcp.js`) exposes the following tools, all scoped to the authenticated user's role:
+
+| Tool | Description |
+|------|-------------|
+| `list_requirements` | List and filter all requirements |
+| `get_requirement` | Get full details, KB context, and linked TCs for a requirement |
+| `create_requirement` | Create a new requirement |
+| `update_requirement` | Update an existing requirement's fields |
+| `save_test_cases` | Generate and save test case drafts to the database |
+| `list_test_cases` | List test cases with filters by requirement or status |
+| `review_test_case` | Mark a test case as Reviewed or Rejected |
+| `update_test_case` | Update a test case's steps, description, or type |
+| `list_kb_sections` | View all KB sections and subsections with entry counts |
+| `search_knowledge_base` | Search KB entries by keyword, requirement, type, or subsection |
+| `create_kb_entry` | Add a new KB entry to a specific subsection |
+| `update_kb_entry` | Update a KB entry's content, tags, or type |
+| `add_kb_images` | Attach images to a KB entry (base64) |
+| `remove_kb_image` | Remove an image from a KB entry by index |
+| `get_coverage_summary` | Get overall test coverage statistics |
+
+### Setup Wizard
+
+The MCP setup is managed through a **4-step wizard** under **Settings → MCP Tokens**:
+
+1. **Prerequisites** — Verify Claude Desktop is installed, download `mcp-bridge.mjs` (3 KB, zero dependencies, Node.js 18+), and confirm the TestForge server URL is reachable
+2. **Create Token** — Enter a token name and the full local path to `mcp-bridge.mjs`; the full token value is shown only once
+3. **Configure Claude** — Auto-install terminal commands (PowerShell / bash) and downloadable config files for Claude Desktop, Claude Code, and Claude Web
+4. **Test Connection** — Verify the integration is working end-to-end
+
+The wizard also includes example workflows (batch generation, coverage gap analysis, KB building) and a troubleshooting section for common issues.
 
 ### Connecting Claude Desktop
 
-TestForge uses a **stdio-to-SSE bridge** (`mcp-bridge.mjs`) for Claude Desktop compatibility. The full setup flow is managed through the admin UI under **Settings & MCP**:
-
-1. **Download `mcp-bridge.mjs`** from the Settings page (or copy it from the repo root)
-2. **Create an MCP token** — enter a name and the full path to `mcp-bridge.mjs` on your machine
-3. **Install the config** — use the auto-install terminal command (PowerShell/bash) or download the `claude_desktop_config.json` file directly
-4. **Restart Claude Desktop** — fully quit (system tray → Quit), reopen, and verify under Settings → Developer
+TestForge uses a **stdio-to-SSE bridge** (`mcp-bridge.mjs`) for Claude Desktop compatibility.
 
 **Claude Desktop config format (stdio):**
 
@@ -323,6 +366,8 @@ MCP auth tokens are encrypted at rest using AES-256-GCM via `server/crypto.js`. 
 - **Absolute paths are more reliable** than PATH resolution in the MSIX version of Claude Desktop.
 - **Docker rebuilds invalidate MCP tokens** — create new tokens after rebuilding the container if the database volume was not preserved.
 - **The bridge script includes reconnect-with-backoff** (exponential, up to 30 retries) to survive container rebuilds and network interruptions.
+- **PowerShell encoding:** `Out-File -Encoding utf8` adds a BOM that breaks JSON configs. The setup wizard uses `[System.IO.File]::WriteAllText()` for BOM-free output. Multi-line pastes are avoided via base64-encoded single-line commands.
+- **Clipboard on HTTP:** `navigator.clipboard.writeText` is undefined on non-HTTPS origins. The app includes `document.execCommand("copy")` fallbacks for HTTP deployments.
 
 ---
 
@@ -362,12 +407,30 @@ All endpoints require authentication (session cookie) unless noted.
 | `GET` | `/api/testcases` | List all |
 | `POST` | `/api/testcases/generate` | Generate via Claude API |
 | `PUT` | `/api/testcases/:tcId/status` | Update status |
+| `GET` | `/api/testcases/export/xlsx` | Export to XLSX (optional `?ids=` filter) |
+| `POST` | `/api/testcases/import-doc` | Import from document file |
+| `POST` | `/api/testcases/parse-xml` | Parse TestLink XML export |
+| `POST` | `/api/testcases/enhance-xml-tc` | Enhance a TestLink TC with KB context via Claude |
+| `POST` | `/api/testcases/import-xml-confirmed` | Import an enhanced TestLink TC |
 
-### Knowledge Base
+### Knowledge Base — Entries
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/kb` | List all entries |
-| `POST` | `/api/kb` | Create entry |
+| `POST` | `/api/kb` | Create entry (with optional `subsection_id`) |
+| `PUT` | `/api/kb/:kbId` | Update entry |
+| `DELETE` | `/api/kb/:kbId` | Delete entry |
+
+### Knowledge Base — Sections & Subsections
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/kb/sections` | List all sections with subsections and entry counts |
+| `POST` | `/api/kb/sections` | Create section |
+| `PUT` | `/api/kb/sections/:sectionId` | Rename section |
+| `DELETE` | `/api/kb/sections/:sectionId` | Delete section (moves entries to Uncategorized) |
+| `POST` | `/api/kb/subsections` | Create subsection |
+| `PUT` | `/api/kb/subsections/:subsectionId` | Rename or update subsection |
+| `DELETE` | `/api/kb/subsections/:subsectionId` | Delete subsection |
 
 ### MCP Settings
 | Method | Endpoint | Description |
@@ -408,12 +471,12 @@ Every feature maps to specific FRD v1.2 requirement IDs:
 | Module | REQ IDs | Implementation |
 |--------|---------|----------------|
 | Requirement Ingestion | RS-001 – RS-007 | CRUD + acceptance criteria parsing |
-| Test Case Generation | TC-001 – TC-009 | Claude API generation, Session View, Draft disclaimer |
-| Knowledge Base | KB-001 – KB-006 | Tagged entries, KB-informed generation, image attachments |
+| Test Case Generation | TC-001 – TC-009 | Claude API generation, Session View, Draft disclaimer, TestLink import |
+| Knowledge Base | KB-001 – KB-006 | Hierarchical sections/subsections, tagged entries, KB-informed generation, image attachments |
 | User Management | UM-001 – UM-009 | RBAC, OTP flow, audit log, lockout |
 | Jama Integration | JM-001 – JM-009 | Pre-export validation, XLSX export, simulated sync |
 | SysML Traceability | TC-007 | Interactive D3 diagram, TACO assessment, SVG export |
-| MCP Server Config | Admin Config | Admin-only CRUD, connection testing, token encryption |
+| MCP Server Config | Admin Config | Admin-only CRUD, connection testing, token encryption, 4-step setup wizard |
 | Deferred (v2) | AL-001 – AL-008, KB-007 | Documented in Deferred view |
 
 ---
@@ -465,6 +528,12 @@ The Vite dev server runs on port **5173** and proxies `/api` requests to port **
 | `npm run dev` | Start with `--watch` for auto-reload |
 | `npm run build:client` | Install client deps and build the React SPA |
 | `npm run setup` | Full install (server + client + build) |
+
+### Development Notes
+
+- **Vite file resolution:** Vite resolves `.js` before `.jsx`. If a `theme.js` and `theme.jsx` both exist, the `.js` file will shadow the `.jsx`. Delete the competing file if you encounter unexpected import behavior.
+- **`express.json()` vs MCP:** Global `express.json()` middleware consumes request bodies before the MCP SSE transport can read them on `/mcp/messages`. The server conditionally skips this middleware for MCP routes.
+- **SQLite on Docker/Windows:** Avoid Windows bind mounts via `/mnt/c/` due to POSIX file locking issues with the 9P protocol. Use named Docker volumes instead.
 
 ---
 
