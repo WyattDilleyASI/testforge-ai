@@ -79,22 +79,22 @@ const FOCUS_PROMPTS = {
 };
 
 // ─── Shared prompt builder ──────────────────────────────────────────────────
-function buildPrompt(reqId, depth, focuses = []) {
+function buildPrompt(reqId, depth, focuses = [], kbEntryIds = null) {
   const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
   if (!requirement) return null;
 
   const reqContext = JSON.parse(requirement.requirement_context || "[]");
   const tags = JSON.parse(requirement.tags || "[]");
 
-  // Fetch KB entries that share a tag with this requirement or list it in related_reqs
+  // If explicit KB entry IDs provided, use those; otherwise fall back to tag-matching
   const allKbRows = getKbDb().prepare("SELECT * FROM kb_entries").all();
-  const allKb = allKbRows.filter(kb => {
-    const kbTags = JSON.parse(kb.tags || "[]");
-    const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
-    const hasMatchingTag = kbTags.some(t => tags.includes(t));
-    const isDirectlyRelated = kbRelReqs.includes(reqId);
-    return hasMatchingTag || isDirectlyRelated;
-  });
+  const allKb = kbEntryIds && kbEntryIds.length > 0
+    ? allKbRows.filter(kb => kbEntryIds.includes(kb.kb_id))
+    : allKbRows.filter(kb => {
+        const kbTags = JSON.parse(kb.tags || "[]");
+        const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
+        return kbTags.some(t => tags.includes(t)) || kbRelReqs.includes(reqId);
+      });
 
   // Build requirement context string
   let contextStr = "";
@@ -203,11 +203,11 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
 // POST /api/testcases/generate — call Claude API server-side
 router.post("/generate", requireAuth, async (req, res) => {
-  const { reqId, depth, focuses } = req.body;
+  const { reqId, depth, focuses, kbEntryIds } = req.body;
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
   const db = getTcDb();
-  const result = buildPrompt(reqId, depth, focuses || []);
+  const result = buildPrompt(reqId, depth, focuses || [], kbEntryIds || null);
   if (!result) return res.status(404).json({ error: "Requirement not found" });
 
   const { prompt, systemPrompt, requirement, allKb, kbImages } = result;
