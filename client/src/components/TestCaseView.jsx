@@ -390,10 +390,10 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
           {sessionTcs.length === 0 ? (
             <EmptyState icon="◨" title="Session Empty" subtitle="All test cases have been cleared" />
           ) : (
-            <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-              {/* Left — TC list */}
-              <div style={{ width: 280, flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+              {/* TC list */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {sessionTcs.map(tc => {
                   const isSelected = selectedSessionTc === tc.tc_id;
                   return (
@@ -401,29 +401,25 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                       key={tc.tc_id}
                       onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : setSelectedSessionTc(isSelected ? null : tc.tc_id)}
                       style={{
-                        padding: "10px 12px", borderRadius: 6, cursor: "pointer", border: `1px solid ${isSelected ? COLORS.accent : tcSelectMode && selectedTcIds.has(tc.tc_id) ? COLORS.accent : tc.status === "Reviewed" ? COLORS.green + "44" : tc.status === "Rejected" ? COLORS.red + "44" : COLORS.border}`,
+                        padding: "8px 12px", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                        border: `1px solid ${isSelected ? COLORS.accent : tcSelectMode && selectedTcIds.has(tc.tc_id) ? COLORS.accent : tc.status === "Reviewed" ? COLORS.green + "44" : tc.status === "Rejected" ? COLORS.red + "44" : COLORS.border}`,
                         background: isSelected ? COLORS.accentDim + "33" : COLORS.surfaceRaised,
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                        {tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ accentColor: COLORS.accent }} onClick={e => e.stopPropagation()} />}
-                        <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "1px 6px", borderRadius: 3 }}>{tc.tc_id}</span>
-                        <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ fontSize: 9 }}>{tc.status}</Badge>
-                      </div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textBright, lineHeight: 1.4 }}>{tc.title}</div>
-                      <div style={{ marginTop: 4 }}>
-                        <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"} style={{ fontSize: 9 }}>{tc.type}</Badge>
-                      </div>
+                      {tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ accentColor: COLORS.accent }} onClick={e => e.stopPropagation()} />}
+                      <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "1px 6px", borderRadius: 3, flexShrink: 0 }}>{tc.tc_id}</span>
+                      <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.status}</Badge>
+                      <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.type}</Badge>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textBright, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.title}</div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Right — TC preview */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {!selectedTc ? (
-                  <div style={{ padding: 40, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>Select a test case to preview</div>
-                ) : (() => {
+              {/* TC preview — full width */}
+              {!selectedTc ? (
+                <div style={{ padding: 32, textAlign: "center", color: COLORS.textMuted, fontSize: 12 }}>Select a test case above to preview</div>
+              ) : (() => {
                   let desc = null, setup = null;
                   try { desc = typeof selectedTc.description === "string" && selectedTc.description.startsWith("{") ? JSON.parse(selectedTc.description) : null; } catch {}
                   try { setup = typeof selectedTc.preconditions === "string" && selectedTc.preconditions.startsWith("{") ? JSON.parse(selectedTc.preconditions) : null; } catch {}
@@ -479,7 +475,6 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                     </Card>
                   );
                 })()}
-              </div>
             </div>
           )}
         </>
