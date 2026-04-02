@@ -119,3 +119,51 @@ export const EmptyState = ({ icon, title, subtitle }) => { const T = useTheme();
 export const DraftDisclaimer = ({ style }) => { const T = useTheme(); return <div style={{ padding: "10px 14px", background: "rgba(251,191,36,0.08)", borderRadius: 6, border: `1px solid ${T.amber}33`, fontSize: 11, color: T.amber, lineHeight: 1.5, ...style }}><span style={{ fontFamily: mono, fontWeight: 700, marginRight: 6, fontSize: 10, textTransform: "uppercase" }}>TC-003a DRAFT</span>{DRAFT_DISCLAIMER}</div>; };
 
 export const ErrorBanner = ({ msg }) => { const T = useTheme(); return msg ? <div style={{ marginBottom: 16, padding: "8px 12px", background: T.redDim, borderRadius: 6, border: `1px solid ${T.red}33`, fontSize: 12, color: T.red }}>{msg}</div> : null; };
+
+export const RejectionPicker = ({ onReject, onCancel }) => {
+  const T = useTheme();
+  const reasons = [
+    { key: "missing_edge_case",  label: "Missing edge case" },
+    { key: "wrong_precondition", label: "Wrong preconditions" },
+    { key: "incomplete_steps",   label: "Incomplete steps" },
+    { key: "unclear_expected",   label: "Unclear expected results" },
+    { key: "duplicate_coverage", label: "Duplicates another TC" },
+    { key: "wrong_requirement",  label: "Doesn't test the requirement" },
+    { key: "other",              label: "Other" },
+  ];
+
+  return (
+    <div style={{
+      marginTop: 8, padding: 12, background: T.surface,
+      border: `1px solid ${T.red}33`, borderRadius: 8,
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 600, color: T.red,
+        fontFamily: mono, textTransform: "uppercase",
+        letterSpacing: "0.06em", marginBottom: 8,
+      }}>
+        What's the main issue?
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {reasons.map(r => (
+          <button key={r.key} onClick={() => onReject(r.key)} style={{
+            padding: "5px 12px", borderRadius: 5, fontSize: 11,
+            fontFamily: font, fontWeight: 500, cursor: "pointer",
+            border: `1px solid ${T.red}44`,
+            background: T.redDim || "rgba(255,80,80,0.08)",
+            color: T.red,
+          }}>
+            {r.label}
+          </button>
+        ))}
+      </div>
+      <button onClick={onCancel} style={{
+        marginTop: 8, background: "none", border: "none",
+        color: T.textMuted, cursor: "pointer", fontSize: 11,
+        fontFamily: mono, padding: 0,
+      }}>
+        Cancel
+      </button>
+    </div>
+  );
+};

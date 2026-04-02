@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea } from "./shared";
+import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker } from "./shared";
 
 export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const COLORS = useTheme();
@@ -37,6 +37,10 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
   // Export select state
   const [tcSelectMode, setTcSelectMode] = useState(false);
   const [selectedTcIds, setSelectedTcIds] = useState(new Set());
+
+  // Adaptive Learning Engine Stuff
+  const [rejectingTcId, setRejectingTcId] = useState(null);
+  const [genHint, setGenHint] = useState(null);
 
   const sessionTcs = sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : [];
   const sessionRejectedCount = sessionTcs.filter(tc => tc.status === "Rejected").length;
@@ -84,6 +88,15 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
     ));
   }, [selectedReqId, allKbEntries]);
 
+  // ── AL: Fetch contextual hints when requirement changes ──
+  useEffect(() => {
+    setGenHint(null);
+    if (!selectedReqId) return;
+    api.getAnalyticsHints(selectedReqId)
+      .then(data => { if (data.hasHistory) setGenHint(data); })
+      .catch(() => {});
+  }, [selectedReqId]);
+
   // KB toggle helpers
   const toggleKbEntry = (kbId) => setKbSelected(prev => { const n = new Set(prev); n.has(kbId) ? n.delete(kbId) : n.add(kbId); return n; });
   const toggleKbSection = (sec) => {
@@ -118,8 +131,12 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
     finally { setGenerating(false); }
   };
 
-  const updateStatus = async (tcId, status) => {
-    try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
+  const updateStatus = async (tcId, status, rejectionReason) => {
+    try {
+      await api.updateTcStatus(tcId, status, rejectionReason);
+      setRejectingTcId(null);
+      refresh();
+    } catch (err) { console.error(err); }
   };
 
   const copyPrompt = async () => {
@@ -246,6 +263,50 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                 })}
               </div>
             </div>
+            {genHint && (
+              <div style={{
+                padding: "10px 14px", borderRadius: 6, marginBottom: 12,
+                background: COLORS.accentDim,
+                border: `1px solid ${COLORS.accent}33`,
+                fontSize: 12, color: COLORS.text, lineHeight: 1.6,
+              }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: COLORS.accent,
+                  fontFamily: mono, textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}>
+                  Generation History
+                </span>
+                <div style={{ marginTop: 4 }}>
+                  {genHint.approval && (
+                    <span>
+                      {genHint.approval.session_count} prior generation{genHint.approval.session_count !== 1 ? "s" : ""}
+                      {genHint.approval.approval_rate !== null && (
+                        <span style={{
+                          marginLeft: 6, fontWeight: 600,
+                          color: genHint.approval.approval_rate >= 70
+                            ? COLORS.green
+                            : genHint.approval.approval_rate >= 40
+                              ? COLORS.amber
+                              : COLORS.red,
+                        }}>
+                          {genHint.approval.approval_rate}% approval rate
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {genHint.edits && genHint.edits.total_edits > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: COLORS.textMuted }}>
+                      Most edited: {Object.entries(genHint.edits.field_counts)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 3)
+                        .map(([field, count]) => `${field} (${count}×)`)
+                        .join(", ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <Button onClick={generate} disabled={!selectedReqId || generating}>
               {generating ? "Generating..." : "Generate Drafts"}
             </Button>
@@ -438,9 +499,19 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                           <Button small variant={selectedTc.status === "Reviewed" ? "primary" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Reviewed")}>
                             {selectedTc.status === "Reviewed" ? "✓ Approved" : "Approve"}
                           </Button>
-                          <Button small variant={selectedTc.status === "Rejected" ? "danger" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Rejected")}>&#10007; Reject</Button>
+                          <Button small variant={selectedTc.status === "Rejected" ? "danger" : "ghost"}
+                            onClick={() => setRejectingTcId(rejectingTcId === selectedTc.tc_id ? null : selectedTc.tc_id)}>
+                            &#10007; Reject
+                          </Button>
                         </div>
                       </div>
+
+                      {rejectingTcId === selectedTc.tc_id && (
+                        <RejectionPicker
+                          onReject={(reason) => updateStatus(selectedTc.tc_id, "Rejected", reason)}
+                          onCancel={() => setRejectingTcId(null)}
+                        />
+                      )}
 
                       {desc ? <>
                         <SL>Description</SL>

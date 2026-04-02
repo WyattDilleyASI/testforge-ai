@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea } from "./shared";
+import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker } from "./shared";
 
 export const TestCaseLibraryView = ({ testCases, refresh }) => {
   const COLORS = useTheme();
@@ -19,6 +19,7 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
   const [editingTcId, setEditingTcId] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
+  const [rejectingTcId, setRejectingTcId] = useState(null);
 
   useEffect(() => {
     api.getExampleTc().then(d => { if (d.example_tc) setExampleTcId(d.example_tc.tc_id); }).catch(() => {});
@@ -48,8 +49,12 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
     finally { setEditSaving(false); }
   };
 
-  const updateStatus = async (tcId, status) => {
-    try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
+  const updateStatus = async (tcId, status, rejectionReason) => {
+    try {
+      await api.updateTcStatus(tcId, status, rejectionReason);
+      setRejectingTcId(null);
+      refresh();
+    } catch (err) { console.error(err); }
   };
 
   const refineTestCase = async (tcId) => {
@@ -169,7 +174,8 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                   <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
                     {isExpanded && <Button small variant="secondary" onClick={e => { e.stopPropagation(); editingTcId === tc.tc_id ? (setEditingTcId(null), setEditForm(null)) : startEdit(tc); }}>{editingTcId === tc.tc_id ? "Cancel" : "Edit"}</Button>}
                     <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
-                    <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Rejected"); }}>&#10007;</Button>
+                    <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}> &#10007;</Button>
+                    {rejectingTcId === tc.tc_id && ( <RejectionPicker onReject={(reason) => updateStatus(tc.tc_id, "Rejected", reason)} onCancel={() => setRejectingTcId(null)} /> )}
                     <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
                   </div>
                 </div>
