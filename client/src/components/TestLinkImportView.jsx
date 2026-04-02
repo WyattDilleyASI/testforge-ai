@@ -417,7 +417,6 @@ export const TestLinkImportView = ({ refresh }) => {
                     </div>
                   </div>
                 )}
-            </div>
           </div>
         )}
       </Card>
