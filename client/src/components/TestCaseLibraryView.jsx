@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer } from "./shared";
+import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea } from "./shared";
 
 export const TestCaseLibraryView = ({ testCases, refresh }) => {
   const COLORS = useTheme();
@@ -183,7 +183,7 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                       {isEditing && (() => {
                         const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", fontFamily: mono, letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
                         const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
-                        const ta = (val, onChange, rows = 3) => <textarea value={val} onChange={onChange} rows={rows} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", resize: "vertical", outline: "none" }} />;
+                        const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
                         const arrVal = (arr) => (arr || []).join("\n");
                         const arrChange = (path, e) => {
                           const items = e.target.value.split("\n");
@@ -304,11 +304,12 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                         {refiningTcId === tc.tc_id ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             <SL>Refine Test Case</SL>
-                            <textarea
+                            <AutoResizeTextarea
                               value={refineFeedback}
                               onChange={e => setRefineFeedback(e.target.value)}
                               placeholder="Describe improvements — e.g. 'Add a step to verify error message displays correctly' or 'Include boundary test for max input length'"
-                              style={{ width: "100%", minHeight: 80, padding: 10, fontSize: 12, fontFamily: mono, background: COLORS.surface, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 6, resize: "vertical", boxSizing: "border-box" }}
+                              rows={3}
+                              mono
                             />
                             {refineError && <div style={{ fontSize: 11, color: COLORS.red }}>{refineError}</div>}
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

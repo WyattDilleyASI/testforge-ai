@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, ErrorBanner } from "./shared";
+import { Card, Badge, Button, Input, Select, ErrorBanner, AutoResizeTextarea } from "./shared";
 
 // ─── localStorage helpers for collapse state ────────────────────────────────
 const COLLAPSE_KEY = "testforge_kb_collapsed";
@@ -526,7 +526,7 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
                 <select value={editForm.type} onChange={ev => setEditForm(p => ({ ...p, type: ev.target.value }))} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 4, border: `1px solid ${COLORS.border}`, background: COLORS.surfaceRaised, color: COLORS.text, outline: "none", marginBottom: 8, fontFamily: "inherit" }}>
                   {["Defect History", "System Behavior", "Environment Constraint", "Business Rule", "Test Data Guideline", "UI Reference"].map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
-                <textarea value={editForm.content} onChange={ev => setEditForm(p => ({ ...p, content: ev.target.value }))} style={{ width: "100%", minHeight: 80, fontSize: 12, padding: "6px 10px", borderRadius: 4, border: `1px solid ${COLORS.accent}`, background: COLORS.surfaceRaised, color: COLORS.text, outline: "none", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.5 }} />
+                <AutoResizeTextarea value={editForm.content} onChange={ev => setEditForm(p => ({ ...p, content: ev.target.value }))} rows={3} />
                 <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
                   <Button small onClick={saveEdit} disabled={!editForm.title.trim() || !editForm.content.trim()}>Save</Button>
                   <Button small variant="ghost" onClick={cancelEdit}>Cancel</Button>
@@ -559,7 +559,7 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, marginBottom: 4 }}>{img.name}</div>
                       {isEditingImg ? <div>
-                        <textarea value={descDraft} onChange={ev => setDescDraft(ev.target.value)} style={{ width: "100%", minHeight: 80, fontSize: 11, fontFamily: mono, padding: 8, background: COLORS.surfaceRaised, color: COLORS.text, border: `1px solid ${COLORS.border}`, borderRadius: 4, resize: "vertical", boxSizing: "border-box" }} />
+                        <AutoResizeTextarea value={descDraft} onChange={ev => setDescDraft(ev.target.value)} rows={3} mono />
                         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                           <Button small onClick={() => saveImageDescription(e.kb_id, i)} disabled={descSaving}>{descSaving ? "Saving..." : "Save"}</Button>
                           <Button small variant="ghost" onClick={() => { setEditingDesc(null); setDescDraft(""); }}>Cancel</Button>
@@ -683,7 +683,7 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
           <div style={{ padding: "0 14px", borderBottom: !isCollapsed ? `1px solid ${COLORS.border}` : "none" }}>
             {editingSubDesc === sub.subsection_id ? (
               <div style={{ padding: "8px 0" }}>
-                <textarea value={subDescDraft} onChange={ev => setSubDescDraft(ev.target.value)} placeholder="Describe what this subsection covers..." autoFocus style={{ width: "100%", fontSize: 12, padding: "6px 8px", borderRadius: 4, border: `1px solid ${COLORS.accent}`, background: COLORS.surfaceRaised, color: COLORS.text, outline: "none", resize: "vertical", minHeight: 48, boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.5 }} />
+                <AutoResizeTextarea value={subDescDraft} onChange={ev => setSubDescDraft(ev.target.value)} placeholder="Describe what this subsection covers..." rows={2} />
                 <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                   <Button small onClick={() => saveSubDesc(sub.subsection_id)}>Save</Button>
                   <Button small variant="ghost" onClick={() => { setEditingSubDesc(null); setSubDescDraft(""); }}>Cancel</Button>

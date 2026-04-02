@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState } from "./shared";
+import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea } from "./shared";
 
 export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const COLORS = useTheme();
@@ -182,9 +182,14 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
             <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
               Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
             </div>
-            <textarea value={importJson} onChange={e => setImportJson(e.target.value)}
+            <AutoResizeTextarea
+              value={importJson}
+              onChange={e => setImportJson(e.target.value)}
               placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "description": { "objective": "...", "scope": "...", "assumptions": [] },\n    "setup": { "preconditions": [], "environment": [], "equipment": [], "testData": [] },\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "reqAttribute": "..."\n  }\n]'}
-              style={{ width: "100%", minHeight: 160, fontFamily: mono, fontSize: 11, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${importError ? COLORS.red : COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", outline: "none", boxSizing: "border-box" }}
+              rows={8}
+              mono
+              error={!!importError}
+              style={{ borderRadius: 6, padding: "10px 12px" }}
             />
             {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
             <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
