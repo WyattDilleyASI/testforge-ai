@@ -158,13 +158,24 @@ router.post("/import-doc", requireAuth, upload.single("file"), (req, res) => {
         });
       }
 
-      // Parse tags (br-separated)
+      // Parse tags (may be <br>-separated or <li> items)
       const tags = [];
       if (fields["Tags"]) {
-        fields["Tags"].text.split(/\n/).forEach(t => {
-          const tag = t.trim();
-          if (tag) tags.push(tag);
-        });
+        const tagsHtml = fields["Tags"].html;
+        const $t = cheerio.load(tagsHtml, { decodeEntities: true });
+        const liItems = $t("li").toArray();
+        if (liItems.length > 0) {
+          liItems.forEach(li => {
+            const tag = $t(li).text().trim();
+            if (tag) tags.push(tag);
+          });
+        } else {
+          const $t2 = cheerio.load(tagsHtml.replace(/<br\s*\/?>/gi, "\n"), { decodeEntities: true });
+          $t2("body").text().split("\n").forEach(t => {
+            const tag = t.trim();
+            if (tag) tags.push(tag);
+          });
+        }
       }
 
       // Parse relationships from second table
