@@ -130,6 +130,10 @@ function buildPrompt(reqId, depth, focuses = [], kbEntryIds = null) {
     .map(f => FOCUS_PROMPTS[f])
     .join("\n\n");
 
+  const adaptiveRules = al.formatRulesForPrompt();
+  const adaptiveExemplars = al.formatExemplarsForPrompt({
+    depth: depth || "standard",
+  });
   const systemPrompt = `You are a senior QA engineer generating software test case drafts in JAMA format. These are starting points for engineer review — not finished test coverage.
 ${product_context ? `\nPRODUCT CONTEXT:\n${product_context}` : ""}
 ${key_terms ? `\nKEY TERMS:\n${key_terms}` : ""}
@@ -150,7 +154,7 @@ ANTI-PATTERNS TO AVOID:
 - Do NOT restate the requirement description as a test step.
 - Do NOT use vague expected results like "system behaves as expected" or "works correctly".
 - Do NOT include setup steps that are already covered in preconditions.
-${focusSections ? `\n${focusSections}` : ""}${exampleSection}`;
+${focusSections ? `\n${focusSections}` : ""}${exampleSection}${adaptiveRules ? `\n\n${adaptiveRules}` : ""}${adaptiveExemplars ? `\n\n${adaptiveExemplars}` : ""}`;
 
   const prompt = `REQUIREMENT:
 - ID: ${requirement.req_id}
