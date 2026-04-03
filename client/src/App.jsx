@@ -25,6 +25,7 @@ import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas
   FogCanvas,
   SunshineCanvas,
   WeatherInfoCard,
+  ClippyCompanion,
  } from "./components/EasterEggs";
 
 // WMO weather code → theme key, split by day / night
@@ -415,6 +416,7 @@ useEffect(() => {
       {activeTheme._thunderstorm && <ThunderstormCanvas />}
       {activeTheme._fog && <FogCanvas />}
       {activeTheme._sunshine && <SunshineCanvas />}
+      {activeTheme._clippy && <ClippyCompanion />}
       {!(activeTheme._starfield || activeTheme._matrixRain || activeTheme._aurora ||
          activeTheme._vaporwave || activeTheme._fireflies || activeTheme._fishTank ||
          activeTheme._hotDogs || hotDogOverlay || activeTheme._rainstorm ||
