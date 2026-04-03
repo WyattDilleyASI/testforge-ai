@@ -70,6 +70,7 @@ export const TestLinkImportView = ({ refresh }) => {
           ...tcToSave,
           title: tcToSave.title + (tlSelected?.externalId ? ` (AG-${tlSelected.externalId})` : ""),
           testlinkRequirements: tlSelected?.requirements || [],
+          enhancedSnapshot: tlEnhanced,
         },
         tlSelected?.externalId
       );

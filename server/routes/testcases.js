@@ -1373,6 +1373,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`;
 // POST /api/testcases/import-xml-confirmed — save a confirmed (possibly enhanced) TC to the DB
 router.post("/import-xml-confirmed", requireAuth, (req, res) => {
   const { testcase, originalExternalId } = req.body;
+  const enhancedSnapshot = testcase?.enhancedSnapshot || null;
   if (!testcase) return res.status(400).json({ error: "testcase is required" });
 
   const db = getTcDb();
@@ -1420,6 +1421,17 @@ router.post("/import-xml-confirmed", requireAuth, (req, res) => {
     JSON.stringify(testcase.testlinkRequirements || []),
     `${req.session.name} (TestLink import)`
   );
+
+  // Save AL snapshot — the raw AI-enhanced version before any user edits
+  if (enhancedSnapshot) {
+    const snapshot = JSON.stringify({
+      title: enhancedSnapshot.title || testcase.title,
+      steps: enhancedSnapshot.steps || [],
+      preconditions: enhancedSnapshot.setup || {},
+      description: enhancedSnapshot.description || {},
+    });
+    db.prepare("UPDATE test_cases SET generated_snapshot = ? WHERE tc_id = ?").run(snapshot, tcId);
+  }
 
   logAudit(req.session.name, "TC_IMPORT_TESTLINK", `TestLink import: ${tcId} — ${testcase.title}`);
   res.json({ tc_id: tcId, title: testcase.title });
