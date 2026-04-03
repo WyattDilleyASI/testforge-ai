@@ -212,15 +212,16 @@ router.post("/generate", requireAuth, async (req, res) => {
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
   const db = getTcDb();
-  const result = buildPrompt(reqId, depth, focuses || [], kbEntryIds || null);
-  if (!result) return res.status(404).json({ error: "Requirement not found" });
-
-  const { prompt, systemPrompt, requirement, allKb, kbImages } = result;
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
 
   try {
+    const result = buildPrompt(reqId, depth, focuses || [], kbEntryIds || null);
+    if (!result) return res.status(404).json({ error: "Requirement not found" });
+
+    const { prompt, systemPrompt, requirement, allKb, kbImages } = result;
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured on server" });
+
     // Build multimodal content: text prompt + any KB images (resized to fit API limits)
     const contentBlocks = [];
     contentBlocks.push({ type: "text", text: prompt });
