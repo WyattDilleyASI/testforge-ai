@@ -96,7 +96,7 @@ The page also includes a complete **MCP Tools Reference** listing all 15 availab
 
 ### Deferred to v2
 
-<img width="2557" height="1281" alt="Deferred" src="https://github.com/user-attachments/assets/550ccffb-5047-4a14-9f29-3d035937c3da" />
+<img width="2558" height="1248" alt="Deferred" src="https://github.com/user-attachments/assets/9daa6a86-e7e9-403e-a02a-bf53dd44131c" />
 
 A transparency page documenting features intentionally scoped out of v1 and planned for v2. Each card shows a DEFERRED badge, feature name, FRD requirement IDs, and a brief explanation of what v1 provides versus what v2 will add. Current deferred items include Confluence KB Import (KB-007) and SSO / External Identity (UM-xxx). This page ensures the FRD is fully traceable even for features not yet implemented.
 
