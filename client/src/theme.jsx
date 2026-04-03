@@ -1331,8 +1331,22 @@ export const THEMES = {
     hover: "rgba(120,144,168,0.06)",
   },
 
-  // ── CLOUDY SKY ───────────────────────────────────────────────────────────
-  // Internal weather sub-theme: partly cloudy / overcast.
+  // ── CLOUDY DAY ───────────────────────────────────────────────────────────
+  // Internal weather sub-theme: overcast during the day (light palette).
+  cloudyDay: {
+    name: "Cloudy Day", emoji: "⛅",
+    _cloudy: true,
+    bg: "#E4EAF0", surface: "#EEF3F8", surfaceRaised: "#FFFFFF",
+    border: "#C4D0DC", text: "#3C4E60", textMuted: "#7888A0",
+    textBright: "#1A2A3A", accent: "#4A78A0", accentDim: "rgba(74,120,160,0.10)",
+    accentGlow: "rgba(74,120,160,0.20)", green: "#3A7860", greenDim: "rgba(58,120,96,0.10)",
+    red: "#A85858", redDim: "rgba(168,88,88,0.10)", amber: "#9A8040",
+    amberDim: "rgba(154,128,64,0.10)", purple: "#7868A0", purpleDim: "rgba(120,104,160,0.10)",
+    hover: "rgba(74,120,160,0.06)",
+  },
+
+  // ── CLOUDY NIGHT ─────────────────────────────────────────────────────────
+  // Internal weather sub-theme: overcast at night (dark palette).
   cloudy: {
     name: "Cloudy", emoji: "☁️",
     _cloudy: true,
@@ -1359,8 +1373,22 @@ export const THEMES = {
     hover: "rgba(80,112,192,0.06)",
   },
 
-  // ── FOG ──────────────────────────────────────────────────────────────────
-  // Internal weather sub-theme: foggy / misty.
+  // ── FOGGY MORNING (day) ──────────────────────────────────────────────────
+  // Internal weather sub-theme: fog during the day (light pale palette).
+  fogDay: {
+    name: "Foggy Morning", emoji: "🌫️",
+    _fog: true,
+    bg: "#E8ECEE", surface: "#F0F4F5", surfaceRaised: "#FFFFFF",
+    border: "#C8D0D4", text: "#485460", textMuted: "#88969E",
+    textBright: "#202C34", accent: "#5A8898", accentDim: "rgba(90,136,152,0.10)",
+    accentGlow: "rgba(90,136,152,0.20)", green: "#4A7868", greenDim: "rgba(74,120,104,0.10)",
+    red: "#986868", redDim: "rgba(152,104,104,0.10)", amber: "#988060",
+    amberDim: "rgba(152,128,96,0.10)", purple: "#786888", purpleDim: "rgba(120,104,136,0.10)",
+    hover: "rgba(90,136,152,0.06)",
+  },
+
+  // ── FOG NIGHT ────────────────────────────────────────────────────────────
+  // Internal weather sub-theme: foggy at night (dark palette).
   fog: {
     name: "Fog", emoji: "🌫️",
     _fog: true,
