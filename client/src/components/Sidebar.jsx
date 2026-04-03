@@ -19,7 +19,7 @@ export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentThem
         <span style={{ fontSize: 20, color: T.accent }}>◈</span>
         <span style={{ fontSize: 15, fontWeight: 700, color: T.textBright }}>TestForge AI</span>
       </div>
-      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.2</div>
+      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.5</div>
     </div>
     <div style={{ padding: "10px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, flexShrink: 0 }} />
