@@ -567,6 +567,7 @@ export const THEMES = {
   // Warm cream base with teal accent, coral red, and sunny yellow highlights.
   sunshineHues: {
     name: "Sunshine Hues", emoji: "🌞",
+    _sunshine: true,
     bg: "#FFFEF5", surface: "#FFFFEA", surfaceRaised: "#FFFFFF",
     border: "#D8D8D8", text: "#4A4A42", textMuted: "#8A8A80",
     textBright: "#1A1A14", accent: "#00CECB", accentDim: "rgba(0,206,203,0.10)",
@@ -1331,6 +1332,90 @@ export const THEMES = {
     hover: "rgba(120,144,168,0.06)",
   },
 
+  // ── CLOUDY DAY ───────────────────────────────────────────────────────────
+  // Internal weather sub-theme: overcast during the day (light palette).
+  cloudyDay: {
+    name: "Cloudy Day", emoji: "⛅",
+    _cloudy: true,
+    bg: "#E4EAF0", surface: "#EEF3F8", surfaceRaised: "#FFFFFF",
+    border: "#C4D0DC", text: "#3C4E60", textMuted: "#7888A0",
+    textBright: "#1A2A3A", accent: "#4A78A0", accentDim: "rgba(74,120,160,0.10)",
+    accentGlow: "rgba(74,120,160,0.20)", green: "#3A7860", greenDim: "rgba(58,120,96,0.10)",
+    red: "#A85858", redDim: "rgba(168,88,88,0.10)", amber: "#9A8040",
+    amberDim: "rgba(154,128,64,0.10)", purple: "#7868A0", purpleDim: "rgba(120,104,160,0.10)",
+    hover: "rgba(74,120,160,0.06)",
+  },
+
+  // ── CLOUDY NIGHT ─────────────────────────────────────────────────────────
+  // Internal weather sub-theme: overcast at night (dark palette).
+  cloudy: {
+    name: "Cloudy", emoji: "☁️",
+    _cloudy: true,
+    bg: "#151A22", surface: "#1C2330", surfaceRaised: "#232C3C",
+    border: "#303D54", text: "#A8B8CC", textMuted: "#6070888",
+    textBright: "#D4E0EE", accent: "#7898C0", accentDim: "rgba(120,152,192,0.14)",
+    accentGlow: "rgba(120,152,192,0.28)", green: "#5AA880", greenDim: "rgba(90,168,128,0.12)",
+    red: "#B07080", redDim: "rgba(176,112,128,0.12)", amber: "#A09060",
+    amberDim: "rgba(160,144,96,0.12)", purple: "#8878A8", purpleDim: "rgba(136,120,168,0.12)",
+    hover: "rgba(120,152,192,0.06)",
+  },
+
+  // ── THUNDERSTORM ─────────────────────────────────────────────────────────
+  // Internal weather sub-theme: thunderstorm.
+  thunderstorm: {
+    name: "Thunderstorm", emoji: "⛈️",
+    _thunderstorm: true,
+    bg: "#07090F", surface: "#0D1018", surfaceRaised: "#131824",
+    border: "#1E2636", text: "#8898B4", textMuted: "#485870",
+    textBright: "#B8C8E4", accent: "#5070C0", accentDim: "rgba(80,112,192,0.14)",
+    accentGlow: "rgba(80,112,192,0.40)", green: "#4898A0", greenDim: "rgba(72,152,160,0.12)",
+    red: "#C06878", redDim: "rgba(192,104,120,0.12)", amber: "#908040",
+    amberDim: "rgba(144,128,64,0.12)", purple: "#7060B0", purpleDim: "rgba(112,96,176,0.12)",
+    hover: "rgba(80,112,192,0.06)",
+  },
+
+  // ── FOGGY MORNING (day) ──────────────────────────────────────────────────
+  // Internal weather sub-theme: fog during the day (light pale palette).
+  fogDay: {
+    name: "Foggy Morning", emoji: "🌫️",
+    _fog: true,
+    bg: "#E8ECEE", surface: "#F0F4F5", surfaceRaised: "#FFFFFF",
+    border: "#C8D0D4", text: "#485460", textMuted: "#88969E",
+    textBright: "#202C34", accent: "#5A8898", accentDim: "rgba(90,136,152,0.10)",
+    accentGlow: "rgba(90,136,152,0.20)", green: "#4A7868", greenDim: "rgba(74,120,104,0.10)",
+    red: "#986868", redDim: "rgba(152,104,104,0.10)", amber: "#988060",
+    amberDim: "rgba(152,128,96,0.10)", purple: "#786888", purpleDim: "rgba(120,104,136,0.10)",
+    hover: "rgba(90,136,152,0.06)",
+  },
+
+  // ── FOG NIGHT ────────────────────────────────────────────────────────────
+  // Internal weather sub-theme: foggy at night (dark palette).
+  fog: {
+    name: "Fog", emoji: "🌫️",
+    _fog: true,
+    bg: "#131618", surface: "#1A1E22", surfaceRaised: "#22262C",
+    border: "#363C44", text: "#909898", textMuted: "#5E6870",
+    textBright: "#C0C8CC", accent: "#7898A0", accentDim: "rgba(120,152,160,0.12)",
+    accentGlow: "rgba(120,152,160,0.22)", green: "#6A9080", greenDim: "rgba(106,144,128,0.12)",
+    red: "#A07878", redDim: "rgba(160,120,120,0.12)", amber: "#908870",
+    amberDim: "rgba(144,136,112,0.12)", purple: "#807898", purpleDim: "rgba(128,120,152,0.12)",
+    hover: "rgba(120,152,160,0.06)",
+  },
+
+  // ── WEATHER ──────────────────────────────────────────────────────────────
+  // Detects local weather and switches to the matching sub-theme + canvas.
+  weather: {
+    name: "Weather", emoji: "🌦️",
+    _weather: true,
+    bg: "#0F1A2E", surface: "#152340", surfaceRaised: "#1A2E55",
+    border: "#2A4A7A", text: "#B0C8E8", textMuted: "#6080A8",
+    textBright: "#E0F0FF", accent: "#60A8E0", accentDim: "rgba(96,168,224,0.14)",
+    accentGlow: "rgba(96,168,224,0.28)", green: "#50C890", greenDim: "rgba(80,200,144,0.12)",
+    red: "#C06868", redDim: "rgba(192,104,104,0.12)", amber: "#C0A848",
+    amberDim: "rgba(192,168,72,0.12)", purple: "#8878C0", purpleDim: "rgba(136,120,192,0.12)",
+    hover: "rgba(96,168,224,0.06)",
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // HIDDEN EASTER EGG THEMES
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1429,6 +1514,7 @@ export const THEME_CATEGORIES = [
       "fireflies", "lavaLamp", "synthwave", "fishTank",
       "audioVisualizer",
       "rainstorm", "starfieldTheme", "campfire", "snowfall", "deepSea", "crt",
+      "weather",
     ],
   },
   {

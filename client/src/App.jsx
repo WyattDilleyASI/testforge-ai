@@ -19,7 +19,37 @@ import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas
   DeepSeaCanvas,
   CRTCanvas,
   AudioVisualizerCanvas,
+  AmbientCanvas,
+  CloudyCanvas,
+  ThunderstormCanvas,
+  FogCanvas,
+  SunshineCanvas,
+  WeatherInfoCard,
  } from "./components/EasterEggs";
+
+// WMO weather code → theme key, split by day / night
+const WMO_TO_THEME_DAY = {
+  0: "sunshineHues",  1: "sunshineHues",
+  2: "cloudyDay",     3: "cloudyDay",
+  45: "fogDay",       48: "fogDay",
+  51: "rainstorm",    53: "rainstorm",    55: "rainstorm",
+  61: "rainstorm",    63: "rainstorm",    65: "rainstorm",
+  71: "snowfall",     73: "snowfall",     75: "snowfall",    77: "snowfall",
+  80: "rainstorm",    81: "rainstorm",    82: "rainstorm",
+  85: "snowfall",     86: "snowfall",
+  95: "thunderstorm", 96: "thunderstorm", 99: "thunderstorm",
+};
+const WMO_TO_THEME_NIGHT = {
+  0: "starfieldTheme", 1: "starfieldTheme",
+  2: "cloudy",         3: "cloudy",
+  45: "fog",           48: "fog",
+  51: "rainstorm",     53: "rainstorm",    55: "rainstorm",
+  61: "rainstorm",     63: "rainstorm",    65: "rainstorm",
+  71: "snowfall",      73: "snowfall",     75: "snowfall",    77: "snowfall",
+  80: "rainstorm",     81: "rainstorm",    82: "rainstorm",
+  85: "snowfall",      86: "snowfall",
+  95: "thunderstorm",  96: "thunderstorm", 99: "thunderstorm",
+};
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 
@@ -70,7 +100,49 @@ export default function App() {
   const [kbEntries, setKbEntries] = useState([]);
   const [tokenUsage, setTokenUsage] = useState(null);
 
-  const activeTheme = THEMES[themeName] || THEMES.midnight;
+  const [weatherData, setWeatherData] = useState(null);
+
+  useEffect(() => {
+    if (themeName !== "weather") { setWeatherData(null); return; }
+    let cancelled = false;
+    const fetchWeather = async (lat, lon) => {
+      try {
+        const [wRes, gRes] = await Promise.all([
+          fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m,is_day&timezone=auto&temperature_unit=fahrenheit`),
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, { headers: { "User-Agent": "TestForgeAI/1.0" } }),
+        ]);
+        const wData = await wRes.json();
+        const gData = await gRes.json();
+        if (!cancelled) {
+          const addr = gData.address || {};
+          setWeatherData({
+            code: wData.current?.weather_code ?? 0,
+            isDay: wData.current?.is_day !== 0,
+            temp: wData.current?.temperature_2m,
+            city: addr.city || addr.town || addr.village || addr.county || "",
+            state: addr.state_code || addr.state || "",
+          });
+        }
+      } catch {
+        if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+      }
+    };
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+        () => { if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" }); },
+        { timeout: 8000 }
+      );
+    } else {
+      setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+    }
+    return () => { cancelled = true; };
+  }, [themeName]);
+
+  const resolvedThemeName = themeName === "weather" && weatherData
+    ? ((weatherData.isDay ? WMO_TO_THEME_DAY : WMO_TO_THEME_NIGHT)[weatherData.code] ?? (weatherData.isDay ? "sunshineHues" : "starfieldTheme"))
+    : themeName;
+  const activeTheme = THEMES[resolvedThemeName] || THEMES[themeName] || THEMES.midnight;
 
   const [easterEggToast, setEasterEggToast] = useState(null);
   const [preEasterEggTheme, setPreEasterEggTheme] = useState(null);
@@ -326,6 +398,18 @@ useEffect(() => {
       {activeTheme._deepSea && <DeepSeaCanvas />}
       {activeTheme._crt && <CRTCanvas />}
       {activeTheme._audioVisualizer && <AudioVisualizerCanvas />}
+      {activeTheme._cloudy && <CloudyCanvas />}
+      {activeTheme._thunderstorm && <ThunderstormCanvas />}
+      {activeTheme._fog && <FogCanvas />}
+      {activeTheme._sunshine && <SunshineCanvas />}
+      {!(activeTheme._starfield || activeTheme._matrixRain || activeTheme._aurora ||
+         activeTheme._vaporwave || activeTheme._fireflies || activeTheme._fishTank ||
+         activeTheme._hotDogs || hotDogOverlay || activeTheme._rainstorm ||
+         activeTheme._starfieldTheme || activeTheme._campfire || activeTheme._snowfall ||
+         activeTheme._deepSea || activeTheme._crt || activeTheme._audioVisualizer ||
+         activeTheme._cloudy || activeTheme._thunderstorm || activeTheme._fog ||
+         activeTheme._sunshine) && <AmbientCanvas />}
+      {themeName === "weather" && <WeatherInfoCard weatherData={weatherData} />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");
