@@ -52,7 +52,7 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage }
     {tokenUsage && <div style={{ marginBottom: 24 }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Claude API Usage</div>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <Stat label="Tokens Used" value={tokenUsage.total_tokens.toLocaleString()} color="accent" sub={`${tokenUsage.input_tokens.toLocaleString()} in · ${tokenUsage.output_tokens.toLocaleString()} out`} />
+        <Stat label="Est. Cost" value={`$${(tokenUsage.cost_usd || 0).toFixed(4)}`} color="accent" sub={`${tokenUsage.total_tokens.toLocaleString()} tokens · ${tokenUsage.input_tokens.toLocaleString()} in · ${tokenUsage.output_tokens.toLocaleString()} out`} />
         <Stat label="API Calls" value={tokenUsage.call_count} color="accent" sub="TC generation requests" />
         {tokenUsage.budget !== null
           ? <Stat label="Remaining Budget" value={tokenUsage.remaining.toLocaleString()} color={tokenUsage.remaining < tokenUsage.budget * 0.1 ? "red" : tokenUsage.remaining < tokenUsage.budget * 0.25 ? "amber" : "green"} sub={`of ${tokenUsage.budget.toLocaleString()} token budget`} />

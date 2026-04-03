@@ -642,17 +642,36 @@ router.get("/audit", requireRole("Admin"), (req, res) => {
 
 // ─── TOKEN USAGE ─────────────────────────────────────────────────────────────
 
+// Pricing per 1M tokens (USD) — update if model changes
+const MODEL_PRICING = {
+  "claude-opus-4-6":              { input: 15.00, output: 75.00 },
+  "claude-sonnet-4-6":            { input:  3.00, output: 15.00 },
+  "claude-sonnet-4-20250514":     { input:  3.00, output: 15.00 },
+  "claude-haiku-4-5-20251001":    { input:  0.80, output:  4.00 },
+};
+const DEFAULT_PRICING = { input: 3.00, output: 15.00 }; // sonnet fallback
+
+function computeCost(inputTokens, outputTokens) {
+  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
+  const pricing = MODEL_PRICING[model] || DEFAULT_PRICING;
+  return (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
+}
+
 // GET /api/usage/tokens
 router.get("/usage/tokens", requireAuth, (req, res) => {
   const db = getDb();
   const row = db.prepare("SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, COUNT(*) as call_count FROM token_usage").get();
   const budget = process.env.TOKEN_BUDGET ? parseInt(process.env.TOKEN_BUDGET) : null;
-  const totalTokens = (row.total_input || 0) + (row.total_output || 0);
+  const inputTokens = row.total_input || 0;
+  const outputTokens = row.total_output || 0;
+  const totalTokens = inputTokens + outputTokens;
+  const costUsd = computeCost(inputTokens, outputTokens);
   res.json({
-    input_tokens: row.total_input || 0,
-    output_tokens: row.total_output || 0,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
     total_tokens: totalTokens,
     call_count: row.call_count || 0,
+    cost_usd: costUsd,
     budget: budget,
     remaining: budget !== null ? Math.max(0, budget - totalTokens) : null,
   });
