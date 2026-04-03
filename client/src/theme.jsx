@@ -589,6 +589,211 @@ export const THEMES = {
     hover: "rgba(246,183,42,0.06)",
   },
 
+  // ── ROSEWOOD ─────────────────────────────────────────────────────────────
+  rosewood: {
+    name: "Rosewood", emoji: "🪵",
+    bg: "#1C0F0F", surface: "#261616", surfaceRaised: "#321E1E",
+    border: "#5A3333", text: "#D4B0A8", textMuted: "#9A6E64",
+    textBright: "#F2DDD8", accent: "#C8564A", accentDim: "rgba(200,86,74,0.14)",
+    accentGlow: "rgba(200,86,74,0.28)", green: "#8AB87A", greenDim: "rgba(138,184,122,0.12)",
+    red: "#D45A4A", redDim: "rgba(212,90,74,0.12)", amber: "#D4A06A",
+    amberDim: "rgba(212,160,106,0.12)", purple: "#A87890", purpleDim: "rgba(168,120,144,0.12)",
+    hover: "rgba(200,86,74,0.06)",
+  },
+
+  // ── TERRACOTTA ───────────────────────────────────────────────────────────
+  terracotta: {
+    name: "Terracotta", emoji: "🏜️",
+    bg: "#1E1410", surface: "#2A1C16", surfaceRaised: "#36241C",
+    border: "#6B4A38", text: "#D8C0AA", textMuted: "#A08068",
+    textBright: "#F5E6D8", accent: "#D47B4A", accentDim: "rgba(212,123,74,0.14)",
+    accentGlow: "rgba(212,123,74,0.28)", green: "#8AAA6E", greenDim: "rgba(138,170,110,0.12)",
+    red: "#C85A46", redDim: "rgba(200,90,70,0.12)", amber: "#D4A84A",
+    amberDim: "rgba(212,168,74,0.12)", purple: "#A87898", purpleDim: "rgba(168,120,152,0.12)",
+    hover: "rgba(212,123,74,0.06)",
+  },
+
+  // ── ICE ──────────────────────────────────────────────────────────────────
+  ice: {
+    name: "Ice", emoji: "🧊",
+    bg: "#EDF4F8", surface: "#F4F9FC", surfaceRaised: "#FFFFFF",
+    border: "#C4D8E8", text: "#3A5568", textMuted: "#7A9AB0",
+    textBright: "#1A2E3E", accent: "#3A8EC0", accentDim: "rgba(58,142,192,0.10)",
+    accentGlow: "rgba(58,142,192,0.20)", green: "#4A9A7A", greenDim: "rgba(74,154,122,0.10)",
+    red: "#C85464", redDim: "rgba(200,84,100,0.10)", amber: "#A08A3A",
+    amberDim: "rgba(160,138,58,0.10)", purple: "#7868A8", purpleDim: "rgba(120,104,168,0.10)",
+    hover: "rgba(58,142,192,0.06)",
+  },
+
+  // ── HONEYCOMB ────────────────────────────────────────────────────────────
+  honeycomb: {
+    name: "Honeycomb", emoji: "🍯",
+    bg: "#1A1408", surface: "#241C0E", surfaceRaised: "#2E2414",
+    border: "#5A4A28", text: "#D8C898", textMuted: "#A0885A",
+    textBright: "#F5E8C8", accent: "#D4A020", accentDim: "rgba(212,160,32,0.14)",
+    accentGlow: "rgba(212,160,32,0.28)", green: "#8AAA48", greenDim: "rgba(138,170,72,0.12)",
+    red: "#C86040", redDim: "rgba(200,96,64,0.12)", amber: "#E8B830",
+    amberDim: "rgba(232,184,48,0.12)", purple: "#A8884A", purpleDim: "rgba(168,136,74,0.12)",
+    hover: "rgba(212,160,32,0.06)",
+  },
+
+  // ── SLATE BLUE ───────────────────────────────────────────────────────────
+  slateBlue: {
+    name: "Slate Blue", emoji: "🌊",
+    bg: "#141820", surface: "#1A2028", surfaceRaised: "#202830",
+    border: "#384858", text: "#A8B8C8", textMuted: "#687888",
+    textBright: "#E0E8F0", accent: "#4A98B8", accentDim: "rgba(74,152,184,0.12)",
+    accentGlow: "rgba(74,152,184,0.25)", green: "#5AA888", greenDim: "rgba(90,168,136,0.12)",
+    red: "#C86868", redDim: "rgba(200,104,104,0.12)", amber: "#B8A058",
+    amberDim: "rgba(184,160,88,0.12)", purple: "#8878A8", purpleDim: "rgba(136,120,168,0.12)",
+    hover: "rgba(74,152,184,0.06)",
+  },
+
+  // ── OBSIDIAN ─────────────────────────────────────────────────────────────
+  obsidian: {
+    name: "Obsidian", emoji: "🖤",
+    bg: "#080808", surface: "#101010", surfaceRaised: "#181818",
+    border: "#2A2A2A", text: "#B0B0B0", textMuted: "#606060",
+    textBright: "#F0F0F0", accent: "#C83050", accentDim: "rgba(200,48,80,0.14)",
+    accentGlow: "rgba(200,48,80,0.28)", green: "#50A868", greenDim: "rgba(80,168,104,0.12)",
+    red: "#D04050", redDim: "rgba(208,64,80,0.12)", amber: "#C8A838",
+    amberDim: "rgba(200,168,56,0.12)", purple: "#8860B8", purpleDim: "rgba(136,96,184,0.12)",
+    hover: "rgba(200,48,80,0.06)",
+  },
+
+  // ── SAKURA ───────────────────────────────────────────────────────────────
+  sakura: {
+    name: "Sakura", emoji: "🌸",
+    bg: "#FDF6F8", surface: "#FFF0F4", surfaceRaised: "#FFFFFF",
+    border: "#E8C8D4", text: "#5A3A48", textMuted: "#A87890",
+    textBright: "#2E1A24", accent: "#D06888", accentDim: "rgba(208,104,136,0.10)",
+    accentGlow: "rgba(208,104,136,0.20)", green: "#6AA880", greenDim: "rgba(106,168,128,0.10)",
+    red: "#D05868", redDim: "rgba(208,88,104,0.10)", amber: "#C8A050",
+    amberDim: "rgba(200,160,80,0.10)", purple: "#9868B8", purpleDim: "rgba(152,104,184,0.10)",
+    hover: "rgba(208,104,136,0.06)",
+  },
+
+  // ── MILITARY ─────────────────────────────────────────────────────────────
+  military: {
+    name: "Military", emoji: "🎖️",
+    bg: "#12140E", surface: "#1A1C14", surfaceRaised: "#22241A",
+    border: "#3A3E2E", text: "#A8AA8E", textMuted: "#6A6E52",
+    textBright: "#D8DAC0", accent: "#7A8A3A", accentDim: "rgba(122,138,58,0.14)",
+    accentGlow: "rgba(122,138,58,0.28)", green: "#6A9A3A", greenDim: "rgba(106,154,58,0.12)",
+    red: "#AA5040", redDim: "rgba(170,80,64,0.12)", amber: "#B8A040",
+    amberDim: "rgba(184,160,64,0.12)", purple: "#7A6A8A", purpleDim: "rgba(122,106,138,0.12)",
+    hover: "rgba(122,138,58,0.06)",
+  },
+
+  // ── BLUEPRINT ────────────────────────────────────────────────────────────
+  blueprint: {
+    name: "Blueprint", emoji: "📐",
+    _blueprint: true,
+    bg: "#0A2A4A", surface: "#0E3258", surfaceRaised: "#123A66",
+    border: "#2A6090", text: "#B0D0E8", textMuted: "#6A98B8",
+    textBright: "#E8F4FF", accent: "#F0F0F0", accentDim: "rgba(240,240,240,0.12)",
+    accentGlow: "rgba(240,240,240,0.20)", green: "#60C090", greenDim: "rgba(96,192,144,0.12)",
+    red: "#E87070", redDim: "rgba(232,112,112,0.12)", amber: "#E8D070",
+    amberDim: "rgba(232,208,112,0.12)", purple: "#A0A0E0", purpleDim: "rgba(160,160,224,0.12)",
+    hover: "rgba(240,240,240,0.06)",
+  },
+
+  // ── NEWSPAPER ────────────────────────────────────────────────────────────
+  newspaper: {
+    name: "Newspaper", emoji: "📰",
+    _newspaper: true,
+    bg: "#F0E8D8", surface: "#F5EDE0", surfaceRaised: "#FAF4EA",
+    border: "#C8B898", text: "#2A2418", textMuted: "#7A6E58",
+    textBright: "#1A1408", accent: "#8A4A2A", accentDim: "rgba(138,74,42,0.10)",
+    accentGlow: "rgba(138,74,42,0.18)", green: "#4A6A3A", greenDim: "rgba(74,106,58,0.10)",
+    red: "#8A3030", redDim: "rgba(138,48,48,0.10)", amber: "#8A6A20",
+    amberDim: "rgba(138,106,32,0.10)", purple: "#5A4A6A", purpleDim: "rgba(90,74,106,0.10)",
+    hover: "rgba(138,74,42,0.06)",
+  },
+
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // CANVAS-ANIMATED THEMES (need canvas components in EasterEggs.jsx)
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // ── RAINSTORM ────────────────────────────────────────────────────────────
+  rainstorm: {
+    name: "Rainstorm", emoji: "🌧️",
+    _rainstorm: true,
+    bg: "#0C1018", surface: "#121820", surfaceRaised: "#1A2028",
+    border: "#2A3848", text: "#90A0B8", textMuted: "#5A6A80",
+    textBright: "#C8D8E8", accent: "#5088B8", accentDim: "rgba(80,136,184,0.14)",
+    accentGlow: "rgba(80,136,184,0.28)", green: "#4A9878", greenDim: "rgba(74,152,120,0.12)",
+    red: "#B86060", redDim: "rgba(184,96,96,0.12)", amber: "#A8985A",
+    amberDim: "rgba(168,152,90,0.12)", purple: "#7868A0", purpleDim: "rgba(120,104,160,0.12)",
+    hover: "rgba(80,136,184,0.06)",
+  },
+
+  // ── STARFIELD (visible version) ──────────────────────────────────────────
+  starfieldTheme: {
+    name: "Starfield", emoji: "🚀",
+    _starfieldTheme: true,
+    bg: "#020208", surface: "#0A0A14", surfaceRaised: "#12121E",
+    border: "#222238", text: "#A0A0C0", textMuted: "#5A5A78",
+    textBright: "#E0E0F8", accent: "#6A8AE8", accentDim: "rgba(106,138,232,0.14)",
+    accentGlow: "rgba(106,138,232,0.28)", green: "#50C878", greenDim: "rgba(80,200,120,0.12)",
+    red: "#E06868", redDim: "rgba(224,104,104,0.12)", amber: "#C8B848",
+    amberDim: "rgba(200,184,72,0.12)", purple: "#9878D0", purpleDim: "rgba(152,120,208,0.12)",
+    hover: "rgba(106,138,232,0.06)",
+  },
+
+  // ── CAMPFIRE ─────────────────────────────────────────────────────────────
+  campfire: {
+    name: "Campfire", emoji: "🔥",
+    _campfire: true,
+    bg: "#0E0A08", surface: "#181210", surfaceRaised: "#221A16",
+    border: "#3A2A20", text: "#C8B098", textMuted: "#8A7460",
+    textBright: "#F0DCC8", accent: "#E88830", accentDim: "rgba(232,136,48,0.14)",
+    accentGlow: "rgba(232,136,48,0.28)", green: "#8AB068", greenDim: "rgba(138,176,104,0.12)",
+    red: "#D85840", redDim: "rgba(216,88,64,0.12)", amber: "#E8B830",
+    amberDim: "rgba(232,184,48,0.12)", purple: "#A07858", purpleDim: "rgba(160,120,88,0.12)",
+    hover: "rgba(232,136,48,0.06)",
+  },
+
+  // ── SNOWFALL ─────────────────────────────────────────────────────────────
+  snowfall: {
+    name: "Snowfall", emoji: "❄️",
+    _snowfall: true,
+    bg: "#101828", surface: "#182030", surfaceRaised: "#202838",
+    border: "#304058", text: "#B0C0D8", textMuted: "#6880A0",
+    textBright: "#E8F0FF", accent: "#78B8E8", accentDim: "rgba(120,184,232,0.14)",
+    accentGlow: "rgba(120,184,232,0.28)", green: "#68B898", greenDim: "rgba(104,184,152,0.12)",
+    red: "#D07070", redDim: "rgba(208,112,112,0.12)", amber: "#C8B868",
+    amberDim: "rgba(200,184,104,0.12)", purple: "#9080C0", purpleDim: "rgba(144,128,192,0.12)",
+    hover: "rgba(120,184,232,0.06)",
+  },
+
+  // ── DEEP SEA ─────────────────────────────────────────────────────────────
+  deepSea: {
+    name: "Deep Sea", emoji: "🐙",
+    _deepSea: true,
+    bg: "#020810", surface: "#061018", surfaceRaised: "#0A1820",
+    border: "#1A3040", text: "#7098B0", textMuted: "#406878",
+    textBright: "#B0D8F0", accent: "#2090B0", accentDim: "rgba(32,144,176,0.14)",
+    accentGlow: "rgba(32,144,176,0.28)", green: "#30A888", greenDim: "rgba(48,168,136,0.12)",
+    red: "#B06070", redDim: "rgba(176,96,112,0.12)", amber: "#90A050",
+    amberDim: "rgba(144,160,80,0.12)", purple: "#6868A8", purpleDim: "rgba(104,104,168,0.12)",
+    hover: "rgba(32,144,176,0.06)",
+  },
+
+  // ── CRT MONITOR ──────────────────────────────────────────────────────────
+  crt: {
+    name: "CRT Monitor", emoji: "🖥️",
+    _crt: true,
+    bg: "#0A0C08", surface: "#10120E", surfaceRaised: "#181A14",
+    border: "#2A2E22", text: "#33FF33", textMuted: "#1A8A1A",
+    textBright: "#66FF66", accent: "#33FF33", accentDim: "rgba(51,255,51,0.14)",
+    accentGlow: "rgba(51,255,51,0.30)", green: "#33FF33", greenDim: "rgba(51,255,51,0.12)",
+    red: "#FF3333", redDim: "rgba(255,51,51,0.12)", amber: "#FFCC00",
+    amberDim: "rgba(255,204,0,0.12)", purple: "#33FF99", purpleDim: "rgba(51,255,153,0.12)",
+    hover: "rgba(51,255,51,0.08)",
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // HIDDEN EASTER EGG THEMES
   // ═══════════════════════════════════════════════════════════════════════════
@@ -651,6 +856,8 @@ export const THEME_CATEGORIES = [
       "dracula", "monochrome", "nautical",
       "rosePine", "gruvboxDark", "tokyoNight", "monokai", "cobalt", "copper",
       "emeraldOps",
+      // ── New ──
+      "rosewood", "slateBlue", "obsidian", "military",
     ],
   },
   {
@@ -658,6 +865,8 @@ export const THEME_CATEGORIES = [
     keys: [
       "light", "cherry", "lavender", "frutigerAero", "windowsXP", "pastel",
       "solarizedLight", "gruvboxLight", "paper", "sunshineHues",
+      // ── New ──
+      "ice", "sakura",
     ],
   },
   {
@@ -666,6 +875,8 @@ export const THEME_CATEGORIES = [
       "forest", "ocean", "sunset", "retro", "cyberpunk",
       "neonMint", "wacky", "eyebleed", "hotDog",
       "urgentPumpkin", "scoobyDoo",
+      // ── New ──
+      "terracotta", "honeycomb", "blueprint", "newspaper",
     ],
   },
   {
@@ -674,6 +885,8 @@ export const THEME_CATEGORIES = [
       "chromawave", "hyperdrive", "aurora", "vaporwave",
       "fireflies", "lavaLamp", "synthwave", "fishTank",
       "audioVisualizer",
+      // ── New ──
+      "rainstorm", "starfieldTheme", "campfire", "snowfall", "deepSea", "crt",
     ],
   },
   {

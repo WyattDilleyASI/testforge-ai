@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTheme, font, mono } from "../theme";
 
 export const EasterEggToast = ({ message, onDone }) => {
@@ -961,6 +961,104 @@ export const HotDogCanvas = () => {
       cancelAnimationFrame(animId);
     };
   }, []);
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+// ── RAINSTORM ────────────────────────────────────────────────────────────────
+// Diagonal rain streaks with occasional lightning flashes.
+
+export const RainstormCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+    let lightningTimer = 0;
+    let lightningAlpha = 0;
+
+    const drops = [];
+    const DROP_COUNT = 280;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    // Initialize raindrops
+    for (let i = 0; i < DROP_COUNT; i++) {
+      drops.push({
+        x: Math.random() * canvas.width * 1.4 - canvas.width * 0.2,
+        y: Math.random() * canvas.height,
+        len: 12 + Math.random() * 24,
+        speed: 8 + Math.random() * 10,
+        opacity: 0.08 + Math.random() * 0.16,
+        wind: 2 + Math.random() * 2,
+      });
+    }
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // ── Lightning flash ──
+      lightningTimer++;
+      if (lightningTimer > 400 + Math.random() * 600) {
+        lightningAlpha = 0.15 + Math.random() * 0.12;
+        lightningTimer = 0;
+      }
+      if (lightningAlpha > 0) {
+        ctx.fillStyle = `rgba(200,210,230,${lightningAlpha})`;
+        ctx.fillRect(0, 0, W, H);
+        lightningAlpha *= 0.88;
+        if (lightningAlpha < 0.005) lightningAlpha = 0;
+      }
+
+      // ── Rain streaks ──
+      ctx.lineCap = "round";
+      for (const d of drops) {
+        d.y += d.speed;
+        d.x += d.wind;
+
+        if (d.y > H) {
+          d.y = -d.len;
+          d.x = Math.random() * W * 1.4 - W * 0.2;
+        }
+
+        ctx.strokeStyle = `rgba(140,170,210,${d.opacity})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x + d.wind * 1.5, d.y + d.len);
+        ctx.stroke();
+      }
+
+      // ── Subtle mist at bottom ──
+      const mistGrad = ctx.createLinearGradient(0, H * 0.85, 0, H);
+      mistGrad.addColorStop(0, "rgba(80,100,130,0)");
+      mistGrad.addColorStop(1, `rgba(80,100,130,${0.04 + Math.sin(time * 0.008) * 0.02})`);
+      ctx.fillStyle = mistGrad;
+      ctx.fillRect(0, H * 0.85, W, H * 0.15);
+
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
 
   return (
     <canvas
@@ -970,5 +1068,1080 @@ export const HotDogCanvas = () => {
         zIndex: 0, pointerEvents: "none",
       }}
     />
+  );
+};
+
+
+// ── STARFIELD (PARALLAX) ─────────────────────────────────────────────────────
+// Slow-drifting multi-layer parallax stars. Distinct from the easter-egg
+// "After Dark" warp-speed starfield — this one is calm and ambient.
+
+export const StarfieldParallaxCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+
+    const LAYER_COUNT = 3;
+    const layers = [];
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      // Reinit layers on resize
+      layers.length = 0;
+      for (let l = 0; l < LAYER_COUNT; l++) {
+        const count = 60 + l * 40;
+        const stars = [];
+        for (let i = 0; i < count; i++) {
+          stars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            r: 0.4 + (LAYER_COUNT - l) * 0.5 + Math.random() * 0.4,
+            twinkle: Math.random() * Math.PI * 2,
+            twinkleSpeed: 0.005 + Math.random() * 0.015,
+          });
+        }
+        layers.push({ stars, speed: 0.05 + l * 0.08 });
+      }
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      for (const layer of layers) {
+        for (const s of layer.stars) {
+          s.x -= layer.speed;
+          s.twinkle += s.twinkleSpeed;
+          if (s.x < -2) s.x = W + 2;
+
+          const alpha = 0.4 + Math.sin(s.twinkle) * 0.35;
+          ctx.fillStyle = `rgba(200,210,240,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+
+// ── CAMPFIRE ─────────────────────────────────────────────────────────────────
+// Wide campfire with organic, irregularly-spaced flames rising directly from
+// a broad coal bed. Flames overlap and merge for a natural look.
+
+export const CampfireCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+
+    const embers = [];
+    const EMBER_COUNT = 80;
+    const smokeParticles = [];
+    const SMOKE_COUNT = 22;
+    const flameRoots = [];
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const getGeo = () => {
+      const W = canvas.width, H = canvas.height;
+      const cx = W * 0.5;
+      const baseY = H - 55;
+      const bedW = Math.min(W * 0.40, 520);
+      return { cx, baseY, bedW, W, H };
+    };
+
+    // ── Flame roots — irregularly clustered along the bed ──
+    // Uses rejection sampling to create natural-looking clusters
+    const initFlameRoots = () => {
+      flameRoots.length = 0;
+
+      // Cluster centers (random, biased toward center)
+      const clusterCount = 2 + Math.floor(Math.random() * 2); // 2-3 clusters
+      const clusters = [];
+      for (let c = 0; c < clusterCount; c++) {
+        // Gaussian-ish bias toward center
+        const pos = (Math.random() + Math.random() + Math.random()) / 3 - 0.5; // -0.5 to 0.5, center-biased
+        clusters.push({ pos, spread: 0.08 + Math.random() * 0.12 });
+      }
+
+      // Generate 9-12 flame roots clustered around those centers
+      const count = 9 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < count; i++) {
+        // Pick a random cluster or place independently
+        let pos;
+        if (Math.random() < 0.75 && clusters.length > 0) {
+          const cl = clusters[Math.floor(Math.random() * clusters.length)];
+          pos = cl.pos + (Math.random() - 0.5) * cl.spread * 2;
+        } else {
+          pos = (Math.random() - 0.5) * 0.85;
+        }
+        pos = Math.max(-0.45, Math.min(0.45, pos));
+
+        // Distance from center affects max height
+        const distFromCenter = Math.abs(pos);
+        const centerBias = 1.0 - distFromCenter * 1.1;
+
+        flameRoots.push({
+          pos,
+          phaseA: Math.random() * Math.PI * 2,
+          phaseB: Math.random() * Math.PI * 2,
+          phaseC: Math.random() * Math.PI * 2,
+          speedA: 0.04 + Math.random() * 0.05,
+          speedB: 0.07 + Math.random() * 0.07,
+          speedC: 0.025 + Math.random() * 0.035,
+          maxH: (0.5 + Math.random() * 0.5) * Math.max(0.25, centerBias),
+          maxW: (0.6 + Math.random() * 0.4) * Math.max(0.35, centerBias),
+          // Slight vertical offset so roots sit at different depths in the coals
+          yOffset: (Math.random() - 0.5) * 8,
+        });
+      }
+    };
+    initFlameRoots();
+
+    const spawnEmber = (W, H) => {
+      const g = getGeo();
+      return {
+        x: g.cx + (Math.random() - 0.5) * g.bedW * 0.8,
+        y: g.baseY - 10 - Math.random() * 50,
+        vx: (Math.random() - 0.5) * 0.9,
+        vy: -(0.7 + Math.random() * 1.8),
+        r: 1 + Math.random() * 3,
+        life: 1.0,
+        decay: 0.0015 + Math.random() * 0.003,
+        hue: 10 + Math.random() * 35,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: 0.02 + Math.random() * 0.03,
+      };
+    };
+
+    const spawnSmoke = (W, H) => {
+      const g = getGeo();
+      return {
+        x: g.cx + (Math.random() - 0.5) * g.bedW * 0.5,
+        y: g.baseY - 130 - Math.random() * 50,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: -(0.2 + Math.random() * 0.5),
+        r: 10 + Math.random() * 18,
+        life: 1.0,
+        decay: 0.003 + Math.random() * 0.004,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: 0.008 + Math.random() * 0.012,
+      };
+    };
+
+    for (let i = 0; i < EMBER_COUNT; i++) {
+      const e = spawnEmber(canvas.width, canvas.height);
+      e.y = canvas.height * 0.15 + Math.random() * canvas.height * 0.65;
+      e.life = Math.random();
+      embers.push(e);
+    }
+    for (let i = 0; i < SMOKE_COUNT; i++) {
+      const s = spawnSmoke(canvas.width, canvas.height);
+      s.y = canvas.height * 0.05 + Math.random() * canvas.height * 0.4;
+      s.life = Math.random();
+      smokeParticles.push(s);
+    }
+
+    // ── Draw flame tongue (bezier, origin sinks into coal bed) ──
+    const drawFlame = (cx, baseY, w, h, sway, tipSway, color) => {
+      ctx.beginPath();
+      ctx.moveTo(cx - w / 2, baseY);
+      ctx.bezierCurveTo(
+        cx - w * 0.55 + sway * 0.15, baseY - h * 0.22,
+        cx - w * 0.25 + sway * 0.45, baseY - h * 0.62,
+        cx + tipSway, baseY - h
+      );
+      ctx.bezierCurveTo(
+        cx + w * 0.25 + sway * 0.45, baseY - h * 0.62,
+        cx + w * 0.55 + sway * 0.15, baseY - h * 0.22,
+        cx + w / 2, baseY
+      );
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    };
+
+    // ── Draw log ──
+    const drawLog = (x, y, length, thickness, angle, glowPhase) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+
+      const lg = ctx.createLinearGradient(0, -thickness, 0, thickness);
+      lg.addColorStop(0, "#5C3316");
+      lg.addColorStop(0.35, "#3E200C");
+      lg.addColorStop(0.7, "#321A0A");
+      lg.addColorStop(1, "#261208");
+      ctx.fillStyle = lg;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, length / 2, thickness, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bark
+      ctx.strokeStyle = "rgba(80,45,15,0.3)";
+      ctx.lineWidth = 0.8;
+      for (let i = -3; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * (length / 8), -thickness * 0.6);
+        ctx.lineTo(i * (length / 8) + 2, thickness * 0.6);
+        ctx.stroke();
+      }
+
+      // End
+      ctx.fillStyle = "#4A2810";
+      ctx.beginPath();
+      ctx.ellipse(length / 2 - 2, 0, thickness * 0.85, thickness, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Glow on log
+      const ga = 0.18 + Math.sin(glowPhase) * 0.12;
+      const eg = ctx.createRadialGradient(-length * 0.1, 0, 0, -length * 0.1, 0, length * 0.2);
+      eg.addColorStop(0, `rgba(255,100,20,${ga})`);
+      eg.addColorStop(0.6, `rgba(200,50,5,${ga * 0.3})`);
+      eg.addColorStop(1, "rgba(150,30,0,0)");
+      ctx.fillStyle = eg;
+      ctx.beginPath();
+      ctx.ellipse(-length * 0.1, 0, length * 0.2, thickness * 1.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    };
+
+    const draw = () => {
+      const { cx, baseY, bedW, W, H } = getGeo();
+      ctx.clearRect(0, 0, W, H);
+
+      const n1 = Math.sin(time * 0.07) * 0.15 + Math.sin(time * 0.13) * 0.1;
+      const n2 = Math.cos(time * 0.09) * 0.12 + Math.sin(time * 0.17 + 1) * 0.08;
+      const n3 = Math.sin(time * 0.11 + 2) * 0.1 + Math.cos(time * 0.06) * 0.1;
+      const pulse = 1.0 + n1 * 0.2;
+
+      // ── Wide ground light pool ──
+      const gg = ctx.createRadialGradient(cx, baseY + 10, 20, cx, baseY + 10, bedW * 1.2);
+      const ga = 0.06 * pulse;
+      gg.addColorStop(0, `rgba(255,130,30,${ga * 2})`);
+      gg.addColorStop(0.25, `rgba(240,90,15,${ga * 1.2})`);
+      gg.addColorStop(0.55, `rgba(180,50,5,${ga * 0.4})`);
+      gg.addColorStop(1, "rgba(80,20,0,0)");
+      ctx.fillStyle = gg;
+      ctx.fillRect(0, 0, W, H);
+
+      // ── Upward light wash ──
+      const ug = ctx.createRadialGradient(cx, baseY - 80, 30, cx, baseY - 80, H * 0.45);
+      ug.addColorStop(0, `rgba(255,140,40,${0.035 * pulse})`);
+      ug.addColorStop(0.4, `rgba(200,70,10,${0.015 * pulse})`);
+      ug.addColorStop(1, "rgba(100,30,0,0)");
+      ctx.fillStyle = ug;
+      ctx.fillRect(0, 0, W, H);
+
+      // ── Logs (behind coal bed, partially buried) ──
+      drawLog(cx - bedW * 0.25, baseY + 14, bedW * 0.48, 9, -0.22, time * 0.06 + 1);
+      drawLog(cx + bedW * 0.2, baseY + 15, bedW * 0.52, 10, 0.28, time * 0.06);
+      drawLog(cx + bedW * 0.04, baseY + 19, bedW * 0.36, 7, -0.06, time * 0.08 + 2);
+      drawLog(cx - bedW * 0.36, baseY + 8, bedW * 0.22, 6, -0.38, time * 0.07 + 3);
+      drawLog(cx + bedW * 0.38, baseY + 10, bedW * 0.2, 6, 0.33, time * 0.07 + 4);
+
+      // ── Coal bed (drawn OVER logs so flames come from the coals) ──
+      // Dark ash base
+      ctx.fillStyle = "rgba(25,10,3,0.75)";
+      ctx.beginPath();
+      ctx.ellipse(cx, baseY + 8, bedW / 2 + 12, 24, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Individual coals
+      for (let i = 0; i < 35; i++) {
+        const ct = (Math.random() - 0.5) * 0.92;
+        const cxP = cx + ct * bedW;
+        // Coals distributed in the oval
+        const maxYSpread = Math.sqrt(1 - (ct / 0.5) * (ct / 0.5)) * 16;
+        const cyP = baseY + 6 + (Math.random() - 0.5) * maxYSpread;
+        const cr = 3 + Math.random() * 7;
+        const cAng = Math.random() * Math.PI;
+
+        ctx.fillStyle = "rgba(45,16,4,0.85)";
+        ctx.beginPath();
+        ctx.ellipse(cxP, cyP, cr, cr * 0.55, cAng, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hot glow per coal
+        const cGlow = 0.2 + Math.sin(time * 0.05 + i * 1.1) * 0.2;
+        const hotH = 8 + Math.sin(time * 0.03 + i * 0.7) * 10;
+        ctx.fillStyle = `hsla(${hotH}, 100%, 48%, ${cGlow})`;
+        ctx.beginPath();
+        ctx.ellipse(cxP, cyP, cr * 0.5, cr * 0.3, cAng, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Continuous bed glow
+      const bg = ctx.createRadialGradient(cx, baseY + 6, bedW * 0.04, cx, baseY + 6, bedW / 2);
+      const bga = 0.14 + Math.sin(time * 0.04) * 0.04;
+      bg.addColorStop(0, `rgba(255,100,15,${bga})`);
+      bg.addColorStop(0.5, `rgba(220,60,5,${bga * 0.45})`);
+      bg.addColorStop(1, "rgba(150,30,0,0)");
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.ellipse(cx, baseY + 6, bedW / 2, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // ── Fire halo ──
+      const halo = ctx.createRadialGradient(cx, baseY - 50, 20, cx, baseY - 25, bedW * 0.55);
+      halo.addColorStop(0, `rgba(255,150,35,${0.08 * pulse})`);
+      halo.addColorStop(0.4, `rgba(255,75,10,${0.03 * pulse})`);
+      halo.addColorStop(1, "rgba(200,40,0,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.ellipse(cx, baseY - 25, bedW * 0.55, bedW * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // ── Flames rising FROM the coal bed ──
+      // The key: flame baseY is pushed DOWN into the coal bed so they emerge from it
+      for (const root of flameRoots) {
+        root.phaseA += root.speedA;
+        root.phaseB += root.speedB;
+        root.phaseC += root.speedC;
+
+        const rootX = cx + root.pos * bedW;
+        // Flame origin is INSIDE the coal bed (baseY + offset pushes it down)
+        const rootY = baseY + 10 + root.yOffset;
+
+        const sway = Math.sin(root.phaseA) * 10 + Math.sin(root.phaseB) * 6;
+        const tipSway = sway * 1.3 + Math.sin(root.phaseC) * 5;
+        const hM = root.maxH * pulse;
+        const wM = root.maxW;
+
+        // Per-root intensity wobble
+        const intensity = 0.8 + Math.sin(root.phaseA * 1.4 + root.phaseB) * 0.2;
+
+        // L1: deep red (largest, most transparent)
+        drawFlame(rootX, rootY,
+          (60 + n2 * 10) * wM, (140 + n1 * 30) * hM,
+          sway * 0.25, tipSway * 0.6,
+          `rgba(150,25,0,${0.2 * intensity})`);
+
+        // L2: orange
+        drawFlame(rootX, rootY,
+          (46 + n1 * 7) * wM, (115 + n2 * 22) * hM,
+          sway * 0.35, tipSway * 0.8,
+          `rgba(220,75,5,${0.32 * intensity})`);
+
+        // L3: bright orange core
+        drawFlame(rootX, rootY,
+          (33 + n3 * 5) * wM, (88 + n3 * 18) * hM,
+          sway * 0.45, tipSway * 0.95,
+          `rgba(255,145,20,${0.42 * intensity})`);
+
+        // L4: yellow
+        drawFlame(rootX, rootY,
+          (22 + n2 * 4) * wM, (62 + n1 * 14) * hM,
+          sway * 0.5, tipSway,
+          `rgba(255,210,45,${0.38 * intensity})`);
+
+        // L5: white-hot center
+        drawFlame(rootX, rootY,
+          (12 + n1 * 3) * wM, (38 + n3 * 10) * hM,
+          sway * 0.3, tipSway * 0.55,
+          `rgba(255,245,175,${0.28 * intensity})`);
+      }
+
+      // ── Smoke ──
+      for (let i = 0; i < smokeParticles.length; i++) {
+        const s = smokeParticles[i];
+        s.wobble += s.wobbleSpeed;
+        s.x += s.vx + Math.sin(s.wobble) * 0.45;
+        s.y += s.vy;
+        s.r += 0.04;
+        s.life -= s.decay;
+
+        if (s.life <= 0) {
+          smokeParticles[i] = spawnSmoke(W, H);
+          continue;
+        }
+
+        const a = s.life * 0.05;
+        const sg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+        sg.addColorStop(0, `rgba(60,50,40,${a})`);
+        sg.addColorStop(0.5, `rgba(50,42,35,${a * 0.5})`);
+        sg.addColorStop(1, "rgba(40,35,30,0)");
+        ctx.fillStyle = sg;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // ── Heat shimmer ──
+      ctx.save();
+      ctx.globalAlpha = 0.018 + n1 * 0.01;
+      for (let i = 0; i < 10; i++) {
+        const sy = baseY - 150 - i * 30;
+        const sx = cx + Math.sin(time * 0.02 + i * 0.8) * (bedW * 0.2 + i * 10);
+        const sr = 25 + i * 14;
+        const sh = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+        sh.addColorStop(0, "rgba(255,200,100,0.2)");
+        sh.addColorStop(1, "rgba(255,200,100,0)");
+        ctx.fillStyle = sh;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // ── Embers ──
+      for (let i = 0; i < embers.length; i++) {
+        const e = embers[i];
+        e.wobble += e.wobbleSpeed;
+        e.x += e.vx + Math.sin(e.wobble) * 0.35;
+        e.y += e.vy;
+        e.life -= e.decay;
+
+        if (e.life <= 0) {
+          embers[i] = spawnEmber(W, H);
+          continue;
+        }
+
+        const a = e.life * 0.75;
+        const eg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r * 7);
+        eg.addColorStop(0, `hsla(${e.hue}, 95%, 60%, ${a * 0.3})`);
+        eg.addColorStop(0.4, `hsla(${e.hue}, 90%, 50%, ${a * 0.08})`);
+        eg.addColorStop(1, `hsla(${e.hue}, 85%, 40%, 0)`);
+        ctx.fillStyle = eg;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r * 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = `hsla(${e.hue}, 100%, 75%, ${a})`;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+
+// ── SNOWFALL ─────────────────────────────────────────────────────────────────
+// Gentle snowflakes drifting down with slight wind sway.
+
+export const SnowfallCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+
+    const flakes = [];
+    const FLAKE_COUNT = 120;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (let i = 0; i < FLAKE_COUNT; i++) {
+      flakes.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: 1 + Math.random() * 3,
+        speed: 0.3 + Math.random() * 0.8,
+        wind: (Math.random() - 0.5) * 0.3,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: 0.005 + Math.random() * 0.01,
+        opacity: 0.2 + Math.random() * 0.4,
+      });
+    }
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      for (const f of flakes) {
+        f.wobble += f.wobbleSpeed;
+        f.x += f.wind + Math.sin(f.wobble) * 0.4;
+        f.y += f.speed;
+
+        if (f.y > H + f.r * 2) {
+          f.y = -f.r * 2;
+          f.x = Math.random() * W;
+        }
+        if (f.x < -10) f.x = W + 10;
+        if (f.x > W + 10) f.x = -10;
+
+        ctx.fillStyle = `rgba(220,230,245,${f.opacity})`;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Tiny glow
+        if (f.r > 2) {
+          const g = ctx.createRadialGradient(f.x, f.y, f.r, f.x, f.y, f.r * 3);
+          g.addColorStop(0, `rgba(200,215,240,${f.opacity * 0.15})`);
+          g.addColorStop(1, "rgba(200,215,240,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.r * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+
+// ── DEEP SEA ─────────────────────────────────────────────────────────────────
+// Slow caustic light patterns (refracted light through water surface) +
+// occasional bioluminescent particle drifts.
+
+export const DeepSeaCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+
+    const particles = [];
+    const PARTICLE_COUNT = 20;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.15,
+        vy: (Math.random() - 0.5) * 0.1 - 0.05,
+        r: 1 + Math.random() * 2,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.01 + Math.random() * 0.02,
+        hue: 170 + Math.random() * 40, // teal to blue
+      });
+    }
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // ── Caustic light pattern at top ──
+      const causticH = H * 0.35;
+      for (let x = 0; x < W; x += 6) {
+        const wave1 = Math.sin(x * 0.008 + time * 0.006) * 0.5;
+        const wave2 = Math.sin(x * 0.015 + time * 0.004 + 1.5) * 0.3;
+        const wave3 = Math.sin(x * 0.003 + time * 0.008) * 0.2;
+        const combined = wave1 + wave2 + wave3;
+        const alpha = Math.max(0, 0.015 + combined * 0.015);
+
+        const yOffset = combined * 20;
+        const grad = ctx.createLinearGradient(x, yOffset, x, causticH + yOffset);
+        grad.addColorStop(0, `rgba(40,140,180,${alpha * 1.5})`);
+        grad.addColorStop(0.5, `rgba(20,100,140,${alpha})`);
+        grad.addColorStop(1, "rgba(20,100,140,0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, 0, 6, causticH + yOffset);
+      }
+
+      // ── Bioluminescent particles ──
+      for (const p of particles) {
+        p.phase += p.speed;
+        p.x += p.vx + Math.sin(p.phase * 0.7) * 0.08;
+        p.y += p.vy + Math.cos(p.phase * 0.5) * 0.05;
+
+        if (p.x < -20) p.x = W + 20;
+        if (p.x > W + 20) p.x = -20;
+        if (p.y < -20) p.y = H + 20;
+        if (p.y > H + 20) p.y = -20;
+
+        const glow = 0.3 + Math.sin(p.phase) * 0.25;
+
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 10);
+        grad.addColorStop(0, `hsla(${p.hue}, 80%, 60%, ${glow * 0.2})`);
+        grad.addColorStop(0.4, `hsla(${p.hue}, 70%, 50%, ${glow * 0.06})`);
+        grad.addColorStop(1, `hsla(${p.hue}, 60%, 40%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = `hsla(${p.hue}, 90%, 75%, ${glow})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+
+// ── CRT MONITOR ──────────────────────────────────────────────────────────────
+// Scanline overlay + subtle flicker + slight barrel distortion glow.
+// Uses canvas for the scanlines so it layers cleanly over all content.
+
+export const CRTCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // ── Scanlines ──
+      ctx.fillStyle = "rgba(0,0,0,0.06)";
+      for (let y = 0; y < H; y += 3) {
+        ctx.fillRect(0, y, W, 1);
+      }
+
+      // ── Flicker (subtle brightness variation) ──
+      const flicker = Math.random() * 0.03;
+      if (flicker > 0.02) {
+        ctx.fillStyle = `rgba(20,40,20,${flicker})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // ── Occasional horizontal glitch line ──
+      if (Math.random() > 0.995) {
+        const glitchY = Math.random() * H;
+        const glitchH = 1 + Math.random() * 3;
+        ctx.fillStyle = "rgba(51,255,51,0.06)";
+        ctx.fillRect(0, glitchY, W, glitchH);
+      }
+
+      // ── Vignette (darkened edges) ──
+      const vigGrad = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.8);
+      vigGrad.addColorStop(0, "rgba(0,0,0,0)");
+      vigGrad.addColorStop(1, "rgba(0,0,0,0.15)");
+      ctx.fillStyle = vigGrad;
+      ctx.fillRect(0, 0, W, H);
+
+      // ── Phosphor glow at edges ──
+      const edgeGlow = 0.02 + Math.sin(time * 0.02) * 0.01;
+      ctx.strokeStyle = `rgba(51,255,51,${edgeGlow})`;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(2, 2, W - 4, H - 4);
+
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+        zIndex: 0, pointerEvents: "none",
+      }}
+    />
+  );
+};
+
+// ── AUDIO VISUALIZER ──────────────────────────────────────────────────────────
+// Frequency bars + waveform + reactive particles.
+// Canvas stays pointerEvents:"none" like all other themes.
+// A small overlay div provides System Audio / Microphone buttons.
+
+export const AudioVisualizerCanvas = () => {
+  const [audioState, setAudioState] = useState("idle"); // idle | listening | ended
+  const [sourceLabel, setSourceLabel] = useState("");
+
+  // Refs shared between the canvas animation and button handlers
+  const audioRef = useRef({ ctx: null, analyser: null, stream: null, freqData: null, timeData: null });
+
+  const cleanup = () => {
+    const a = audioRef.current;
+    if (a.stream) a.stream.getTracks().forEach(t => t.stop());
+    if (a.ctx && a.ctx.state !== "closed") a.ctx.close().catch(() => {});
+    a.analyser = null; a.stream = null; a.freqData = null; a.timeData = null;
+  };
+
+  const connectStream = (mediaStream, label) => {
+    cleanup();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.82;
+    const source = ctx.createMediaStreamSource(mediaStream);
+    source.connect(analyser);
+
+    audioRef.current = {
+      ctx, analyser, stream: mediaStream,
+      freqData: new Uint8Array(analyser.frequencyBinCount),
+      timeData: new Uint8Array(analyser.fftSize),
+    };
+
+    setAudioState("listening");
+    setSourceLabel(label);
+
+    // If stream ends externally, fall back
+    mediaStream.getTracks().forEach(track => {
+      track.addEventListener("ended", () => {
+        setAudioState("idle");
+        setSourceLabel("");
+      });
+    });
+  };
+
+  const handleSystemAudio = async () => {
+    try {
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true, audio: true,
+      });
+      displayStream.getVideoTracks().forEach(t => t.stop());
+      const audioTracks = displayStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        console.log("No audio track — make sure 'Share audio' is checked");
+        return;
+      }
+      connectStream(new MediaStream(audioTracks), "System Audio");
+    } catch (e) {
+      console.log("System audio capture cancelled or denied");
+    }
+  };
+
+  const handleMicrophone = async () => {
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      connectStream(micStream, "Microphone");
+    } catch (e) {
+      console.log("Microphone access denied or unavailable");
+    }
+  };
+
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+
+    // ── Simulated frequency ──
+    const SIM_BINS = 64;
+    const simFreq = new Uint8Array(SIM_BINS);
+    const simSmooth = new Float32Array(SIM_BINS);
+    const simPhases = [];
+    for (let i = 0; i < SIM_BINS; i++) {
+      simPhases.push({
+        a: Math.random() * Math.PI * 2, b: Math.random() * Math.PI * 2, c: Math.random() * Math.PI * 2,
+        sa: 0.02 + Math.random() * 0.04, sb: 0.05 + Math.random() * 0.08, sc: 0.01 + Math.random() * 0.02,
+        base: Math.max(0, 180 - i * 2.2 + Math.random() * 30), amp: 40 + Math.random() * 30,
+      });
+    }
+
+    // ── Particles ──
+    const particles = [];
+    for (let i = 0; i < 40; i++) {
+      particles.push({
+        x: Math.random(), y: Math.random(), vx: 0, vy: 0,
+        r: 1 + Math.random() * 2, hue: 180 + Math.random() * 120, phase: Math.random() * Math.PI * 2,
+      });
+    }
+
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const updateSim = () => {
+      const beat = Math.max(0, Math.sin(time * 0.035) * 0.5 + Math.sin(time * 0.057) * 0.3);
+      const bb = beat * 80;
+      for (let i = 0; i < SIM_BINS; i++) {
+        const p = simPhases[i];
+        p.a += p.sa; p.b += p.sb; p.c += p.sc;
+        let v = p.base + Math.sin(p.a) * p.amp * 0.5 + Math.sin(p.b) * p.amp * 0.3 + Math.sin(p.c) * p.amp * 0.2;
+        if (i < 12) v += bb * (1 - i / 12);
+        if (i > 15 && i < 35) v += beat * 30;
+        v = Math.max(0, Math.min(255, v));
+        simSmooth[i] += (v - simSmooth[i]) * 0.15;
+        simFreq[i] = Math.round(simSmooth[i]);
+      }
+    };
+
+    const getFreq = () => {
+      const a = audioRef.current;
+      if (a.analyser && a.freqData) {
+        a.analyser.getByteFrequencyData(a.freqData);
+        a.analyser.getByteTimeDomainData(a.timeData);
+        return { freq: a.freqData, wave: a.timeData, bins: a.analyser.frequencyBinCount };
+      }
+      updateSim();
+      return { freq: simFreq, wave: null, bins: SIM_BINS };
+    };
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+      const { freq, wave, bins } = getFreq();
+
+      let bass = 0;
+      for (let i = 0; i < Math.min(8, bins); i++) bass += freq[i];
+      bass /= Math.min(8, bins) * 255;
+
+      // ── Background pulse ──
+      if (bass * 0.06 > 0.005) {
+        ctx.fillStyle = `rgba(0,240,255,${bass * 0.06})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // ── Frequency bars ──
+      const bc = Math.min(bins, 64), gap = 2, tw = W * 0.85;
+      const bw = (tw - gap * (bc - 1)) / bc, sx = (W - tw) / 2, by = H - 30, mh = H * 0.45;
+
+      for (let i = 0; i < bc; i++) {
+        const val = freq[i] / 255, bh = val * mh;
+        const x = sx + i * (bw + gap);
+        const hue = 180 + (i / bc) * 120, sat = 80 + val * 20, lt = 45 + val * 20;
+
+        // Glow
+        const gh = bh * 1.1;
+        const gl = ctx.createLinearGradient(x, by, x, by - gh);
+        gl.addColorStop(0, `hsla(${hue},${sat}%,${lt}%,0.6)`);
+        gl.addColorStop(0.6, `hsla(${hue},${sat}%,${lt + 10}%,0.3)`);
+        gl.addColorStop(1, `hsla(${hue},${sat}%,${lt + 20}%,0)`);
+        ctx.fillStyle = gl;
+        ctx.fillRect(x - 1, by - gh, bw + 2, gh);
+
+        // Bar
+        const bg = ctx.createLinearGradient(x, by, x, by - bh);
+        bg.addColorStop(0, `hsla(${hue},${sat}%,${lt}%,0.9)`);
+        bg.addColorStop(0.5, `hsla(${hue + 10},${sat}%,${lt + 5}%,0.8)`);
+        bg.addColorStop(1, `hsla(${hue + 20},${sat - 10}%,${lt + 15}%,0.6)`);
+        ctx.fillStyle = bg;
+        ctx.fillRect(x, by - bh, bw, bh);
+
+        if (bh > 2) {
+          ctx.fillStyle = `hsla(${hue},95%,80%,${0.5 + val * 0.5})`;
+          ctx.fillRect(x, by - bh - 2, bw, 2);
+        }
+      }
+
+      // ── Mirror ──
+      ctx.save(); ctx.globalAlpha = 0.12;
+      for (let i = 0; i < bc; i++) {
+        const val = freq[i] / 255, bh = val * mh * 0.3, x = sx + i * (bw + gap);
+        ctx.fillStyle = `hsla(${180 + (i / bc) * 120},70%,50%,0.5)`;
+        ctx.fillRect(x, by + 2, bw, bh);
+      }
+      ctx.restore();
+
+      // ── Waveform ──
+      const wy = H * 0.35, wa = 40 + bass * 60;
+      ctx.beginPath(); ctx.lineWidth = 2;
+      if (wave) {
+        for (let i = 0; i < wave.length; i++) {
+          const x = (i / wave.length) * W, y = wy + ((wave[i] - 128) / 128) * wa;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+      } else {
+        for (let i = 0; i < 200; i++) {
+          const t = i / 200, x = t * W;
+          let y = wy;
+          for (let h = 0; h < 6; h++) y += Math.sin(t * Math.PI * 2 * (h + 1) + time * 0.03 * (h + 1)) * (freq[h * 3] / 255) * wa * 0.2;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+      }
+      ctx.strokeStyle = `rgba(0,240,255,${0.3 + bass * 0.4})`;
+      ctx.shadowColor = "rgba(0,240,255,0.5)";
+      ctx.shadowBlur = 8 + bass * 12;
+      ctx.stroke(); ctx.shadowBlur = 0;
+
+      // ── Particles ──
+      for (const p of particles) {
+        p.phase += 0.02;
+        p.vx += (p.x - 0.5) * bass * 0.008;
+        p.vy += (p.y - 0.5) * bass * 0.008 - 0.0003;
+        p.vx *= 0.97; p.vy *= 0.97;
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < -0.05) p.x = 1.05; if (p.x > 1.05) p.x = -0.05;
+        if (p.y < -0.05) p.y = 1.05; if (p.y > 1.05) p.y = -0.05;
+
+        const px = p.x * W, py = p.y * H;
+        const al = 0.2 + bass * 0.4 + Math.sin(p.phase) * 0.1;
+        const pr = p.r * (4 + bass * 6);
+        const pg = ctx.createRadialGradient(px, py, 0, px, py, pr);
+        pg.addColorStop(0, `hsla(${p.hue},90%,65%,${al * 0.4})`);
+        pg.addColorStop(1, `hsla(${p.hue},80%,50%,0)`);
+        ctx.fillStyle = pg;
+        ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `hsla(${p.hue},95%,75%,${al})`;
+        ctx.beginPath(); ctx.arc(px, py, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+      cleanup();
+    };
+  }, []);
+
+  const btnStyle = {
+    padding: "8px 18px",
+    borderRadius: 6,
+    border: "1px solid rgba(160,160,224,0.25)",
+    background: "rgba(16,16,30,0.85)",
+    color: "rgba(192,192,240,0.8)",
+    fontFamily: "'JetBrains Mono','Fira Code',monospace",
+    fontSize: 12,
+    cursor: "pointer",
+    backdropFilter: "blur(8px)",
+    transition: "all 0.15s ease",
+  };
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+          zIndex: 0, pointerEvents: "none",
+        }}
+      />
+      {audioState === "idle" && (
+        <div style={{
+          position: "fixed", bottom: 18, left: "50%", transform: "translateX(-50%)",
+          zIndex: 1, display: "flex", gap: 12, alignItems: "center",
+        }}>
+          <span style={{
+            fontSize: 10, color: "rgba(128,128,170,0.5)",
+            fontFamily: "'JetBrains Mono','Fira Code',monospace",
+            position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)",
+            whiteSpace: "nowrap",
+          }}>
+            Choose an audio source to visualize
+          </span>
+          <button
+            onClick={handleSystemAudio}
+            style={btnStyle}
+            onMouseEnter={e => { e.target.style.background = "rgba(0,240,255,0.12)"; e.target.style.borderColor = "rgba(0,240,255,0.4)"; }}
+            onMouseLeave={e => { e.target.style.background = "rgba(16,16,30,0.85)"; e.target.style.borderColor = "rgba(160,160,224,0.25)"; }}
+          >
+            🔊 System Audio
+          </button>
+          <button
+            onClick={handleMicrophone}
+            style={btnStyle}
+            onMouseEnter={e => { e.target.style.background = "rgba(0,240,255,0.12)"; e.target.style.borderColor = "rgba(0,240,255,0.4)"; }}
+            onMouseLeave={e => { e.target.style.background = "rgba(16,16,30,0.85)"; e.target.style.borderColor = "rgba(160,160,224,0.25)"; }}
+          >
+            🎤 Microphone
+          </button>
+        </div>
+      )}
+      {audioState === "listening" && sourceLabel && (
+        <div style={{
+          position: "fixed", bottom: 12, right: 20, zIndex: 1,
+          fontSize: 10, color: "rgba(160,160,224,0.4)",
+          fontFamily: "'JetBrains Mono','Fira Code',monospace",
+        }}>
+          ● {sourceLabel}
+        </div>
+      )}
+    </>
   );
 };

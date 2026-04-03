@@ -12,7 +12,14 @@ import { KbView } from "./components/KbView";
 import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
 import { AnalyticsView } from "./components/AnalyticsView";
-import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas } from "./components/EasterEggs";
+import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas, RainstormCanvas,
+  StarfieldParallaxCanvas,
+  CampfireCanvas,
+  SnowfallCanvas,
+  DeepSeaCanvas,
+  CRTCanvas,
+  AudioVisualizerCanvas,
+ } from "./components/EasterEggs";
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 
@@ -177,6 +184,8 @@ useEffect(() => {
   const isXP = activeTheme._xpStyle || false;
   const isLavaLamp = activeTheme._lavaLamp || false;
   const isSynthwave = activeTheme._synthwave || false;
+  const isBlueprint = activeTheme._blueprint || false;
+  const isNewspaper = activeTheme._newspaper || false;
 
   const globalStyle = `
     input:focus, textarea:focus, select:focus {
@@ -233,6 +242,21 @@ useEffect(() => {
       100% { background-position: 0% 50%; }
     }
     ` : ""}
+
+    ${isBlueprint ? `
+    @keyframes blueprintPulse {
+      0%   { opacity: 0.08; }
+      50%  { opacity: 0.12; }
+      100% { opacity: 0.08; }
+    }
+    ` : ""}
+
+    ${isNewspaper ? `
+    @keyframes paperAge {
+      0%   { background-position: 0% 0%; }
+      100% { background-position: 100% 100%; }
+    }
+    ` : ""}
   `;
 
   return <ThemeContext.Provider value={activeTheme}>
@@ -266,6 +290,26 @@ useEffect(() => {
         backgroundSize: "300% 300%",
         animation: "synthwaveShift 10s ease infinite",
       } : {}),
+      ...(isBlueprint ? {
+        backgroundImage: `
+          linear-gradient(rgba(42,96,144,0.12) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(42,96,144,0.12) 1px, transparent 1px),
+          linear-gradient(rgba(42,96,144,0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(42,96,144,0.06) 1px, transparent 1px)
+        `,
+        backgroundSize: "60px 60px, 60px 60px, 12px 12px, 12px 12px",
+        backgroundColor: "#0A2A4A",
+      } : {}),
+
+      // Newspaper: subtle paper texture via noise gradient
+      ...(isNewspaper ? {
+        backgroundImage: `
+          radial-gradient(ellipse at 20% 50%, rgba(200,180,140,0.08) 0%, transparent 50%),
+          radial-gradient(ellipse at 80% 20%, rgba(180,160,120,0.06) 0%, transparent 50%),
+          radial-gradient(ellipse at 50% 80%, rgba(190,170,130,0.05) 0%, transparent 50%)
+        `,
+        backgroundColor: "#F0E8D8",
+      } : {}),
     }}>
       <style>{globalStyle}</style>
       {activeTheme._starfield && <StarfieldCanvas />}
@@ -275,6 +319,13 @@ useEffect(() => {
       {activeTheme._fireflies && <FirefliesCanvas />}
       {activeTheme._fishTank && <FishTankCanvas />}
       {(activeTheme._hotDogs || hotDogOverlay) && <HotDogCanvas />}
+      {activeTheme._rainstorm && <RainstormCanvas />}
+      {activeTheme._starfieldTheme && <StarfieldParallaxCanvas />}
+      {activeTheme._campfire && <CampfireCanvas />}
+      {activeTheme._snowfall && <SnowfallCanvas />}
+      {activeTheme._deepSea && <DeepSeaCanvas />}
+      {activeTheme._crt && <CRTCanvas />}
+      {activeTheme._audioVisualizer && <AudioVisualizerCanvas />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");
