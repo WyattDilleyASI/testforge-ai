@@ -1,6 +1,6 @@
 # ◈ TestForge AI — AI-Powered Test Case Generation Tool
 
-**v1.4** — Accelerating QA through intelligent automation with full requirement traceability.
+**v1.5** — Accelerating QA through intelligent automation with full requirement traceability.
 
 TestForge AI ingests requirements, leverages a hierarchical Knowledge Base of historical defects and business rules, and generates structured draft test cases via the Claude API — giving QA engineers a starting point, not a finished product. Every generated test case traces back to specific requirement IDs, ensuring complete coverage visibility from ingestion through export. An Adaptive Learning Engine captures passive feedback from engineer reviews and distills it into generation rules and few-shot exemplars, so test case quality improves over time without manual prompt tuning.
 
