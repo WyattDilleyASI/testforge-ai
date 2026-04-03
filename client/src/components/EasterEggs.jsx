@@ -2251,7 +2251,7 @@ export const CloudyCanvas = () => {
       y: H * (0.05 + Math.random() * 0.55),
       scale: 0.6 + Math.random() * 1.4,
       speed: 0.12 + Math.random() * 0.2,
-      opacity: 0.06 + Math.random() * 0.10,
+      opacity: 0.22 + Math.random() * 0.20,
       wobble: Math.random() * Math.PI * 2,
       wobbleSpeed: 0.001 + Math.random() * 0.002,
     });
@@ -2276,9 +2276,10 @@ export const CloudyCanvas = () => {
         const by = y + blob.dy * scale;
         const br = blob.r * scale;
         const grad = ctx.createRadialGradient(bx, by, 0, bx, by, br);
-        grad.addColorStop(0, `rgba(200,215,240,${opacity})`);
-        grad.addColorStop(0.6, `rgba(180,195,220,${opacity * 0.7})`);
-        grad.addColorStop(1, "rgba(160,180,210,0)");
+        grad.addColorStop(0, `rgba(210,220,240,${opacity})`);
+        grad.addColorStop(0.45, `rgba(190,205,228,${opacity * 0.85})`);
+        grad.addColorStop(0.75, `rgba(170,185,215,${opacity * 0.4})`);
+        grad.addColorStop(1, "rgba(150,170,205,0)");
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(bx, by, br, 0, Math.PI * 2);
