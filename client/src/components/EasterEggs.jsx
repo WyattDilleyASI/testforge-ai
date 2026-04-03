@@ -2741,3 +2741,378 @@ export const WeatherInfoCard = ({ weatherData }) => {
     </div>
   );
 };
+
+// ── CLIPPY COMPANION ──────────────────────────────────────────────────────────
+// The beloved(?) Office assistant, now haunting your QA workflow.
+// DOM-based (not canvas) — he needs to be clickable. Barely.
+// Flees from the cursor, dispenses unsolicited QA advice, and respawns
+// 15 seconds after being caught. There is no escape. Only themes.
+
+const CLIPPY_QUIPS = [
+  "It looks like you're writing a test case! Would you like help?",
+  "Have you considered the sad path?",
+  "Pro tip: 'Works on my machine' is not a valid expected result.",
+  "You haven't generated test cases in a while. Everything okay?",
+  "I notice you're still in Draft. Living dangerously?",
+  "Need help? Too bad, I'm just a paperclip.",
+  "Did you mean to leave that precondition blank, or...?",
+  "I'm not saying your coverage is low, but... it's low.",
+  "Fun fact: I can't be closed. I've tried.",
+  "Have you tried turning the requirement off and on again?",
+  "That's a lot of draft test cases. Just saying.",
+  "Remember: a test case without expected results is just a suggestion.",
+  "You look like you could use a boundary value analysis.",
+  "I've been watching you work. We need to talk about your test coverage.",
+  "According to my calculations, you're 73% done. I made that up.",
+  "I see 0 test cases linked to this requirement. Bold strategy.",
+  "Let's make sure this will help the boots on the ground.",
+  "Will this test end up with a bricked VCU?",
+  "I'm Clippy, your useless TestForge Assistant!",
+  "Did you know that a John Deere 9RX could till 394,200,000 acres if ran continously for 900 years?",
+  "YouTube was initially created as a video-dating site. The more you know.",
+];
+
+export const ClippyCompanion = () => {
+  const T = useTheme();
+
+  // ── Refs for animation loop (no re-renders) ──
+  const containerRef = useRef(null);
+  const pupilLRef = useRef(null);
+  const pupilRRef = useRef(null);
+  const eyeLRef = useRef(null);
+  const eyeRRef = useRef(null);
+  const pos = useRef({ x: 0, y: 0 });
+  const vel = useRef({ x: 0, y: 0 });
+  const mouse = useRef({ x: -9999, y: -9999 });
+  const stateRef = useRef("idle"); // idle | dead
+  const frameRef = useRef(null);
+  const bubbleTimerRef = useRef(null);
+  const lastBlink = useRef(0);
+  const blinkRemaining = useRef(0);
+
+  // ── React state (infrequent updates only) ──
+  const [dead, setDead] = useState(false);
+  const [deathAnim, setDeathAnim] = useState(false);
+  const [bubble, setBubble] = useState(null);
+
+  const SIZE = 62;
+  const FLEE_RADIUS = 180;
+  const FLEE_FORCE = 22;
+  const FRICTION = 0.93;
+
+  // ── Eye pupil positions in SVG coordinates ──
+  const EYE_L = { cx: 21, cy: 28 };
+  const EYE_R = { cx: 33, cy: 28 };
+  const MAX_PUPIL_OFFSET = 2.8;
+
+  useEffect(() => {
+    // Initial position: bottom-right area
+    pos.current = {
+      x: window.innerWidth - SIZE - 40,
+      y: window.innerHeight - SIZE - 120,
+    };
+    if (containerRef.current) {
+      containerRef.current.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px)`;
+    }
+
+    // Mouse tracking
+    const onMouse = (e) => { mouse.current = { x: e.clientX, y: e.clientY }; };
+    window.addEventListener("mousemove", onMouse);
+
+    // ── Bubble scheduler (recursive setTimeout for random intervals) ──
+    const scheduleBubble = () => {
+      bubbleTimerRef.current = setTimeout(() => {
+        if (stateRef.current !== "dead") {
+          const speed = Math.sqrt(vel.current.x ** 2 + vel.current.y ** 2);
+          if (speed < 1.5) {
+            const quip = CLIPPY_QUIPS[Math.floor(Math.random() * CLIPPY_QUIPS.length)];
+            setBubble(quip);
+            setTimeout(() => setBubble((b) => (b === quip ? null : b)), 5500);
+          }
+        }
+        scheduleBubble();
+      }, 8000 + Math.random() * 7000);
+    };
+
+    // First bubble after short delay
+    const introTimer = setTimeout(() => {
+      setBubble("It looks like you're writing a test case! Would you like help?");
+      setTimeout(() => setBubble(null), 5500);
+      scheduleBubble();
+    }, 2500);
+
+    // ── Animation loop ──
+    const tick = (now) => {
+      frameRef.current = requestAnimationFrame(tick);
+      if (stateRef.current === "dead") return;
+
+      const p = pos.current;
+      const v = vel.current;
+      const m = mouse.current;
+
+      // Center of Clippy
+      const cx = p.x + SIZE / 2;
+      const cy = p.y + SIZE / 2;
+      const dx = cx - m.x;
+      const dy = cy - m.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Flee when cursor is close
+      if (dist < FLEE_RADIUS && dist > 1) {
+        const intensity = 1 - dist / FLEE_RADIUS;
+        const force = FLEE_FORCE * intensity * intensity; // quadratic falloff
+        v.x += (dx / dist) * force;
+        v.y += (dy / dist) * force;
+        // Clear bubble when fleeing
+        setBubble(null);
+      }
+
+      // Friction
+      v.x *= FRICTION;
+      v.y *= FRICTION;
+
+      // Update position
+      p.x += v.x;
+      p.y += v.y;
+
+      // Bounce off viewport edges
+      const maxX = window.innerWidth - SIZE;
+      const maxY = window.innerHeight - SIZE;
+      if (p.x < 0) { p.x = 0; v.x = Math.abs(v.x) * 0.5; }
+      if (p.x > maxX) { p.x = maxX; v.x = -Math.abs(v.x) * 0.5; }
+      if (p.y < 0) { p.y = 0; v.y = Math.abs(v.y) * 0.5; }
+      if (p.y > maxY) { p.y = maxY; v.y = -Math.abs(v.y) * 0.5; }
+
+      // DOM update
+      if (containerRef.current) {
+        containerRef.current.style.transform = `translate(${p.x}px, ${p.y}px)`;
+      }
+
+      // ── Eye tracking ──
+      const speed = Math.sqrt(v.x * v.x + v.y * v.y);
+
+      // Blink every 3-6 seconds
+      if (now - lastBlink.current > 3000 + Math.random() * 3000 * 60) {
+        // Only reset timer at frame boundaries
+        if (blinkRemaining.current <= 0) {
+          lastBlink.current = now;
+          blinkRemaining.current = 150;
+        }
+      }
+      const isBlinking = blinkRemaining.current > 0;
+      if (isBlinking) blinkRemaining.current -= 16;
+
+      if (eyeLRef.current && eyeRRef.current) {
+        const ry = isBlinking ? "1.5" : "5.5";
+        eyeLRef.current.setAttribute("ry", ry);
+        eyeRRef.current.setAttribute("ry", ry);
+      }
+
+      if (pupilLRef.current && pupilRRef.current && !isBlinking) {
+        // Pupils track mouse position
+        const lookX = m.x;
+        const lookY = m.y;
+
+        for (const [ref, eye] of [[pupilLRef, EYE_L], [pupilRRef, EYE_R]]) {
+          // Eye position in screen space (approximate, SVG is ~52x72 within SIZE container)
+          const eyeScreenX = p.x + (eye.cx / 52) * SIZE;
+          const eyeScreenY = p.y + (eye.cy / 72) * SIZE;
+          const edx = lookX - eyeScreenX;
+          const edy = lookY - eyeScreenY;
+          const eDist = Math.sqrt(edx * edx + edy * edy) || 1;
+          // Scale offset — closer mouse = bigger offset, capped
+          const offsetScale = Math.min(1, eDist / 150);
+          const ox = (edx / eDist) * MAX_PUPIL_OFFSET * offsetScale;
+          const oy = (edy / eDist) * MAX_PUPIL_OFFSET * offsetScale;
+
+          // When fleeing fast, eyes go wide (pupils shrink offset toward center)
+          const panicFactor = Math.min(1, speed / 15);
+          const finalOx = ox * (1 - panicFactor * 0.5);
+          const finalOy = oy * (1 - panicFactor * 0.5);
+
+          ref.current.setAttribute("cx", eye.cx + finalOx);
+          ref.current.setAttribute("cy", eye.cy + finalOy);
+          // Slightly larger pupils when panicking
+          ref.current.setAttribute("r", 2.5 + panicFactor * 0.8);
+        }
+      }
+    };
+    frameRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouse);
+      cancelAnimationFrame(frameRef.current);
+      clearTimeout(bubbleTimerRef.current);
+      clearTimeout(introTimer);
+    };
+  }, []);
+
+  // ── Catch handler ──
+  const handleClick = () => {
+    if (stateRef.current === "dead") return;
+    stateRef.current = "dead";
+    setBubble(null);
+    setDeathAnim(true);
+
+    // After death animation, hide and schedule respawn
+    setTimeout(() => {
+      setDead(true);
+      setDeathAnim(false);
+
+      // Respawn after 15 seconds
+      setTimeout(() => {
+        const corners = [
+          { x: 30, y: 30 },
+          { x: window.innerWidth - SIZE - 30, y: 30 },
+          { x: 30, y: window.innerHeight - SIZE - 30 },
+          { x: window.innerWidth - SIZE - 30, y: window.innerHeight - SIZE - 30 },
+        ];
+        // Pick a random corner that's far from the mouse
+        let best = corners[0], bestDist = 0;
+        for (const c of corners) {
+          const d = Math.sqrt((c.x + SIZE / 2 - mouse.current.x) ** 2 + (c.y + SIZE / 2 - mouse.current.y) ** 2);
+          if (d > bestDist) { bestDist = d; best = c; }
+        }
+
+        pos.current = { ...best };
+        vel.current = { x: 0, y: 0 };
+        stateRef.current = "idle";
+        setDead(false);
+
+        if (containerRef.current) {
+          containerRef.current.style.transform = `translate(${best.x}px, ${best.y}px)`;
+        }
+
+        setBubble("You can't get rid of me that easily.");
+        setTimeout(() => setBubble(null), 4500);
+      }, 15000);
+    }, 700);
+  };
+
+  if (dead) return null;
+
+  return (
+    <>
+      <style>{`
+        @keyframes clippyBob {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-4px); }
+        }
+        @keyframes clippyDeath {
+          0% { transform: scale(1) rotate(0deg); opacity: 1; }
+          50% { transform: scale(1.2) rotate(180deg); opacity: 0.8; }
+          100% { transform: scale(0) rotate(720deg); opacity: 0; }
+        }
+        @keyframes clippyBubbleIn {
+          from { opacity: 0; transform: translateY(8px) scale(0.9); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+      <div
+        ref={containerRef}
+        onClick={handleClick}
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: SIZE,
+          height: SIZE + 10,
+          zIndex: 9998,
+          cursor: "pointer",
+          userSelect: "none",
+          // No transition — position is updated via rAF on the transform
+        }}
+      >
+        {/* Speech bubble */}
+        {bubble && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: SIZE + 14,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "#FFFFCC",
+              border: "1px solid #999",
+              borderRadius: 8,
+              padding: "8px 12px",
+              fontSize: 11,
+              fontFamily: font,
+              color: "#333",
+              whiteSpace: "pre-line",
+              lineHeight: 1.4,
+              boxShadow: "2px 2px 6px rgba(0,0,0,0.2)",
+              minWidth: 160,
+              maxWidth: 220,
+              textAlign: "center",
+              animation: "clippyBubbleIn 0.25s ease-out",
+              pointerEvents: "none",
+            }}
+          >
+            {bubble}
+            {/* Triangle pointer */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: -7,
+                left: "50%",
+                marginLeft: -6,
+                width: 0,
+                height: 0,
+                borderLeft: "6px solid transparent",
+                borderRight: "6px solid transparent",
+                borderTop: "7px solid #FFFFCC",
+                filter: "drop-shadow(0 1px 0 #999)",
+              }}
+            />
+          </div>
+        )}
+
+        {/* Clippy body */}
+        <div
+          style={{
+            animation: deathAnim
+              ? "clippyDeath 0.7s ease-in forwards"
+              : "clippyBob 2.5s ease-in-out infinite",
+          }}
+        >
+          <svg viewBox="0 0 52 72" width={SIZE * 0.82} height={SIZE} style={{ overflow: "visible", display: "block", margin: "0 auto" }}>
+            {/* Metallic gradient */}
+            <defs>
+              <linearGradient id="clipWire" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#D8DCE0" />
+                <stop offset="40%" stopColor="#A8B0B8" />
+                <stop offset="70%" stopColor="#BCC4CC" />
+                <stop offset="100%" stopColor="#9CA4AC" />
+              </linearGradient>
+            </defs>
+            {/* Paperclip wire body */}
+            <path
+              d="M 14,67 V 18 C 14,5 38,5 38,18 V 52 C 38,62 22,62 22,52 V 30"
+              fill="none"
+              stroke="url(#clipWire)"
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Shine highlight on left wire */}
+            <path
+              d="M 12.5,60 V 22 C 12.5,10 26,7 30,9"
+              fill="none"
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+            {/* Left eye white */}
+            <ellipse ref={eyeLRef} cx="21" cy="28" rx="5.5" ry="5.5" fill="white" stroke="#888" strokeWidth="0.7" />
+            {/* Left pupil */}
+            <circle ref={pupilLRef} cx="22" cy="28" r="2.5" fill="#111" />
+            {/* Right eye white */}
+            <ellipse ref={eyeRRef} cx="33" cy="28" rx="5.5" ry="5.5" fill="white" stroke="#888" strokeWidth="0.7" />
+            {/* Right pupil */}
+            <circle ref={pupilRRef} cx="34" cy="28" r="2.5" fill="#111" />
+          </svg>
+        </div>
+      </div>
+    </>
+  );
+};
