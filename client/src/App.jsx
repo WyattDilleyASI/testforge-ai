@@ -105,7 +105,7 @@ export default function App() {
   useEffect(() => {
     if (themeName !== "weather") { setWeatherData(null); return; }
     let cancelled = false;
-    const fetchWeather = async (lat, lon) => {
+    const fetchWeather = async (lat, lon, ipCity = "", ipState = "") => {
       // Weather code is required — fetch first, fail hard if it errors.
       let wData;
       try {
@@ -114,21 +114,23 @@ export default function App() {
         );
         wData = await wRes.json();
       } catch {
-        if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+        if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: ipCity, state: ipState });
         return;
       }
 
       // City name is optional — a failure here must not kill the weather detection.
-      let city = "", state = "";
-      try {
-        const gRes = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
-        );
-        const gData = await gRes.json();
-        const addr = gData.address || {};
-        city  = addr.city || addr.town || addr.village || addr.county || "";
-        state = addr.state_code || addr.state || "";
-      } catch { /* location name is display-only — ignore failures */ }
+      let city = ipCity, state = ipState;
+      if (!city) {
+        try {
+          const gRes = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
+          );
+          const gData = await gRes.json();
+          const addr = gData.address || {};
+          city  = addr.city || addr.town || addr.village || addr.county || "";
+          state = addr.state_code || addr.state || "";
+        } catch { /* location name is display-only — ignore failures */ }
+      }
 
       if (!cancelled) {
         setWeatherData({
@@ -140,14 +142,31 @@ export default function App() {
         });
       }
     };
+
+    // IP geolocation fallback — used when browser geolocation is unavailable
+    // or blocked (e.g. HTTP dev server). Less precise but no permissions needed.
+    const fetchViaIp = async () => {
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const d = await res.json();
+        if (d.latitude && d.longitude) {
+          fetchWeather(d.latitude, d.longitude, d.city || "", d.region_code || d.region || "");
+        } else {
+          if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+        }
+      } catch {
+        if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+      }
+    };
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => { if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" }); },
+        () => fetchViaIp(),   // blocked on HTTP or permission denied → IP fallback
         { timeout: 8000 }
       );
     } else {
-      setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+      fetchViaIp();
     }
     return () => { cancelled = true; };
   }, [themeName]);
