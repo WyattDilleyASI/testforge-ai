@@ -206,30 +206,35 @@ function getExemplarsWithContent(opts = {}) {
  * @returns {string} Formatted prompt section, or empty string
  */
 function formatExemplarsForPrompt(opts = {}) {
-  const exemplars = getExemplarsWithContent(opts);
-  if (exemplars.length === 0) return "";
+  try {
+    const exemplars = getExemplarsWithContent(opts);
+    if (exemplars.length === 0) return "";
 
-  const blocks = exemplars.map((tc, i) => {
-    let steps;
-    try { steps = JSON.parse(tc.steps || "[]"); } catch { steps = []; }
+    const blocks = exemplars.map((tc, i) => {
+      let steps;
+      try { steps = JSON.parse(tc.steps || "[]"); } catch { steps = []; }
 
-    const stepsText = steps.map((s, j) => {
-      const action = s.action || s.step || "";
-      const expected = s.expected || s.expectedResult || "";
-      return `  Step ${j + 1}: ${action}${expected ? `\n    Expected: ${expected}` : ""}`;
-    }).join("\n");
+      const stepsText = steps.map((s, j) => {
+        const action = s.action || s.step || "";
+        const expected = s.expected || s.expectedResult || "";
+        return `  Step ${j + 1}: ${action}${expected ? `\n    Expected: ${expected}` : ""}`;
+      }).join("\n");
+
+      return [
+        `EXEMPLAR ${i + 1}: ${tc.title} [${tc.type || "General"}]`,
+        `  TC ID: ${tc.tc_id}`,
+        stepsText,
+      ].join("\n");
+    });
 
     return [
-      `EXEMPLAR ${i + 1}: ${tc.title} [${tc.type || "General"}]`,
-      `  TC ID: ${tc.tc_id}`,
-      stepsText,
-    ].join("\n");
-  });
-
-  return [
-    "EXEMPLAR TEST CASES (approved by reviewers — use as quality reference):",
-    ...blocks,
-  ].join("\n\n");
+      "EXEMPLAR TEST CASES (approved by reviewers — use as quality reference):",
+      ...blocks,
+    ].join("\n\n");
+  } catch (err) {
+    console.warn("⚠ Exemplar injection skipped:", err.message);
+    return "";
+  }
 }
 
 // ─── Admin Queries ──────────────────────────────────────────────────
