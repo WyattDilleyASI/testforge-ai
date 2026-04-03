@@ -2670,8 +2670,8 @@ const CLIPPY_QUIPS = [
   "Let's make sure this will help the boots on the ground.",
   "Will this test end up with a bricked VCU?",
   "I'm Clippy, your useless TestForge Assistant!",
-  "Did you know that a John Deere 9RX could till 394,200,000 acres if ran continously for 900 years?"
-  "YouTube was initially created as a video-dating site. The more you know."
+  "Did you know that a John Deere 9RX could till 394,200,000 acres if ran continously for 900 years?",
+  "YouTube was initially created as a video-dating site. The more you know.",
 ];
 
 export const ClippyCompanion = () => {
