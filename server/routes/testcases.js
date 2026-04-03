@@ -1302,11 +1302,14 @@ router.post("/enhance-xml-tc", requireAuth, async (req, res) => {
     `${r.spec ? r.spec + " — " : ""}${r.doc_id}: ${r.title}`
   ).join("\n");
 
+  const adaptiveRules = al.formatRulesForPrompt();
+  const adaptiveExemplars = al.formatExemplarsForPrompt({ depth: "standard" });
+
   const prompt = `You are a senior QA engineer updating a legacy test case from TestLink into a current, detailed JAMA-style test case.
 
 The test case was written several years ago and may be missing context. Use the product context and knowledge base entries provided to fill in gaps, update terminology, and add missing detail. Do NOT invent system behavior — only expand on what is already described or supported by the KB context.
 
-${product_context ? `PRODUCT CONTEXT:\n${product_context}\n` : ""}${key_terms ? `KEY TERMS (use these where applicable):\n${key_terms}\n` : ""}${kbContext}
+${product_context ? `PRODUCT CONTEXT:\n${product_context}\n` : ""}${key_terms ? `KEY TERMS (use these where applicable):\n${key_terms}\n` : ""}${kbContext}${adaptiveRules ? `\n\n${adaptiveRules}` : ""}${adaptiveExemplars ? `\n\n${adaptiveExemplars}` : ""}
 
 ORIGINAL TESTLINK TEST CASE:
 Name: ${testcase.name}
