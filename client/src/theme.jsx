@@ -1234,6 +1234,20 @@ export const THEMES = {
     hover: "rgba(255,64,32,0.06)",
   },
 
+  // ── CLIPPY ───────────────────────────────────────────────────────────────
+  // Windows 97 Office grey. The theme itself is aggressively corporate.
+  clippy: {
+    name: "Clippy", emoji: "📎",
+    _clippy: true,
+    bg: "#C0C0C0", surface: "#D4D0C8", surfaceRaised: "#ECE9D8",
+    border: "#808080", text: "#1A1A1A", textMuted: "#5A5A5A",
+    textBright: "#000000", accent: "#0A246A", accentDim: "rgba(10,36,106,0.12)",
+    accentGlow: "rgba(10,36,106,0.22)", green: "#008000", greenDim: "rgba(0,128,0,0.10)",
+    red: "#CC0000", redDim: "rgba(204,0,0,0.10)", amber: "#808000",
+    amberDim: "rgba(128,128,0,0.10)", purple: "#800080", purpleDim: "rgba(128,0,128,0.10)",
+    hover: "rgba(10,36,106,0.08)",
+  },
+
  // ── HIGH CONTRAST LIGHT ──────────────────────────────────────────────────
   // White background variant of High Contrast for users who prefer light mode
   // but need maximum readability. All colors pass WCAG AAA.
@@ -1520,7 +1534,7 @@ export const THEME_CATEGORIES = [
   {
     label: "Fun",
     keys: [
-      "dos", "sepia", "whiteboard", "neonSign", "tundra", "magma",
+      "dos", "sepia", "whiteboard", "neonSign", "tundra", "magma", "clippy",
     ],
   },
   {
