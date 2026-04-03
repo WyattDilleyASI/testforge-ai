@@ -1331,8 +1331,50 @@ export const THEMES = {
     hover: "rgba(120,144,168,0.06)",
   },
 
+  // ── CLOUDY SKY ───────────────────────────────────────────────────────────
+  // Internal weather sub-theme: partly cloudy / overcast.
+  cloudy: {
+    name: "Cloudy", emoji: "☁️",
+    _cloudy: true,
+    bg: "#151A22", surface: "#1C2330", surfaceRaised: "#232C3C",
+    border: "#303D54", text: "#A8B8CC", textMuted: "#6070888",
+    textBright: "#D4E0EE", accent: "#7898C0", accentDim: "rgba(120,152,192,0.14)",
+    accentGlow: "rgba(120,152,192,0.28)", green: "#5AA880", greenDim: "rgba(90,168,128,0.12)",
+    red: "#B07080", redDim: "rgba(176,112,128,0.12)", amber: "#A09060",
+    amberDim: "rgba(160,144,96,0.12)", purple: "#8878A8", purpleDim: "rgba(136,120,168,0.12)",
+    hover: "rgba(120,152,192,0.06)",
+  },
+
+  // ── THUNDERSTORM ─────────────────────────────────────────────────────────
+  // Internal weather sub-theme: thunderstorm.
+  thunderstorm: {
+    name: "Thunderstorm", emoji: "⛈️",
+    _thunderstorm: true,
+    bg: "#07090F", surface: "#0D1018", surfaceRaised: "#131824",
+    border: "#1E2636", text: "#8898B4", textMuted: "#485870",
+    textBright: "#B8C8E4", accent: "#5070C0", accentDim: "rgba(80,112,192,0.14)",
+    accentGlow: "rgba(80,112,192,0.40)", green: "#4898A0", greenDim: "rgba(72,152,160,0.12)",
+    red: "#C06878", redDim: "rgba(192,104,120,0.12)", amber: "#908040",
+    amberDim: "rgba(144,128,64,0.12)", purple: "#7060B0", purpleDim: "rgba(112,96,176,0.12)",
+    hover: "rgba(80,112,192,0.06)",
+  },
+
+  // ── FOG ──────────────────────────────────────────────────────────────────
+  // Internal weather sub-theme: foggy / misty.
+  fog: {
+    name: "Fog", emoji: "🌫️",
+    _fog: true,
+    bg: "#131618", surface: "#1A1E22", surfaceRaised: "#22262C",
+    border: "#363C44", text: "#909898", textMuted: "#5E6870",
+    textBright: "#C0C8CC", accent: "#7898A0", accentDim: "rgba(120,152,160,0.12)",
+    accentGlow: "rgba(120,152,160,0.22)", green: "#6A9080", greenDim: "rgba(106,144,128,0.12)",
+    red: "#A07878", redDim: "rgba(160,120,120,0.12)", amber: "#908870",
+    amberDim: "rgba(144,136,112,0.12)", purple: "#807898", purpleDim: "rgba(128,120,152,0.12)",
+    hover: "rgba(120,152,160,0.06)",
+  },
+
   // ── WEATHER ──────────────────────────────────────────────────────────────
-  // Auto-detects your local weather and renders the matching animated canvas.
+  // Detects local weather and switches to the matching sub-theme + canvas.
   weather: {
     name: "Weather", emoji: "🌦️",
     _weather: true,

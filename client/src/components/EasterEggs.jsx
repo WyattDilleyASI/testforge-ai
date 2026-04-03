@@ -2495,10 +2495,10 @@ export const FogCanvas = () => {
 };
 
 
-// ── WEATHER CANVAS ────────────────────────────────────────────────────────────
-// Auto-detects the user's location + current weather via Open-Meteo, then
-// renders the canvas animation that best matches the WMO weather code.
-// Also shows a small weather info card (condition, temperature, city).
+// ── WEATHER INFO CARD ─────────────────────────────────────────────────────────
+// Displayed when the Weather theme is active. Receives resolved weather data
+// from App.jsx (which handles geolocation + Open-Meteo fetch) and shows the
+// current condition, temperature, and city — sitting just above the sidebar FRD.
 
 const WMO_INFO = {
   0:  { label: "Clear Sky",           emoji: "🌞" },
@@ -2527,98 +2527,39 @@ const WMO_INFO = {
   99: { label: "Severe Thunderstorm", emoji: "⛈️" },
 };
 
-export const WeatherCanvas = () => {
+export const WeatherInfoCard = ({ weatherData }) => {
   const T = useTheme();
-  const [weather, setWeather] = useState(null); // null = loading
+  if (!weatherData) return null;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchWeather = async (lat, lon) => {
-      try {
-        const [weatherRes, geoRes] = await Promise.all([
-          fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m&timezone=auto&temperature_unit=fahrenheit`
-          ),
-          fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
-            { headers: { "User-Agent": "TestForgeAI/1.0" } }
-          ),
-        ]);
-        const wData = await weatherRes.json();
-        const gData = await geoRes.json();
-        if (!cancelled) {
-          const addr = gData.address || {};
-          setWeather({
-            code: wData.current?.weather_code ?? 0,
-            temp: wData.current?.temperature_2m,
-            city: addr.city || addr.town || addr.village || addr.county || "",
-            state: addr.state_code || addr.state || "",
-          });
-        }
-      } catch {
-        if (!cancelled) setWeather({ code: 0, temp: null, city: "", state: "" });
-      }
-    };
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
-        () => { if (!cancelled) setWeather({ code: 0, temp: null, city: "", state: "" }); },
-        { timeout: 8000 }
-      );
-    } else {
-      setWeather({ code: 0, temp: null, city: "", state: "" });
-    }
-
-    return () => { cancelled = true; };
-  }, []);
-
-  // Still fetching
-  if (!weather) return <AmbientCanvas />;
-
-  const { code, temp, city, state } = weather;
-  const info = WMO_INFO[code] || { label: "Unknown", emoji: "🌡️" };
+  const { code, temp, city, state } = weatherData;
+  const info = WMO_INFO[code] ?? { label: "Unknown", emoji: "🌡️" };
   const locationStr = [city, state].filter(Boolean).join(", ");
   const tempStr = temp !== null && temp !== undefined ? `${Math.round(temp)}°F` : null;
   const sub = [tempStr, locationStr].filter(Boolean).join(" · ");
 
-  // Pick the matching canvas
-  const c = code;
-  let CanvasComponent;
-  if ([71, 73, 75, 77, 85, 86].includes(c))       CanvasComponent = SnowfallCanvas;
-  else if ([95, 96, 99].includes(c))               CanvasComponent = ThunderstormCanvas;
-  else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(c)) CanvasComponent = RainstormCanvas;
-  else if ([45, 48].includes(c))                   CanvasComponent = FogCanvas;
-  else if ([2, 3].includes(c))                     CanvasComponent = CloudyCanvas;
-  else                                             CanvasComponent = StarfieldParallaxCanvas;
-
   return (
-    <>
-      <CanvasComponent />
-      <div style={{
-        position: "fixed", bottom: 38, left: 8, zIndex: 1,
-        display: "flex", alignItems: "center", gap: 12,
-        background: T.surface,
-        border: `1px solid ${T.border}`,
-        borderRadius: 12,
-        padding: "10px 16px",
-        fontFamily: font,
-        pointerEvents: "none",
-        boxShadow: `0 4px 24px rgba(0,0,0,0.35), 0 0 0 1px ${T.border}`,
-      }}>
-        <span style={{ fontSize: 32, lineHeight: 1, flexShrink: 0 }}>{info.emoji}</span>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: T.textBright, lineHeight: 1.3 }}>
-            {info.label}
-          </div>
-          {sub && (
-            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3, letterSpacing: "0.01em" }}>
-              {sub}
-            </div>
-          )}
+    <div style={{
+      position: "fixed", bottom: 38, left: 8, zIndex: 1,
+      display: "flex", alignItems: "center", gap: 12,
+      background: T.surface,
+      border: `1px solid ${T.border}`,
+      borderRadius: 12,
+      padding: "10px 16px",
+      fontFamily: font,
+      pointerEvents: "none",
+      boxShadow: `0 4px 24px rgba(0,0,0,0.35), 0 0 0 1px ${T.border}`,
+    }}>
+      <span style={{ fontSize: 32, lineHeight: 1, flexShrink: 0 }}>{info.emoji}</span>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: T.textBright, lineHeight: 1.3 }}>
+          {info.label}
         </div>
+        {sub && (
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3, letterSpacing: "0.01em" }}>
+            {sub}
+          </div>
+        )}
       </div>
-    </>
+    </div>
   );
 };
