@@ -2518,19 +2518,27 @@ export const SunshineCanvas = () => {
       motes.push({
         x: Math.random() * canvas.width,
         y: canvas.height + Math.random() * canvas.height,
-        r: 6 + Math.random() * 18,
+        r: 14 + Math.random() * 36,
         speed: 0.18 + Math.random() * 0.28,
         drift: (Math.random() - 0.5) * 0.25,
         wobble: Math.random() * Math.PI * 2,
         wobbleSpeed: 0.004 + Math.random() * 0.006,
         hue: 38 + Math.random() * 18,    // warm gold → amber
-        opacity: 0.06 + Math.random() * 0.07,
+        opacity: 0.16 + Math.random() * 0.18,
       });
     }
 
     const draw = () => {
       const W = canvas.width, H = canvas.height;
       ctx.clearRect(0, 0, W, H);
+
+      // Soft warm sun-glow pooling at the top of the screen
+      const sunGlow = ctx.createRadialGradient(W * 0.5, 0, 0, W * 0.5, 0, H * 0.55);
+      sunGlow.addColorStop(0, "rgba(255,230,120,0.13)");
+      sunGlow.addColorStop(0.5, "rgba(255,210,80,0.05)");
+      sunGlow.addColorStop(1, "rgba(255,200,60,0)");
+      ctx.fillStyle = sunGlow;
+      ctx.fillRect(0, 0, W, H);
 
       for (const m of motes) {
         m.wobble += m.wobbleSpeed;
@@ -2544,9 +2552,9 @@ export const SunshineCanvas = () => {
 
         const pulse = m.opacity * (0.75 + Math.sin(m.wobble * 1.4) * 0.25);
         const grad = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r);
-        grad.addColorStop(0, `hsla(${m.hue}, 90%, 75%, ${pulse})`);
-        grad.addColorStop(0.5, `hsla(${m.hue}, 80%, 65%, ${pulse * 0.5})`);
-        grad.addColorStop(1, `hsla(${m.hue}, 70%, 60%, 0)`);
+        grad.addColorStop(0, `hsla(${m.hue}, 95%, 72%, ${pulse})`);
+        grad.addColorStop(0.45, `hsla(${m.hue}, 85%, 65%, ${pulse * 0.55})`);
+        grad.addColorStop(1, `hsla(${m.hue}, 75%, 60%, 0)`);
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
