@@ -38,16 +38,14 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
     setEditingTcId(tc.tc_id);
   };
 
-  const [editError, setEditError] = useState("");
-
   const saveEdit = async (tcId) => {
-    setEditSaving(true); setEditError("");
+    setEditSaving(true);
     try {
       await api.updateTestCase(tcId, { title: editForm.title, type: editForm.type, description: editForm.description, preconditions: editForm.setup, steps: editForm.steps });
       setEditingTcId(null);
       setEditForm(null);
       refresh();
-    } catch (err) { setEditError(err.message); }
+    } catch (err) { console.error(err); }
     finally { setEditSaving(false); }
   };
 
@@ -245,10 +243,9 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                                 <div>{lbl("Expected Result")}{ta(s.expectedResult, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
                               </div>
                             ))}
-                            <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+                            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                               <Button small onClick={e => { e.stopPropagation(); saveEdit(tc.tc_id); }} disabled={editSaving || !editForm.title.trim()}>{editSaving ? "Saving..." : "Save"}</Button>
-                              <Button small variant="ghost" onClick={e => { e.stopPropagation(); setEditingTcId(null); setEditForm(null); setEditError(""); }}>Cancel</Button>
-                              {editError && <span style={{ fontSize: 11, color: COLORS.red, fontFamily: mono }}>{editError}</span>}
+                              <Button small variant="ghost" onClick={e => { e.stopPropagation(); setEditingTcId(null); setEditForm(null); }}>Cancel</Button>
                             </div>
                           </div>
                         );
