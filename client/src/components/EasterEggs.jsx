@@ -2575,6 +2575,104 @@ export const SunshineCanvas = () => {
 };
 
 
+// ── MAINLY CLEAR CANVAS ───────────────────────────────────────────────────────
+// Sky-blue bokeh motes rising slowly + a couple of thin wispy cloud streaks.
+
+export const MainlyClearCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    // Sky-blue bokeh motes
+    const motes = Array.from({ length: 40 }, () => ({
+      x: Math.random() * canvas.width,
+      y: canvas.height + Math.random() * canvas.height,
+      r: 10 + Math.random() * 30,
+      speed: 0.12 + Math.random() * 0.20,
+      drift: (Math.random() - 0.5) * 0.20,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: 0.003 + Math.random() * 0.005,
+      hue: 200 + Math.random() * 30,   // sky blue → cyan-blue
+      opacity: 0.12 + Math.random() * 0.14,
+    }));
+
+    // Thin wispy cloud streaks (static shape, just drift slowly sideways)
+    const wisps = Array.from({ length: 3 }, (_, i) => ({
+      x: Math.random() * canvas.width,
+      y: 40 + i * 70 + Math.random() * 30,
+      w: 200 + Math.random() * 300,
+      h: 18 + Math.random() * 14,
+      speed: 0.08 + Math.random() * 0.10,
+      opacity: 0.10 + Math.random() * 0.10,
+    }));
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // Very faint blue sky wash at the top
+      const skyGlow = ctx.createLinearGradient(0, 0, 0, H * 0.6);
+      skyGlow.addColorStop(0, "rgba(160,210,255,0.08)");
+      skyGlow.addColorStop(1, "rgba(160,210,255,0)");
+      ctx.fillStyle = skyGlow;
+      ctx.fillRect(0, 0, W, H);
+
+      // Wispy cloud streaks
+      for (const w of wisps) {
+        w.x += w.speed;
+        if (w.x > W + w.w) w.x = -w.w;
+        const cg = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, w.w * 0.5);
+        cg.addColorStop(0, `rgba(255,255,255,${w.opacity})`);
+        cg.addColorStop(0.5, `rgba(240,248,255,${w.opacity * 0.5})`);
+        cg.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.save();
+        ctx.scale(1, w.h / (w.w * 0.5));
+        ctx.fillStyle = cg;
+        ctx.beginPath();
+        ctx.arc(w.x, w.y * (w.w * 0.5) / w.h, w.w * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Rising sky-blue bokeh
+      for (const m of motes) {
+        m.wobble += m.wobbleSpeed;
+        m.y -= m.speed;
+        m.x += m.drift + Math.sin(m.wobble) * 0.25;
+        if (m.y < -m.r * 4) { m.y = H + m.r * 2; m.x = Math.random() * W; }
+        const pulse = m.opacity * (0.75 + Math.sin(m.wobble * 1.3) * 0.25);
+        const grad = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r);
+        grad.addColorStop(0, `hsla(${m.hue}, 80%, 72%, ${pulse})`);
+        grad.addColorStop(0.45, `hsla(${m.hue}, 70%, 65%, ${pulse * 0.5})`);
+        grad.addColorStop(1, `hsla(${m.hue}, 60%, 60%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none" }} />;
+};
+
+
 // ── WEATHER INFO CARD ─────────────────────────────────────────────────────────
 // Displayed when the Weather theme is active. Receives resolved weather data
 // from App.jsx (which handles geolocation + Open-Meteo fetch) and shows the
@@ -2612,7 +2710,7 @@ export const WeatherInfoCard = ({ weatherData }) => {
   if (!weatherData) return null;
 
   const { code, temp, city, state } = weatherData;
-  const info = WMO_INFO[code] ?? { label: "Unknown", emoji: "🌡️" };
+  const info = WMO_INFO[code] ?? { label: `Unknown (WMO ${code})`, emoji: "🌡️" };
   const locationStr = [city, state].filter(Boolean).join(", ");
   const tempStr = temp !== null && temp !== undefined ? `${Math.round(temp)}°F` : null;
   const sub = [tempStr, locationStr].filter(Boolean).join(" · ");

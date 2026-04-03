@@ -24,13 +24,14 @@ import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas
   ThunderstormCanvas,
   FogCanvas,
   SunshineCanvas,
+  MainlyClearCanvas,
   WeatherInfoCard,
  } from "./components/EasterEggs";
 
 // WMO weather code → theme key, split by day / night
 const WMO_TO_THEME_DAY = {
-  0: "sunshineHues",  1: "sunshineHues",
-  2: "cloudyDay",     3: "cloudyDay",
+  0: "sunshineHues",   1: "mainlyClearDay",
+  2: "cloudyDay",      3: "cloudyDay",
   45: "fogDay",       48: "fogDay",
   51: "rainstorm",    53: "rainstorm",    55: "rainstorm",
   61: "rainstorm",    63: "rainstorm",    65: "rainstorm",
@@ -106,6 +107,7 @@ export default function App() {
     if (themeName !== "weather") { setWeatherData(null); return; }
     let cancelled = false;
     const fetchWeather = async (lat, lon, ipCity = "", ipState = "") => {
+      console.log(`[Weather] Fetching for lat=${lat} lon=${lon} city=${ipCity} state=${ipState}`);
       // Weather code is required — fetch first, fail hard if it errors.
       let wData;
       try {
@@ -113,7 +115,9 @@ export default function App() {
           `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m,is_day&timezone=auto&temperature_unit=fahrenheit`
         );
         wData = await wRes.json();
-      } catch {
+        console.log("[Weather] Open-Meteo response:", wData);
+      } catch (e) {
+        console.error("[Weather] Open-Meteo failed:", e);
         if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: ipCity, state: ipState });
         return;
       }
@@ -144,19 +148,37 @@ export default function App() {
     };
 
     // IP geolocation fallback — used when browser geolocation is unavailable
-    // or blocked (e.g. HTTP dev server). Less precise but no permissions needed.
+    // or blocked (e.g. HTTP dev server). Tries two services in sequence.
     const fetchViaIp = async () => {
+      // 1. Try ipapi.co
       try {
         const res = await fetch("https://ipapi.co/json/");
         const d = await res.json();
+        console.log("[Weather] ipapi.co response:", d);
         if (d.latitude && d.longitude) {
           fetchWeather(d.latitude, d.longitude, d.city || "", d.region_code || d.region || "");
-        } else {
-          if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+          return;
         }
-      } catch {
-        if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+        console.warn("[Weather] ipapi.co: no coordinates (possibly rate-limited), trying fallback");
+      } catch (e) {
+        console.warn("[Weather] ipapi.co failed:", e);
       }
+
+      // 2. Fallback: ip-api.com (45 req/min free, no key required)
+      try {
+        const res2 = await fetch("http://ip-api.com/json/?fields=status,lat,lon,city,region,regionName");
+        const d2 = await res2.json();
+        console.log("[Weather] ip-api.com response:", d2);
+        if (d2.status === "success" && d2.lat && d2.lon) {
+          fetchWeather(d2.lat, d2.lon, d2.city || "", d2.region || d2.regionName || "");
+          return;
+        }
+        console.warn("[Weather] ip-api.com: no coordinates");
+      } catch (e) {
+        console.warn("[Weather] ip-api.com failed:", e);
+      }
+
+      if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
     };
 
     if (navigator.geolocation) {
@@ -434,13 +456,14 @@ useEffect(() => {
       {activeTheme._thunderstorm && <ThunderstormCanvas />}
       {activeTheme._fog && <FogCanvas />}
       {activeTheme._sunshine && <SunshineCanvas />}
+      {activeTheme._mainlyClear && <MainlyClearCanvas />}
       {!(activeTheme._starfield || activeTheme._matrixRain || activeTheme._aurora ||
          activeTheme._vaporwave || activeTheme._fireflies || activeTheme._fishTank ||
          activeTheme._hotDogs || hotDogOverlay || activeTheme._rainstorm ||
          activeTheme._starfieldTheme || activeTheme._campfire || activeTheme._snowfall ||
          activeTheme._deepSea || activeTheme._crt || activeTheme._audioVisualizer ||
          activeTheme._cloudy || activeTheme._thunderstorm || activeTheme._fog ||
-         activeTheme._sunshine) && <AmbientCanvas />}
+         activeTheme._sunshine || activeTheme._mainlyClear) && <AmbientCanvas />}
       {themeName === "weather" && <WeatherInfoCard weatherData={weatherData} />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {

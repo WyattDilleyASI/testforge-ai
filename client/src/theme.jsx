@@ -1332,6 +1332,20 @@ export const THEMES = {
     hover: "rgba(120,144,168,0.06)",
   },
 
+  // ── MAINLY CLEAR DAY ────────────────────────────────────────────────────
+  // Internal weather sub-theme: WMO 1 — mostly clear daytime sky (light blue).
+  mainlyClearDay: {
+    name: "Mainly Clear", emoji: "🌤️",
+    _mainlyClear: true,
+    bg: "#EBF4FF", surface: "#F3F8FF", surfaceRaised: "#FFFFFF",
+    border: "#BAD4EE", text: "#2C4A68", textMuted: "#6888A8",
+    textBright: "#0E2038", accent: "#2878C8", accentDim: "rgba(40,120,200,0.10)",
+    accentGlow: "rgba(40,120,200,0.22)", green: "#2E8860", greenDim: "rgba(46,136,96,0.10)",
+    red: "#C04848", redDim: "rgba(192,72,72,0.10)", amber: "#B07830",
+    amberDim: "rgba(176,120,48,0.10)", purple: "#7858B8", purpleDim: "rgba(120,88,184,0.10)",
+    hover: "rgba(40,120,200,0.06)",
+  },
+
   // ── CLOUDY DAY ───────────────────────────────────────────────────────────
   // Internal weather sub-theme: overcast during the day (light palette).
   cloudyDay: {
