@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 const crypto = require("crypto");
-const { getDb, getReqDb, getTcDb, getKbDb, logAudit, nextKbId, saveImage, deleteImage } = require("./db");
+const { getDb, getReqDb, getTcDb, getKbDb, logAudit, nextKbId } = require("./db");
 
 // ─── CACHED ESM IMPORTS (MCP SDK is ESM-only) ──────────────────────────────
 
@@ -457,13 +457,8 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         .describe("Requirement IDs to associate with this entry (e.g. ['RS-001', 'TC-003'])"),
       subsection_id: z.string().optional()
         .describe("Place entry in a specific subsection (e.g. KB-SS001). Omit for Uncategorized. Use list_kb_sections to find IDs."),
-      images: z.array(z.object({
-        name: z.string().describe("Image filename, e.g. 'screenshot.png'"),
-        media_type: z.string().describe("MIME type, e.g. 'image/png', 'image/jpeg'"),
-        data: z.string().describe("Base64-encoded image data"),
-      })).optional().describe("Images to attach to this KB entry (base64-encoded)"),
     },
-    async ({ title, type, content, tags, subsection_id, images }) => {
+    async ({ title, type, content, tags, subsection_id }) => {
       const db = getKbDb();
 
       // Validate subsection if provided
@@ -475,23 +470,10 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
       }
 
       const kbId = nextKbId();
-      const imageData = (images || []).map(img => ({
-        name: img.name,
-        media_type: img.media_type,
-        data: img.data,
-      }));
-
-      // Save images to filesystem
-      for (const img of imageData) {
-        if (img.data) {
-          saveImage(kbId, img.name, img.data);
-        }
-      }
-      const imageMeta = imageData.map(img => ({ name: img.name, media_type: img.media_type, description: null }));
 
       db.prepare(
         "INSERT INTO kb_entries (kb_id, title, type, content, tags, images, subsection_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      ).run(kbId, title, type, content, JSON.stringify(tags || []), JSON.stringify(imageMeta), subsection_id || null, `${user.name} (via MCP)`);
+      ).run(kbId, title, type, content, JSON.stringify(tags || []), "[]", subsection_id || null, `${user.name} (via MCP)`);
 
       // Look up where it was placed for the response
       let locationMsg = "Uncategorized";
@@ -500,10 +482,10 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
         if (sub) locationMsg = `${sub.sec_name} → ${sub.sub_name}`;
       }
 
-      logAudit(user.name, "KB_CREATED_MCP", `Created KB entry ${kbId}: ${title} in ${locationMsg}${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""} (via MCP)`);
+      logAudit(user.name, "KB_CREATED_MCP", `Created KB entry ${kbId}: ${title} in ${locationMsg} (via MCP)`);
 
       return {
-        content: [{ type: "text", text: `✓ Created KB entry ${kbId}: "${title}" [${type}] in ${locationMsg}${imageData.length > 0 ? ` with ${imageData.length} image(s)` : ""}` }],
+        content: [{ type: "text", text: `✓ Created KB entry ${kbId}: "${title}" [${type}] in ${locationMsg}` }],
       };
     }
   );
@@ -751,80 +733,6 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
 
       return {
         content: [{ type: "text", text: `Updated ${kb_id}: ${updates.join(", ")}` }],
-      };
-    }
-  );
-
-  // ════════════════════════════════════════════════════════════════════════
-  // TOOL: add_kb_images
-  // ════════════════════════════════════════════════════════════════════════
-
-  server.tool(
-    "add_kb_images",
-    "Add one or more images to an existing knowledge base entry. Images are stored as base64-encoded data. Use this to attach screenshots, diagrams, or UI references to KB entries.",
-    {
-      kb_id: z.string().describe("The KB entry ID to add images to, e.g. KB-E001"),
-      images: z.array(z.object({
-        name: z.string().describe("Image filename, e.g. 'screenshot.png'"),
-        media_type: z.string().describe("MIME type, e.g. 'image/png', 'image/jpeg'"),
-        data: z.string().describe("Base64-encoded image data"),
-      })).min(1).describe("Images to add (base64-encoded)"),
-    },
-    async ({ kb_id, images }) => {
-      const db = getKbDb();
-      const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
-      if (!entry) {
-        return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
-      }
-
-      const existing = JSON.parse(entry.images || "[]");
-      const newImages = images.map(img => {
-        const savedName = saveImage(kb_id, img.name, img.data);
-        return { name: savedName, media_type: img.media_type, description: null };
-      });
-
-      const updated = [...existing, ...newImages];
-      db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(updated), kb_id);
-
-      logAudit(user.name, "KB_IMAGE_ADDED_MCP", `Added ${newImages.length} image(s) to ${kb_id} (via MCP)`);
-
-      return {
-        content: [{ type: "text", text: `✓ Added ${newImages.length} image(s) to ${kb_id}. Total images: ${updated.length}` }],
-      };
-    }
-  );
-
-  // ════════════════════════════════════════════════════════════════════════
-  // TOOL: remove_kb_image
-  // ════════════════════════════════════════════════════════════════════════
-
-  server.tool(
-    "remove_kb_image",
-    "Remove an image from a knowledge base entry by its index. Use search_knowledge_base or get the entry first to see available images and their indices.",
-    {
-      kb_id: z.string().describe("The KB entry ID, e.g. KB-E001"),
-      index: z.number().int().min(0).describe("Zero-based index of the image to remove"),
-    },
-    async ({ kb_id, index }) => {
-      const db = getKbDb();
-      const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(kb_id);
-      if (!entry) {
-        return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
-      }
-
-      const images = JSON.parse(entry.images || "[]");
-      if (index < 0 || index >= images.length) {
-        return { content: [{ type: "text", text: `Invalid image index ${index}. Entry has ${images.length} image(s) (indices 0-${images.length - 1}).` }] };
-      }
-
-      const removed = images.splice(index, 1);
-      deleteImage(kb_id, removed[0].name);
-      db.prepare("UPDATE kb_entries SET images = ? WHERE kb_id = ?").run(JSON.stringify(images), kb_id);
-
-      logAudit(user.name, "KB_IMAGE_REMOVED_MCP", `Removed image "${removed[0].name}" from ${kb_id} (via MCP)`);
-
-      return {
-        content: [{ type: "text", text: `✓ Removed image "${removed[0].name}" from ${kb_id}. Remaining images: ${images.length}` }],
       };
     }
   );
