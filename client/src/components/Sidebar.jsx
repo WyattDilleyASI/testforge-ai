@@ -6,8 +6,8 @@ export const NAV_ITEMS = [
   { key: "testcases",     label: "Test Cases",           icon: "◨", reqs: "TC-001 – TC-009" },
   { key: "traceability",  label: "SysML Traceability",   icon: "◈", reqs: "TC-007" },
   { key: "kb",            label: "Knowledge Base",       icon: "◪", reqs: "KB-001 – KB-006" },
-  { key: "settings",      label: "Settings",             icon: "⚙", reqs: "UM · JM · MCP" },
   { key: "analytics",     label: "Learning Engine",      icon: "◉", reqs: "AL-002 – AL-004" },
+  { key: "settings",      label: "Settings",             icon: "⚙", reqs: "UM · JM · MCP" },
   { key: "deferred",      label: "Deferred to v2",       icon: "◬", reqs: "AL-xxx · KB-007" },
 ];
 

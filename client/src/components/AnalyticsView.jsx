@@ -66,6 +66,7 @@ export const AnalyticsView = ({ currentUser }) => {
     ...(isManager ? [{ key: "rules", label: "Rules" }] : []),
     ...(isManager ? [{ key: "exemplars", label: "Exemplars" }] : []),
     ...(isAdmin ? [{ key: "system", label: "System" }] : []),
+    { key: "guide", label: "Guide" },
   ];
 
   // ── Data Loading ────────────────────────────────────────────────────
@@ -182,6 +183,283 @@ export const AnalyticsView = ({ currentUser }) => {
   if (error) return <div style={{ padding: 40 }}><ErrorBanner message={error} /></div>;
 
   const d = dashboard;
+
+  // ── Accordion Component (local to AnalyticsView) ──────────────────
+
+  const Accordion = ({ items }) => {
+    const [openIndex, setOpenIndex] = useState(null);
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {items.map((item, i) => {
+          const isOpen = openIndex === i;
+          return (
+            <div key={i} style={{
+              border: `1px solid ${isOpen ? COLORS.accent + "44" : COLORS.border}`,
+              borderRadius: 8, overflow: "hidden",
+              background: isOpen ? COLORS.accentDim + "22" : COLORS.surface,
+              transition: "all 0.2s ease",
+            }}>
+              <button onClick={() => setOpenIndex(isOpen ? null : i)} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 12,
+                padding: "14px 16px", border: "none", cursor: "pointer",
+                background: "transparent", fontFamily: font, textAlign: "left",
+              }}>
+                <span style={{
+                  fontSize: 16, color: COLORS.accent, flexShrink: 0,
+                  transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                  transition: "transform 0.2s ease",
+                  display: "inline-block",
+                }}>▸</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, flex: 1 }}>
+                  {item.icon && <span style={{ marginRight: 8 }}>{item.icon}</span>}
+                  {item.title}
+                </span>
+                {item.badge && (
+                  <span style={{
+                    fontSize: 10, fontFamily: mono, padding: "2px 8px",
+                    borderRadius: 4, background: COLORS.accentDim,
+                    color: COLORS.accent, fontWeight: 600,
+                  }}>{item.badge}</span>
+                )}
+              </button>
+              {isOpen && (
+                <div style={{
+                  padding: "0 16px 16px 44px",
+                  fontSize: 13, color: COLORS.text, lineHeight: 1.8,
+                }}>
+                  {item.content}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+
+  // ═══════════════════════════════════════════════════════════════════
+  // RENDER: Guide Tab
+  // ═══════════════════════════════════════════════════════════════════
+
+  const renderGuide = () => {
+    const arrow = (label, color) => (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "0 4px" }}>
+        <div style={{ fontSize: 18, color: COLORS[color] || COLORS.accent, lineHeight: 1 }}>↓</div>
+        <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.04em", textAlign: "center", maxWidth: 80 }}>{label}</div>
+      </div>
+    );
+
+    const loopNode = (icon, title, desc, color, highlight) => (
+      <div style={{
+        flex: "1 1 0", minWidth: 140, padding: "16px 14px", borderRadius: 10,
+        background: highlight ? COLORS[color + "Dim"] || COLORS.accentDim : COLORS.surface,
+        border: `2px solid ${COLORS[color] || COLORS.accent}${highlight ? "" : "44"}`,
+        textAlign: "center", transition: "all 0.2s ease",
+      }}>
+        <div style={{ fontSize: 28, marginBottom: 8, lineHeight: 1 }}>{icon}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: COLORS[color] || COLORS.textBright, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>{title}</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6 }}>{desc}</div>
+      </div>
+    );
+
+    return <>
+      {/* Hero */}
+      <Card style={{ marginBottom: 24, textAlign: "center", padding: "32px 24px" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>◉</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.textBright, marginBottom: 8 }}>
+          Adaptive Learning Engine
+        </div>
+        <div style={{ fontSize: 13, color: COLORS.textMuted, maxWidth: 600, margin: "0 auto", lineHeight: 1.8 }}>
+          TestForge learns from how your team reviews test cases and uses those patterns to generate better drafts over time. No machine learning, no training data, no black boxes — just structured feedback that makes every generation smarter than the last.
+        </div>
+      </Card>
+
+      {/* Visual Feedback Loop */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 6 }}>How It Works</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 20 }}>
+          The engine follows a continuous cycle. Your everyday actions — approving, editing, rejecting — are the fuel.
+        </div>
+
+        {/* Loop diagram — horizontal flow */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          gap: 8, flexWrap: "wrap", padding: "12px 0",
+        }}>
+          {loopNode("⚡", "Generate", "Claude creates test case drafts using your requirements + KB context", "accent", true)}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 2px" }}>
+            <div style={{ fontSize: 20, color: COLORS.accent }}>→</div>
+          </div>
+          {loopNode("✏️", "Review", "Engineers approve, edit, or reject each draft — this is the feedback", "purple", false)}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 2px" }}>
+            <div style={{ fontSize: 20, color: COLORS.purple }}>→</div>
+          </div>
+          {loopNode("🔍", "Learn", "The engine detects patterns: which fields get edited, why TCs are rejected", "amber", false)}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 2px" }}>
+            <div style={{ fontSize: 20, color: COLORS.amber }}>→</div>
+          </div>
+          {loopNode("🎯", "Improve", "Rules & exemplars are injected into the next generation prompt", "green", true)}
+        </div>
+
+        {/* Loop-back arrow */}
+        <div style={{
+          textAlign: "center", marginTop: 8, padding: "8px 0",
+          fontSize: 11, fontFamily: mono, color: COLORS.textMuted,
+        }}>
+          <span style={{ fontSize: 14, color: COLORS.green }}>↩</span>{" "}
+          Improved prompts feed back into the next generation cycle
+        </div>
+      </Card>
+
+      {/* What the engine is NOT */}
+      <Card style={{ marginBottom: 24, borderLeft: `3px solid ${COLORS.amber}` }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <span style={{ fontSize: 22, flexShrink: 0 }}>💡</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textBright, marginBottom: 6 }}>
+              This is not machine learning
+            </div>
+            <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.8 }}>
+              The AI model (Claude) doesn't learn or change. It's stateless — every generation starts fresh.
+              What <em>does</em> change is the <strong>recipe</strong>: the instructions, rules, and examples we
+              include in the prompt. Think of it like a chef reading customer feedback cards and adjusting
+              the recipe, not retraining their palate.
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Core Concepts — expandable */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 12 }}>Core Concepts</div>
+      <div style={{ marginBottom: 24 }}>
+        <Accordion items={[
+          {
+            icon: "📸", title: "Passive Feedback (Zero Extra Work)",
+            badge: "AUTOMATIC",
+            content: (
+              <div>
+                <p>Every time you review a test case, the engine silently captures what happened:</p>
+                <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
+                  <div><span style={{ color: COLORS.green, fontWeight: 600 }}>Approved unchanged</span> — strong positive signal. The AI got it right.</div>
+                  <div><span style={{ color: COLORS.amber, fontWeight: 600 }}>Approved with edits</span> — the diff between the original and your version is captured. This tells the engine exactly what needs improvement.</div>
+                  <div><span style={{ color: COLORS.red, fontWeight: 600 }}>Rejected</span> — the reason category you pick tells the engine what went wrong.</div>
+                </div>
+                <p>You don't fill out forms or rate anything. You just review test cases like you normally would. The engine reads between the lines.</p>
+              </div>
+            ),
+          },
+          {
+            icon: "📏", title: "Adaptive Rules",
+            badge: isManager ? "YOU CAN MANAGE THESE" : "AUTO-MANAGED",
+            content: (
+              <div>
+                <p>Rules are concise instructions that get injected into the generation prompt. They're the "lessons learned" from reviewer feedback. Examples:</p>
+                <div style={{
+                  padding: "10px 14px", background: COLORS.surface, borderRadius: 6,
+                  margin: "10px 0", fontSize: 12, fontStyle: "italic", lineHeight: 1.8,
+                  color: COLORS.textMuted, borderLeft: `2px solid ${COLORS.accent}`,
+                }}>
+                  "When generating for numeric input requirements, always include boundary tests at min-1, min, max, max+1."
+                  <br />
+                  "Avoid preconditions that assume a specific user role unless the requirement explicitly specifies one."
+                </div>
+                <p>Rules have a <strong>confidence score</strong> that decays over time. If a rule isn't reinforced by new feedback, it fades out naturally. There's a hard cap of 25 rules to prevent prompt bloat.</p>
+                {isManager && <p style={{ color: COLORS.accent, fontWeight: 600 }}>As an {currentUser?.role}, you can create, edit, and delete rules in the Rules tab.</p>}
+              </div>
+            ),
+          },
+          {
+            icon: "⭐", title: "Exemplar Test Cases",
+            badge: "FEW-SHOT EXAMPLES",
+            content: (
+              <div>
+                <p>Exemplars are "gold standard" test cases — ones that reviewers approved without making any changes. They get injected into the generation prompt as concrete examples of what good looks like.</p>
+                <p>Research shows that combining written rules with real examples produces better AI output than either approach alone. Rules say <em>"do this differently."</em> Exemplars show <em>"here's what good looks like."</em></p>
+                <p>Each exemplar costs roughly 300–500 input tokens. At 2–3 exemplars per generation, that's a small premium that pays for itself by reducing regeneration rates.</p>
+                {isManager && <p style={{ color: COLORS.accent, fontWeight: 600 }}>Manage the exemplar pool in the Exemplars tab.</p>}
+              </div>
+            ),
+          },
+          {
+            icon: "⏳", title: "Confidence Decay & Data Retention",
+            content: (
+              <div>
+                <p>The engine is designed to stay sharp, not accumulate cruft:</p>
+                <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
+                  <div><strong>Rule confidence</strong> decays with a 45-day half-life. Rules that aren't reinforced by new feedback gradually lose influence.</div>
+                  <div><strong>Feedback events</strong> are retained for 90 days, then pruned. Generation session summaries are kept indefinitely for trend data.</div>
+                  <div><strong>Snapshots</strong> (the original generated state of a TC) are cleared 7 days after review. The diff has already been captured.</div>
+                  <div><strong>Model version reset</strong> — when the underlying AI model changes, all rule confidences are halved. Old rules need to re-prove themselves against the new model's behavior.</div>
+                </div>
+              </div>
+            ),
+          },
+          {
+            icon: "📊", title: "Contextual Hints (Before Generation)",
+            content: (
+              <div>
+                <p>When you select a requirement on the Generate page, the engine checks its history. If previous generations exist for that requirement, you'll see a hint banner showing:</p>
+                <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
+                  <div>• How many prior generations exist</div>
+                  <div>• The approval rate (color-coded: green ≥ 70%, amber ≥ 40%, red below)</div>
+                  <div>• Which fields engineers edit most often (e.g., "preconditions edited 60% of the time")</div>
+                </div>
+                <p>This helps you decide whether to adjust KB context, change depth, or add focus areas before generating.</p>
+              </div>
+            ),
+          },
+        ]} />
+      </div>
+
+      {/* Role-specific guidance */}
+      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 12 }}>What Should I Do?</div>
+      <Accordion items={[
+        {
+          icon: "🔧", title: "I'm a QA Engineer",
+          badge: "MOST IMPORTANT",
+          content: (
+            <div>
+              <p><strong>You are the engine's primary input.</strong> Every edit you make and every rejection reason you select teaches the system. Here's how to maximize your impact:</p>
+              <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
+                <div><strong>Edit before approving</strong> — Don't just reject a so-so test case. Fix it and approve it. The diff between the original and your version is the highest-quality feedback the engine receives.</div>
+                <div><strong>Pick rejection reasons carefully</strong> — When you do reject, the category you select matters. "Missing edge case" teaches something different than "Doesn't test the requirement."</div>
+                <div><strong>Check the hint banner</strong> — Before generating, glance at the Generation History hint on the Generate page. If preconditions keep getting edited, maybe the KB needs better environment context.</div>
+              </div>
+              <p>That's it. No forms, no dashboards, no extra steps. Just review test cases like you normally would.</p>
+            </div>
+          ),
+        },
+        {
+          icon: "📋", title: "I'm a QA Manager",
+          content: (
+            <div>
+              <p>You have access to the <strong>Rules</strong> and <strong>Exemplars</strong> tabs. Here's how to use them:</p>
+              <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
+                <div><strong>Monitor the Feedback tab</strong> — Check which fields get edited most and what the top rejection reasons are. If "incomplete steps" keeps appearing, consider adding a rule about step detail.</div>
+                <div><strong>Create rules proactively</strong> — If you know your domain has specific testing patterns (e.g., "always test timeout behavior for network operations"), add them as rules before waiting for feedback to surface them.</div>
+                <div><strong>Curate exemplars</strong> — Promote your best test cases to the exemplar pool. A well-chosen exemplar is worth more than several rules.</div>
+                <div><strong>Review the Overview tab monthly</strong> — Watch your approval rate trend. If it's climbing, the engine is working. If it's flat, you may need to add or refine rules.</div>
+              </div>
+            </div>
+          ),
+        },
+        {
+          icon: "⚙️", title: "I'm an Admin",
+          content: (
+            <div>
+              <p>You have everything a QA Manager does, plus the <strong>System</strong> tab:</p>
+              <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
+                <div><strong>Run maintenance periodically</strong> — Hit the "Run Maintenance" button monthly (or more often during heavy use). It prunes old feedback, clears stale snapshots, and removes orphaned records.</div>
+                <div><strong>Watch for model drift</strong> — When the AI model in .env changes (e.g., a new Claude version), the System tab will show "DRIFT DETECTED." Reset rule confidence so old rules re-prove themselves against the new model.</div>
+                <div><strong>Monitor health numbers</strong> — Unprocessed feedback events should stay manageable. If snapshots pile up, engineers aren't reviewing their drafts.</div>
+              </div>
+            </div>
+          ),
+        },
+      ]} />
+    </>;
+  };
 
   // ═══════════════════════════════════════════════════════════════════
   // RENDER: Overview Tab
@@ -558,6 +836,7 @@ export const AnalyticsView = ({ currentUser }) => {
       {tab === "rules" && renderRules()}
       {tab === "exemplars" && renderExemplars()}
       {tab === "system" && renderSystem()}
+      {tab === "guide" && renderGuide()}
     </div>
   );
 };

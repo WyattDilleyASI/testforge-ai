@@ -170,14 +170,23 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                       {(tc.linked_req_ids || []).length > 0 && <><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</>}
                       <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
                     </div>
-                  </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
                     {isExpanded && <Button small variant="secondary" onClick={e => { e.stopPropagation(); editingTcId === tc.tc_id ? (setEditingTcId(null), setEditForm(null)) : startEdit(tc); }}>{editingTcId === tc.tc_id ? "Cancel" : "Edit"}</Button>}
                     <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
                     <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}> &#10007;</Button>
-                    {rejectingTcId === tc.tc_id && ( <RejectionPicker onReject={(reason) => updateStatus(tc.tc_id, "Rejected", reason)} onCancel={() => setRejectingTcId(null)} /> )}
                     <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
                   </div>
+                </div>
+
+                {/* Rejection reason picker — full-width below header */}
+                {rejectingTcId === tc.tc_id && (
+                  <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                    <RejectionPicker
+                      onReject={(reason) => updateStatus(tc.tc_id, "Rejected", reason)}
+                      onCancel={() => setRejectingTcId(null)}
+                    />
+                  </div>
+                )}
                 </div>
 
                 {isExpanded && (() => {
