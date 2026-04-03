@@ -1331,6 +1331,20 @@ export const THEMES = {
     hover: "rgba(120,144,168,0.06)",
   },
 
+  // ── WEATHER ──────────────────────────────────────────────────────────────
+  // Auto-detects your local weather and renders the matching animated canvas.
+  weather: {
+    name: "Weather", emoji: "🌦️",
+    _weather: true,
+    bg: "#0F1A2E", surface: "#152340", surfaceRaised: "#1A2E55",
+    border: "#2A4A7A", text: "#B0C8E8", textMuted: "#6080A8",
+    textBright: "#E0F0FF", accent: "#60A8E0", accentDim: "rgba(96,168,224,0.14)",
+    accentGlow: "rgba(96,168,224,0.28)", green: "#50C890", greenDim: "rgba(80,200,144,0.12)",
+    red: "#C06868", redDim: "rgba(192,104,104,0.12)", amber: "#C0A848",
+    amberDim: "rgba(192,168,72,0.12)", purple: "#8878C0", purpleDim: "rgba(136,120,192,0.12)",
+    hover: "rgba(96,168,224,0.06)",
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // HIDDEN EASTER EGG THEMES
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1429,6 +1443,7 @@ export const THEME_CATEGORIES = [
       "fireflies", "lavaLamp", "synthwave", "fishTank",
       "audioVisualizer",
       "rainstorm", "starfieldTheme", "campfire", "snowfall", "deepSea", "crt",
+      "weather",
     ],
   },
   {

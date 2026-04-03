@@ -19,6 +19,11 @@ import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas
   DeepSeaCanvas,
   CRTCanvas,
   AudioVisualizerCanvas,
+  AmbientCanvas,
+  CloudyCanvas,
+  ThunderstormCanvas,
+  FogCanvas,
+  WeatherCanvas,
  } from "./components/EasterEggs";
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
@@ -326,6 +331,13 @@ useEffect(() => {
       {activeTheme._deepSea && <DeepSeaCanvas />}
       {activeTheme._crt && <CRTCanvas />}
       {activeTheme._audioVisualizer && <AudioVisualizerCanvas />}
+      {activeTheme._weather && <WeatherCanvas />}
+      {!(activeTheme._starfield || activeTheme._matrixRain || activeTheme._aurora ||
+         activeTheme._vaporwave || activeTheme._fireflies || activeTheme._fishTank ||
+         activeTheme._hotDogs || hotDogOverlay || activeTheme._rainstorm ||
+         activeTheme._starfieldTheme || activeTheme._campfire || activeTheme._snowfall ||
+         activeTheme._deepSea || activeTheme._crt || activeTheme._audioVisualizer ||
+         activeTheme._weather) && <AmbientCanvas />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");

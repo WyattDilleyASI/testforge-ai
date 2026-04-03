@@ -2145,3 +2145,480 @@ export const AudioVisualizerCanvas = () => {
     </>
   );
 };
+
+
+// ── AMBIENT PARTICLES ─────────────────────────────────────────────────────────
+// Very subtle theme-colored floating particles — the fallback animation for
+// all themes that don't have a dedicated canvas effect.
+
+export const AmbientCanvas = () => {
+  const T = useTheme();
+  const themeRef = useRef(T);
+  useEffect(() => { themeRef.current = T; }, [T]);
+
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    const particles = [];
+    const COUNT = 35;
+
+    const hexToRgb = (hex) => {
+      if (!hex || hex[0] !== "#" || hex.length < 7) return { r: 128, g: 128, b: 200 };
+      return {
+        r: parseInt(hex.slice(1, 3), 16),
+        g: parseInt(hex.slice(3, 5), 16),
+        b: parseInt(hex.slice(5, 7), 16),
+      };
+    };
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (let i = 0; i < COUNT; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.15,
+        vy: (Math.random() - 0.5) * 0.15,
+        r: 1.5 + Math.random() * 3,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.004 + Math.random() * 0.008,
+      });
+    }
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const { r, g, b } = hexToRgb(themeRef.current.accent);
+
+      for (const p of particles) {
+        p.phase += p.speed;
+        p.x += p.vx + Math.sin(p.phase * 1.3) * 0.06;
+        p.y += p.vy + Math.cos(p.phase * 0.9) * 0.05;
+        if (p.x < -20) p.x = W + 20;
+        if (p.x > W + 20) p.x = -20;
+        if (p.y < -20) p.y = H + 20;
+        if (p.y > H + 20) p.y = -20;
+
+        const alpha = Math.max(0, 0.025 + Math.sin(p.phase) * 0.02);
+        const radius = p.r * (0.85 + Math.sin(p.phase * 1.7) * 0.15);
+
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius * 7);
+        grad.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
+        grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius * 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas ref={canvasRef} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none" }} />
+  );
+};
+
+
+// ── CLOUDY SKY ────────────────────────────────────────────────────────────────
+// Soft cloud masses slowly drifting across the screen.
+
+export const CloudyCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+
+    const clouds = [];
+    const CLOUD_COUNT = 6;
+
+    const spawnCloud = (W, H, offscreen = false) => ({
+      x: offscreen ? W + 200 + Math.random() * 400 : Math.random() * (W + 600) - 300,
+      y: H * (0.05 + Math.random() * 0.55),
+      scale: 0.6 + Math.random() * 1.4,
+      speed: 0.12 + Math.random() * 0.2,
+      opacity: 0.06 + Math.random() * 0.10,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: 0.001 + Math.random() * 0.002,
+    });
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      clouds.length = 0;
+      for (let i = 0; i < CLOUD_COUNT; i++) clouds.push(spawnCloud(canvas.width, canvas.height));
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const drawCloud = (x, y, scale, opacity) => {
+      const blobs = [
+        { dx: 0, dy: 0, r: 55 }, { dx: 55, dy: -20, r: 45 }, { dx: -55, dy: -15, r: 42 },
+        { dx: 90, dy: 0, r: 35 }, { dx: -90, dy: 5, r: 35 },
+        { dx: 30, dy: -45, r: 38 }, { dx: -30, dy: -40, r: 36 },
+      ];
+      for (const blob of blobs) {
+        const bx = x + blob.dx * scale;
+        const by = y + blob.dy * scale;
+        const br = blob.r * scale;
+        const grad = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+        grad.addColorStop(0, `rgba(200,215,240,${opacity})`);
+        grad.addColorStop(0.6, `rgba(180,195,220,${opacity * 0.7})`);
+        grad.addColorStop(1, "rgba(160,180,210,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      for (const c of clouds) {
+        c.wobble += c.wobbleSpeed;
+        c.x -= c.speed;
+        if (c.x < -500) Object.assign(c, spawnCloud(W, H, true));
+        drawCloud(c.x, c.y + Math.sin(c.wobble) * 4, c.scale, c.opacity);
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none" }} />;
+};
+
+
+// ── THUNDERSTORM ──────────────────────────────────────────────────────────────
+// Heavy driving rain with intense lightning bolts.
+
+export const ThunderstormCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    let time = 0;
+    let lightningTimer = 0;
+    let lightningAlpha = 0;
+    let lightningBolt = null;
+
+    const drops = [];
+    const DROP_COUNT = 500;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (let i = 0; i < DROP_COUNT; i++) {
+      drops.push({
+        x: Math.random() * canvas.width * 1.5 - canvas.width * 0.25,
+        y: Math.random() * canvas.height,
+        len: 16 + Math.random() * 28,
+        speed: 12 + Math.random() * 14,
+        opacity: 0.10 + Math.random() * 0.18,
+        wind: 3 + Math.random() * 3,
+      });
+    }
+
+    const buildBolt = (W, H) => {
+      const startX = W * 0.2 + Math.random() * W * 0.6;
+      const points = [{ x: startX, y: 0 }];
+      let cx = startX;
+      const segments = 6 + Math.floor(Math.random() * 5);
+      for (let i = 0; i < segments; i++) {
+        cx += (Math.random() - 0.5) * 80;
+        points.push({ x: cx, y: (H / segments) * (i + 1) * (0.4 + Math.random() * 0.4) });
+      }
+      return points;
+    };
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // ── Lightning flash ──
+      lightningTimer++;
+      if (lightningTimer > 120 + Math.random() * 200) {
+        lightningAlpha = 0.25 + Math.random() * 0.20;
+        lightningBolt = buildBolt(W, H);
+        lightningTimer = 0;
+      }
+      if (lightningAlpha > 0) {
+        ctx.fillStyle = `rgba(210,220,255,${lightningAlpha})`;
+        ctx.fillRect(0, 0, W, H);
+        if (lightningBolt && lightningAlpha > 0.08) {
+          ctx.save();
+          ctx.strokeStyle = `rgba(255,255,255,${Math.min(1, lightningAlpha * 3)})`;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = "rgba(150,180,255,0.9)";
+          ctx.shadowBlur = 16;
+          ctx.beginPath();
+          ctx.moveTo(lightningBolt[0].x, lightningBolt[0].y);
+          for (const pt of lightningBolt.slice(1)) ctx.lineTo(pt.x, pt.y);
+          ctx.stroke();
+          ctx.restore();
+        }
+        lightningAlpha *= 0.80;
+        if (lightningAlpha < 0.005) { lightningAlpha = 0; lightningBolt = null; }
+      }
+
+      // ── Rain streaks ──
+      ctx.lineCap = "round";
+      for (const d of drops) {
+        d.y += d.speed;
+        d.x += d.wind;
+        if (d.y > H) {
+          d.y = -d.len;
+          d.x = Math.random() * W * 1.5 - W * 0.25;
+        }
+        ctx.strokeStyle = `rgba(140,165,210,${d.opacity})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x + d.wind * 1.5, d.y + d.len);
+        ctx.stroke();
+      }
+
+      // ── Ground mist ──
+      const mistGrad = ctx.createLinearGradient(0, H * 0.88, 0, H);
+      mistGrad.addColorStop(0, "rgba(80,100,140,0)");
+      mistGrad.addColorStop(1, `rgba(80,100,140,${0.05 + Math.sin(time * 0.006) * 0.02})`);
+      ctx.fillStyle = mistGrad;
+      ctx.fillRect(0, H * 0.88, W, H * 0.12);
+
+      time++;
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none" }} />;
+};
+
+
+// ── FOG ───────────────────────────────────────────────────────────────────────
+// Slow drifting translucent fog masses.
+
+export const FogCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+
+    const blobs = [];
+    const BLOB_COUNT = 8;
+
+    const spawnBlob = (W, H, offscreen = false) => ({
+      x: offscreen ? W + 200 + Math.random() * 600 : Math.random() * (W + 600) - 300,
+      y: H * (0.3 + Math.random() * 0.7),
+      rx: 200 + Math.random() * 300,
+      ry: 60 + Math.random() * 100,
+      speed: 0.06 + Math.random() * 0.12,
+      opacity: 0.04 + Math.random() * 0.06,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: 0.0006 + Math.random() * 0.001,
+    });
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      blobs.length = 0;
+      for (let i = 0; i < BLOB_COUNT; i++) blobs.push(spawnBlob(canvas.width, canvas.height));
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      for (const b of blobs) {
+        b.wobble += b.wobbleSpeed;
+        b.x -= b.speed;
+        if (b.x < -600) Object.assign(b, spawnBlob(W, H, true));
+
+        ctx.save();
+        ctx.translate(b.x, b.y + Math.sin(b.wobble) * 12);
+        ctx.scale(1, b.ry / b.rx);
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, b.rx);
+        grad.addColorStop(0, `rgba(190,200,215,${b.opacity})`);
+        grad.addColorStop(0.6, `rgba(180,190,205,${b.opacity * 0.5})`);
+        grad.addColorStop(1, "rgba(180,190,205,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, b.rx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none" }} />;
+};
+
+
+// ── WEATHER CANVAS ────────────────────────────────────────────────────────────
+// Auto-detects the user's location + current weather via Open-Meteo, then
+// renders the canvas animation that best matches the WMO weather code.
+// Also shows a small weather info card (condition, temperature, city).
+
+const WMO_INFO = {
+  0:  { label: "Clear Sky",           emoji: "🌞" },
+  1:  { label: "Mainly Clear",        emoji: "🌤️" },
+  2:  { label: "Partly Cloudy",       emoji: "⛅" },
+  3:  { label: "Overcast",            emoji: "☁️" },
+  45: { label: "Foggy",               emoji: "🌫️" },
+  48: { label: "Icy Fog",             emoji: "🌫️" },
+  51: { label: "Light Drizzle",       emoji: "🌦️" },
+  53: { label: "Drizzle",             emoji: "🌦️" },
+  55: { label: "Heavy Drizzle",       emoji: "🌧️" },
+  61: { label: "Light Rain",          emoji: "🌧️" },
+  63: { label: "Rain",                emoji: "🌧️" },
+  65: { label: "Heavy Rain",          emoji: "🌧️" },
+  71: { label: "Light Snow",          emoji: "🌨️" },
+  73: { label: "Snow",                emoji: "🌨️" },
+  75: { label: "Heavy Snow",          emoji: "❄️" },
+  77: { label: "Snow Grains",         emoji: "❄️" },
+  80: { label: "Rain Showers",        emoji: "🌦️" },
+  81: { label: "Heavy Showers",       emoji: "🌧️" },
+  82: { label: "Violent Showers",     emoji: "⛈️" },
+  85: { label: "Snow Showers",        emoji: "🌨️" },
+  86: { label: "Heavy Snow Showers",  emoji: "❄️" },
+  95: { label: "Thunderstorm",        emoji: "⛈️" },
+  96: { label: "Thunderstorm + Hail", emoji: "⛈️" },
+  99: { label: "Severe Thunderstorm", emoji: "⛈️" },
+};
+
+export const WeatherCanvas = () => {
+  const T = useTheme();
+  const [weather, setWeather] = useState(null); // null = loading
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchWeather = async (lat, lon) => {
+      try {
+        const [weatherRes, geoRes] = await Promise.all([
+          fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m&timezone=auto&temperature_unit=fahrenheit`
+          ),
+          fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+            { headers: { "User-Agent": "TestForgeAI/1.0" } }
+          ),
+        ]);
+        const wData = await weatherRes.json();
+        const gData = await geoRes.json();
+        if (!cancelled) {
+          const addr = gData.address || {};
+          setWeather({
+            code: wData.current?.weather_code ?? 0,
+            temp: wData.current?.temperature_2m,
+            city: addr.city || addr.town || addr.village || addr.county || "",
+            state: addr.state_code || addr.state || "",
+          });
+        }
+      } catch {
+        if (!cancelled) setWeather({ code: 0, temp: null, city: "", state: "" });
+      }
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+        () => { if (!cancelled) setWeather({ code: 0, temp: null, city: "", state: "" }); },
+        { timeout: 8000 }
+      );
+    } else {
+      setWeather({ code: 0, temp: null, city: "", state: "" });
+    }
+
+    return () => { cancelled = true; };
+  }, []);
+
+  // Still fetching
+  if (!weather) return <AmbientCanvas />;
+
+  const { code, temp, city, state } = weather;
+  const info = WMO_INFO[code] || { label: "Unknown", emoji: "🌡️" };
+  const locationStr = [city, state].filter(Boolean).join(", ");
+  const tempStr = temp !== null && temp !== undefined ? `${Math.round(temp)}°F` : null;
+  const sub = [tempStr, locationStr].filter(Boolean).join(" · ");
+
+  // Pick the matching canvas
+  const c = code;
+  let CanvasComponent;
+  if ([71, 73, 75, 77, 85, 86].includes(c))       CanvasComponent = SnowfallCanvas;
+  else if ([95, 96, 99].includes(c))               CanvasComponent = ThunderstormCanvas;
+  else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(c)) CanvasComponent = RainstormCanvas;
+  else if ([45, 48].includes(c))                   CanvasComponent = FogCanvas;
+  else if ([2, 3].includes(c))                     CanvasComponent = CloudyCanvas;
+  else                                             CanvasComponent = StarfieldParallaxCanvas;
+
+  return (
+    <>
+      <CanvasComponent />
+      <div style={{
+        position: "fixed", bottom: 38, left: 8, zIndex: 1,
+        display: "flex", alignItems: "center", gap: 12,
+        background: T.surface,
+        border: `1px solid ${T.border}`,
+        borderRadius: 12,
+        padding: "10px 16px",
+        fontFamily: font,
+        pointerEvents: "none",
+        boxShadow: `0 4px 24px rgba(0,0,0,0.35), 0 0 0 1px ${T.border}`,
+      }}>
+        <span style={{ fontSize: 32, lineHeight: 1, flexShrink: 0 }}>{info.emoji}</span>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: T.textBright, lineHeight: 1.3 }}>
+            {info.label}
+          </div>
+          {sub && (
+            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3, letterSpacing: "0.01em" }}>
+              {sub}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
