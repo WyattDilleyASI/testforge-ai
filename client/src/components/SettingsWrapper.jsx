@@ -12,6 +12,7 @@ const SETTINGS_SECTIONS = [
   { key: "users",       label: "User Management",  icon: "◯", adminOnly: true },
   { key: "mcp",         label: "MCP Server Setup",  icon: "◆", adminOnly: true },
   { key: "jama",        label: "Jama Connect",      icon: "◭", adminOnly: true },
+  { key: "about",       label: "About",             icon: "◍", adminOnly: false },
 ];
 
 export const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requirements, testCases, kbEntries }) => {
@@ -131,6 +132,8 @@ export const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requ
             testCases={testCases}
           />
         );
+      case "about":
+        return <AboutPanel />;
       default:
         return null;
     }
@@ -442,6 +445,227 @@ const UserPreferencesPanel = ({ currentTheme, onThemeChange }) => {
           English (default) — additional languages coming soon.
         </div>
       </Card>
+    </div>
+  );
+};
+
+// ─── ABOUT PANEL ────────────────────────────────────────────────────────────
+
+const AboutPanel = () => {
+  const COLORS = useTheme();
+
+  const version = "1.5";
+
+  const contributors = [
+    {
+      name: "Wyatt Dilley",
+      role: "Product Owner & Lead Developer",
+      detail: "Product architect, full-stack development",
+      icon: "◈",
+    },
+    {
+      name: "Nate Wagstaff",
+      role: "Lead Developer",
+      detail: "Full-stack development, QA workflow design",
+      icon: "◈",
+    },
+    {
+      name: "Aryan Osqueezadeh",
+      role: "Systems Engineer",
+      detail: "SysML architect, Jama requirement guide",
+      icon: "◈",
+    },
+    {
+      name: "Mike Wardrop",
+      role: "Github Guru",
+      detail: "Github merge conflict resolutionist, PDP consultant",
+      icon: "◈",
+    },    
+    {
+      name: "Claude — Anthropic",
+      role: "AI Development Partner",
+      detail: "Code generation assistance, architecture consultation, test case generation engine",
+      icon: "◇",
+    },
+  ];
+
+  const techStack = [
+    { category: "Frontend",  items: "React 18, Vite, D3.js" },
+    { category: "Backend",   items: "Node.js, Express, better-sqlite3" },
+    { category: "AI",        items: "Anthropic Claude API, Model Context Protocol (MCP)" },
+    { category: "Infra",     items: "Docker Compose, AES-256-GCM encryption" },
+  ];
+
+  return (
+    <div>
+      {/* ── Header ── */}
+      <div style={{ marginBottom: 28 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>
+          About TestForge AI
+        </h2>
+        <p style={{
+          fontSize: 12,
+          color: COLORS.textMuted,
+          margin: "6px 0 0",
+          fontFamily: mono,
+        }}>
+          v{version}
+        </p>
+      </div>
+
+      {/* ── Mission card ── */}
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ textAlign: "center", padding: "20px 16px" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>◈</div>
+          <div style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: COLORS.textBright,
+            marginBottom: 10,
+          }}>
+            AI-Powered Test Case Generation
+          </div>
+          <div style={{
+            fontSize: 12,
+            color: COLORS.textMuted,
+            maxWidth: 520,
+            margin: "0 auto",
+            lineHeight: 1.8,
+          }}>
+            TestForge AI ingests requirements, leverages a hierarchical Knowledge Base
+            of historical defects and business rules, and generates structured draft
+            test cases — giving QA engineers a starting point, not a finished product.
+            Every generated test case traces back to specific requirement IDs, ensuring
+            complete coverage visibility from ingestion through export.
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Contributors ── */}
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: COLORS.textBright,
+          marginBottom: 16,
+        }}>
+          Built By
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {contributors.map((c, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 14,
+                padding: "14px 16px",
+                borderRadius: 8,
+                background: COLORS.surface,
+                border: `1px solid ${COLORS.border}`,
+              }}
+            >
+              <div style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                background: COLORS.accentDim,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+                color: COLORS.accent,
+                flexShrink: 0,
+              }}>
+                {c.icon}
+              </div>
+              <div>
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: COLORS.textBright,
+                }}>
+                  {c.name}
+                </div>
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: COLORS.accent,
+                  fontFamily: mono,
+                  marginTop: 2,
+                }}>
+                  {c.role}
+                </div>
+                <div style={{
+                  fontSize: 11,
+                  color: COLORS.textMuted,
+                  marginTop: 4,
+                  lineHeight: 1.5,
+                }}>
+                  {c.detail}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* ── Tech Stack ── */}
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: COLORS.textBright,
+          marginBottom: 14,
+        }}>
+          Tech Stack
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {techStack.map((row, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 12,
+                fontSize: 12,
+              }}
+            >
+              <span style={{
+                fontFamily: mono,
+                fontWeight: 600,
+                color: COLORS.accent,
+                minWidth: 80,
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}>
+                {row.category}
+              </span>
+              <span style={{ color: COLORS.text }}>
+                {row.items}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* ── Footer ── */}
+      <div style={{
+        textAlign: "center",
+        padding: "16px 0",
+        fontSize: 11,
+        color: COLORS.textMuted,
+        fontFamily: mono,
+        lineHeight: 1.8,
+      }}>
+        <div>ASI Robots — Internal QA Tooling</div>
+        <div style={{ marginTop: 4, fontSize: 10, opacity: 0.6 }}>
+          TestForge AI v{version} · Built with purpose
+        </div>
+      </div>
     </div>
   );
 };
