@@ -23,6 +23,7 @@ import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas
   CloudyCanvas,
   ThunderstormCanvas,
   FogCanvas,
+  SunshineCanvas,
   WeatherInfoCard,
  } from "./components/EasterEggs";
 
@@ -400,12 +401,14 @@ useEffect(() => {
       {activeTheme._cloudy && <CloudyCanvas />}
       {activeTheme._thunderstorm && <ThunderstormCanvas />}
       {activeTheme._fog && <FogCanvas />}
+      {activeTheme._sunshine && <SunshineCanvas />}
       {!(activeTheme._starfield || activeTheme._matrixRain || activeTheme._aurora ||
          activeTheme._vaporwave || activeTheme._fireflies || activeTheme._fishTank ||
          activeTheme._hotDogs || hotDogOverlay || activeTheme._rainstorm ||
          activeTheme._starfieldTheme || activeTheme._campfire || activeTheme._snowfall ||
          activeTheme._deepSea || activeTheme._crt || activeTheme._audioVisualizer ||
-         activeTheme._cloudy || activeTheme._thunderstorm || activeTheme._fog) && <AmbientCanvas />}
+         activeTheme._cloudy || activeTheme._thunderstorm || activeTheme._fog ||
+         activeTheme._sunshine) && <AmbientCanvas />}
       {themeName === "weather" && <WeatherInfoCard weatherData={weatherData} />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {

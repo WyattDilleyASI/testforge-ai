@@ -567,6 +567,7 @@ export const THEMES = {
   // Warm cream base with teal accent, coral red, and sunny yellow highlights.
   sunshineHues: {
     name: "Sunshine Hues", emoji: "🌞",
+    _sunshine: true,
     bg: "#FFFEF5", surface: "#FFFFEA", surfaceRaised: "#FFFFFF",
     border: "#D8D8D8", text: "#4A4A42", textMuted: "#8A8A80",
     textBright: "#1A1A14", accent: "#00CECB", accentDim: "rgba(0,206,203,0.10)",

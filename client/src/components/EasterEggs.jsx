@@ -2495,6 +2495,77 @@ export const FogCanvas = () => {
 };
 
 
+// ── SUNSHINE ─────────────────────────────────────────────────────────────────
+// Warm golden bokeh motes rising gently — visible on light daytime backgrounds.
+
+export const SunshineCanvas = () => {
+  const canvasRef = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let animId;
+    const motes = [];
+    const COUNT = 50;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (let i = 0; i < COUNT; i++) {
+      motes.push({
+        x: Math.random() * canvas.width,
+        y: canvas.height + Math.random() * canvas.height,
+        r: 6 + Math.random() * 18,
+        speed: 0.18 + Math.random() * 0.28,
+        drift: (Math.random() - 0.5) * 0.25,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: 0.004 + Math.random() * 0.006,
+        hue: 38 + Math.random() * 18,    // warm gold → amber
+        opacity: 0.06 + Math.random() * 0.07,
+      });
+    }
+
+    const draw = () => {
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      for (const m of motes) {
+        m.wobble += m.wobbleSpeed;
+        m.y -= m.speed;
+        m.x += m.drift + Math.sin(m.wobble) * 0.3;
+
+        if (m.y < -m.r * 4) {
+          m.y = H + m.r * 2;
+          m.x = Math.random() * W;
+        }
+
+        const pulse = m.opacity * (0.75 + Math.sin(m.wobble * 1.4) * 0.25);
+        const grad = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.r);
+        grad.addColorStop(0, `hsla(${m.hue}, 90%, 75%, ${pulse})`);
+        grad.addColorStop(0.5, `hsla(${m.hue}, 80%, 65%, ${pulse * 0.5})`);
+        grad.addColorStop(1, `hsla(${m.hue}, 70%, 60%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0, pointerEvents: "none" }} />;
+};
+
+
 // ── WEATHER INFO CARD ─────────────────────────────────────────────────────────
 // Displayed when the Weather theme is active. Receives resolved weather data
 // from App.jsx (which handles geolocation + Open-Meteo fetch) and shows the
