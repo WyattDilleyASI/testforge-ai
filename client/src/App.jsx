@@ -106,25 +106,38 @@ export default function App() {
     if (themeName !== "weather") { setWeatherData(null); return; }
     let cancelled = false;
     const fetchWeather = async (lat, lon) => {
+      // Weather code is required — fetch first, fail hard if it errors.
+      let wData;
       try {
-        const [wRes, gRes] = await Promise.all([
-          fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m,is_day&timezone=auto&temperature_unit=fahrenheit`),
-          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`, { headers: { "User-Agent": "TestForgeAI/1.0" } }),
-        ]);
-        const wData = await wRes.json();
-        const gData = await gRes.json();
-        if (!cancelled) {
-          const addr = gData.address || {};
-          setWeatherData({
-            code: wData.current?.weather_code ?? 0,
-            isDay: wData.current?.is_day !== 0,
-            temp: wData.current?.temperature_2m,
-            city: addr.city || addr.town || addr.village || addr.county || "",
-            state: addr.state_code || addr.state || "",
-          });
-        }
+        const wRes = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m,is_day&timezone=auto&temperature_unit=fahrenheit`
+        );
+        wData = await wRes.json();
       } catch {
         if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+        return;
+      }
+
+      // City name is optional — a failure here must not kill the weather detection.
+      let city = "", state = "";
+      try {
+        const gRes = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
+        );
+        const gData = await gRes.json();
+        const addr = gData.address || {};
+        city  = addr.city || addr.town || addr.village || addr.county || "";
+        state = addr.state_code || addr.state || "";
+      } catch { /* location name is display-only — ignore failures */ }
+
+      if (!cancelled) {
+        setWeatherData({
+          code:  wData.current?.weather_code ?? 0,
+          isDay: wData.current?.is_day !== 0,
+          temp:  wData.current?.temperature_2m,
+          city,
+          state,
+        });
       }
     };
     if (navigator.geolocation) {
