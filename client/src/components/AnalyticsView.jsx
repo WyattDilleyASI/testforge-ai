@@ -472,10 +472,15 @@ export const AnalyticsView = ({ currentUser }) => {
             <div>
               <p>You have everything a QA Manager does, plus the <strong>System</strong> tab:</p>
               <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
-                <div><strong>Run maintenance periodically</strong> — Hit the "Run Maintenance" button monthly (or more often during heavy use). It prunes old feedback, clears stale snapshots, and removes orphaned records.</div>
+                <div><strong>Run aggregation when feedback accumulates</strong> — This is the key action. When unprocessed feedback events build up (minimum 5), hit "Run Aggregation" to analyze patterns and synthesize adaptive rules via Claude. The engine looks at which fields get edited most, what gets rejected, and which generation depths perform best — then creates or reinforces rules automatically. Each run costs roughly $0.03–0.05 in tokens.</div>
+                <div><strong>Review what aggregation created</strong> — After running, the results panel shows each new or reinforced rule with Claude's reasoning. Check the Rules tab to verify the new rules make sense. You can edit or delete any rule that doesn't fit.</div>
+                <div><strong>Run maintenance periodically</strong> — Hit "Run Maintenance" monthly (or more often during heavy use). It prunes old processed feedback, clears stale snapshots, and removes orphaned records. This is cleanup — it does not create rules or process feedback.</div>
                 <div><strong>Watch for model drift</strong> — When the AI model in .env changes (e.g., a new Claude version), the System tab will show "DRIFT DETECTED." Reset rule confidence so old rules re-prove themselves against the new model.</div>
-                <div><strong>Monitor health numbers</strong> — Unprocessed feedback events should stay manageable. If snapshots pile up, engineers aren't reviewing their drafts.</div>
+                <div><strong>Monitor health numbers</strong> — Unprocessed feedback events should stay manageable. If they pile up past 50+, run aggregation. If snapshots pile up, engineers aren't reviewing their drafts.</div>
               </div>
+              <p style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 8 }}>
+                <strong>Typical cadence:</strong> Run aggregation whenever you see 10+ unprocessed events (roughly every 1–2 weeks during active use). Run maintenance monthly. Check for model drift after any .env update.
+              </p>
             </div>
           ),
         },
