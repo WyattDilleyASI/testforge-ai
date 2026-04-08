@@ -338,5 +338,28 @@ router.post("/model-reset", requireRole("Admin"), (req, res) => {
   }
 });
 
+// POST /api/analytics/aggregate
+// Run the full feedback → rules aggregation pipeline.
+// Calls Claude to synthesize rules from unprocessed feedback stats.
+router.post("/aggregate", requireRole("Admin"), async (req, res) => {
+  const minEvents = parseInt(req.body.minEvents) || undefined;
+
+  try {
+    const result = await al.runAggregation({ minEvents });
+
+    if (!result.skipped) {
+      logAudit(
+        req.session.name,
+        "AL_AGGREGATION",
+        `Aggregation: ${result.events_processed} events → ${result.rules_created} new rules, ${result.rules_reinforced} reinforced`
+      );
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error("Aggregation error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
