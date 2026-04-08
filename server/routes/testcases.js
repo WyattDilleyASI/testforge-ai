@@ -263,8 +263,8 @@ router.post("/generate", requireAuth, async (req, res) => {
     const text = data.content?.map(c => c.text || "").join("") || "";
     const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
 
-    // Get current TC count for ID generation
-    const currentCount = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
+    // Get highest rowid for ID generation (safe after deletions; COUNT breaks when rows are deleted)
+    const maxRowId = (db.prepare("SELECT MAX(rowid) as m FROM test_cases").get().m) || 0;
     const newTcs = [];
 
     const insertStmt = db.prepare("INSERT INTO test_cases (tc_id, title, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)");
@@ -276,7 +276,7 @@ router.post("/generate", requireAuth, async (req, res) => {
     });
 
     const tcsToInsert = parsed.map((tc, i) => {
-      const tcId = `TC-${reqId}-${String(currentCount + i + 1).padStart(3, "0")}`;
+      const tcId = `TC-${reqId}-${String(maxRowId + i + 1).padStart(3, "0")}`;
       newTcs.push(tcId);
       return {
         tc_id: tcId,
@@ -374,7 +374,7 @@ router.post("/import", requireAuth, (req, res) => {
   const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
   if (!requirement) return res.status(404).json({ error: "Requirement not found" });
 
-  const currentCount = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
+  const maxRowId = (db.prepare("SELECT MAX(rowid) as m FROM test_cases").get().m) || 0;
   const newTcs = [];
 
   const insertStmt = db.prepare("INSERT INTO test_cases (tc_id, title, linked_req_ids, preconditions, steps, description, type, depth, req_attribute, kb_references, status, generated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?)");
@@ -386,7 +386,7 @@ router.post("/import", requireAuth, (req, res) => {
   });
 
   const tcsToInsert = tcs.map((tc, i) => {
-    const tcId = `TC-${reqId}-${String(currentCount + i + 1).padStart(3, "0")}`;
+    const tcId = `TC-${reqId}-${String(maxRowId + i + 1).padStart(3, "0")}`;
     newTcs.push(tcId);
     return {
       tc_id: tcId,
