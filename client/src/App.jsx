@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
 import SysMLTraceability from "./SysMLTraceability";
 import { THEMES, ThemeContext, useTheme, font, mono } from "./theme";
-import { Badge, Button, Card } from "./components/shared";
+import { Badge, Button, Card, useIsMobile, MobileGate } from "./components/shared";
 import { LoginScreen, PasswordChangeScreen } from "./components/LoginScreen";
 import { Sidebar } from "./components/Sidebar";
 import { DashboardView } from "./components/DashboardView";
@@ -84,6 +84,7 @@ export default function App() {
     window.location.hash = newPage;
     setPage(newPage);
     setInitialFamilyId(null);
+    setSidebarOpen(false);
   }, []);
 
   // Keep React in sync if the user presses the browser Back/Forward buttons.
@@ -103,6 +104,9 @@ export default function App() {
   const [tokenUsage, setTokenUsage] = useState(null);
 
   const [weatherData, setWeatherData] = useState(null);
+
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (themeName !== "weather") { setWeatherData(null); return; }
@@ -473,17 +477,69 @@ useEffect(() => {
         setPreEasterEggTheme(null);
         setEasterEggToast("↩️ Theme restored");
       }} />}
-      <Sidebar active={page} onNavigate={navigate} currentUser={currentUser} onLogout={handleLogout} currentTheme={themeName} onThemeChange={handleThemeChange} />
-      <main style={{ flex: 1, padding: page === "traceability" ? 0 : "28px 36px", overflowY: page === "traceability" ? "hidden" : "auto", display: page === "traceability" ? "flex" : "block", flexDirection: "column" }}>
+      {/* Backdrop — closes sidebar when tapping outside on mobile */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 199, touchAction: "none" }}
+        />
+      )}
+
+      <Sidebar
+        active={page}
+        onNavigate={navigate}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        currentTheme={themeName}
+        onThemeChange={handleThemeChange}
+        isMobile={isMobile}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {/* Mobile top bar */}
+        {isMobile && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, height: 52, zIndex: 100,
+            background: activeTheme.surface, borderBottom: `1px solid ${activeTheme.border}`,
+            display: "flex", alignItems: "center", padding: "0 16px", gap: 12,
+            fontFamily: font,
+          }}>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: activeTheme.textMuted, fontSize: 20, lineHeight: 1,
+                padding: "4px 8px", borderRadius: 6,
+              }}
+            >☰</button>
+            <span style={{ fontSize: 15, fontWeight: 700, color: activeTheme.textBright }}>TestForge AI</span>
+          </div>
+        )}
+
+        <main style={{
+          flex: 1,
+          padding: isMobile
+            ? (page === "traceability" ? "52px 0 0" : "68px 16px 24px")
+            : (page === "traceability" ? 0 : "28px 36px"),
+          overflowY: page === "traceability" ? "hidden" : "auto",
+          display: page === "traceability" ? "flex" : "block",
+          flexDirection: "column",
+        }}>
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} />}
         {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
         {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
-        {page === "traceability" && <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />}
+        {page === "traceability" && (isMobile
+          ? <MobileGate icon="◈" title="SysML Traceability" description="The traceability graph requires a larger screen to navigate. Open this link on a desktop or tablet to use it." />
+          : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
+        )}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
         {page === "analytics" && <AnalyticsView currentUser={currentUser} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
       </main>
+      </div>{/* end mobile column wrapper */}
     </div>
   </ThemeContext.Provider>;
 }

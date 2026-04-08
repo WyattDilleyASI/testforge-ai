@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker } from "./shared";
+import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, useIsMobile } from "./shared";
 
 export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const COLORS = useTheme();
+  const isMobile = useIsMobile();
 
   // Generator state
   const [selectedReqId, setSelectedReqId] = useState("");
@@ -20,6 +21,9 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const [kbExpanded, setKbExpanded] = useState(new Set());
   const [kbSelected, setKbSelected] = useState(new Set());
   const [allKbEntries, setAllKbEntries] = useState([]);
+
+  // KB panel collapse (mobile: collapsed by default)
+  const [kbPanelOpen, setKbPanelOpen] = useState(!isMobile);
 
   // Manual import / copy state
   const [copyState, setCopyState] = useState("idle");
@@ -203,37 +207,39 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
         </p>
       </div>
 
-      {/* JAMA DOC import */}
-      <div style={{ marginBottom: 8, display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="secondary" small onClick={() => { setShowHtmlImport(v => !v); setHtmlImportResult(null); setHtmlImportError(""); }}>
-          Import from JAMA DOC
-        </Button>
-      </div>
-      {showHtmlImport && (
-        <Card style={{ marginBottom: 16, border: `1px solid ${COLORS.accent}33` }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Import JAMA Test Cases</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Upload a .docx (Verification Test Cases) or .doc (All Item Details) export from JAMA. Duplicates are skipped.</div>
-          <label style={{ display: "inline-block", cursor: htmlImporting ? "not-allowed" : "pointer" }}>
-            <input type="file" accept=".doc,.docx" onChange={doDocImport} disabled={htmlImporting} style={{ display: "none" }} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: mono, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}44`, cursor: "pointer", opacity: htmlImporting ? 0.5 : 1 }}>
-              {htmlImporting ? "Importing..." : "Choose DOC/DOCX file"}
-            </span>
-          </label>
-          {htmlImportError && <div style={{ marginTop: 8, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{htmlImportError}</div>}
-          {htmlImportResult && (
-            <div style={{ marginTop: 10, padding: "8px 12px", background: COLORS.greenDim, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.green }}>
-              Imported <strong>{htmlImportResult.imported}</strong> test case{htmlImportResult.imported !== 1 ? "s" : ""}{htmlImportResult.skipped > 0 ? ` · ${htmlImportResult.skipped} duplicate${htmlImportResult.skipped !== 1 ? "s" : ""} skipped` : ""}.
-            </div>
-          )}
-        </Card>
-      )}
+      {/* JAMA DOC import — desktop only */}
+      {!isMobile && <>
+        <div style={{ marginBottom: 8, display: "flex", justifyContent: "flex-end" }}>
+          <Button variant="secondary" small onClick={() => { setShowHtmlImport(v => !v); setHtmlImportResult(null); setHtmlImportError(""); }}>
+            Import from JAMA DOC
+          </Button>
+        </div>
+        {showHtmlImport && (
+          <Card style={{ marginBottom: 16, border: `1px solid ${COLORS.accent}33` }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Import JAMA Test Cases</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Upload a .docx (Verification Test Cases) or .doc (All Item Details) export from JAMA. Duplicates are skipped.</div>
+            <label style={{ display: "inline-block", cursor: htmlImporting ? "not-allowed" : "pointer" }}>
+              <input type="file" accept=".doc,.docx" onChange={doDocImport} disabled={htmlImporting} style={{ display: "none" }} />
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: mono, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}44`, cursor: "pointer", opacity: htmlImporting ? 0.5 : 1 }}>
+                {htmlImporting ? "Importing..." : "Choose DOC/DOCX file"}
+              </span>
+            </label>
+            {htmlImportError && <div style={{ marginTop: 8, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{htmlImportError}</div>}
+            {htmlImportResult && (
+              <div style={{ marginTop: 10, padding: "8px 12px", background: COLORS.greenDim, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.green }}>
+                Imported <strong>{htmlImportResult.imported}</strong> test case{htmlImportResult.imported !== 1 ? "s" : ""}{htmlImportResult.skipped > 0 ? ` · ${htmlImportResult.skipped} duplicate${htmlImportResult.skipped !== 1 ? "s" : ""} skipped` : ""}.
+              </div>
+            )}
+          </Card>
+        )}
+      </>}
 
       {/* Generator — two-panel */}
       <Card glow style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
-        <div style={{ display: "flex", gap: 20 }}>
+        <div style={{ display: "flex", gap: 20, flexDirection: isMobile ? "column" : "row" }}>
 
-          {/* Left: controls */}
+          {/* Controls */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ marginBottom: 12 }}>
               <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
@@ -314,16 +320,32 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
             {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
           </div>
 
-          {/* Right: KB selector */}
-          <div style={{ width: 280, flexShrink: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>
-              Knowledge Base Context
-              {kbSelected.size > 0 && <span style={{ color: COLORS.accent, marginLeft: 6 }}>({kbSelected.size} selected)</span>}
+          {/* KB selector */}
+          <div style={{ width: isMobile ? "100%" : 280, flexShrink: 0 }}>
+            {/* Header — acts as toggle on mobile */}
+            <div
+              onClick={isMobile ? () => setKbPanelOpen(o => !o) : undefined}
+              style={{
+                fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono,
+                textTransform: "uppercase", marginBottom: 6,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                cursor: isMobile ? "pointer" : "default",
+                padding: isMobile ? "8px 10px" : 0,
+                background: isMobile ? COLORS.surface : "transparent",
+                borderRadius: isMobile ? 6 : 0,
+                border: isMobile ? `1px solid ${COLORS.border}` : "none",
+              }}
+            >
+              <span>
+                Knowledge Base Context
+                {kbSelected.size > 0 && <span style={{ color: COLORS.accent, marginLeft: 6 }}>({kbSelected.size} selected)</span>}
+              </span>
+              {isMobile && <span style={{ fontSize: 12, opacity: 0.5 }}>{kbPanelOpen ? "▴" : "▾"}</span>}
             </div>
-            {kbSections.length === 0
+            {(!isMobile || kbPanelOpen) && (kbSections.length === 0
               ? <div style={{ fontSize: 11, color: COLORS.textMuted }}>No KB entries found.</div>
               : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 240, overflowY: "auto", padding: 4, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: isMobile ? 200 : 240, overflowY: "auto", padding: 4, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
                   {kbSections.map(sec => {
                     const allEntries = sec.is_default ? sec.entries : sec.subsections.flatMap(s => s.entries);
                     const secExpanded = kbExpanded.has(sec.section_id);
@@ -374,14 +396,14 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                     );
                   })}
                 </div>
-              )}
+              ))}
           </div>
         </div>
       </Card>
 
-      {/* Claude.ai manual workflow */}
-      <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33` }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+      {/* Claude.ai manual workflow — desktop only */}
+      {!isMobile && <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33` }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase", marginBottom: 3 }}>No API Key? Use Claude.ai Manually</div>
             <div style={{ fontSize: 11, color: COLORS.textMuted }}>Copy the prompt → paste into claude.ai → paste the JSON response back here</div>
@@ -420,7 +442,7 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
             </div>
           </div>
         )}
-      </Card>
+      </Card>}
 
       {/* Session results */}
       {sessionTcIds === null ? (
@@ -435,9 +457,9 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
               </span>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              {!tcSelectMode && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={sessionTcs.length === 0}>Export XLSX</Button>}
-              {!tcSelectMode && sessionTcs.length > 0 && <Button variant="secondary" small onClick={() => { setTcSelectMode(true); setSelectedTcIds(new Set()); }}>Select</Button>}
-              {tcSelectMode && <>
+              {!isMobile && !tcSelectMode && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={sessionTcs.length === 0}>Export XLSX</Button>}
+              {!isMobile && !tcSelectMode && sessionTcs.length > 0 && <Button variant="secondary" small onClick={() => { setTcSelectMode(true); setSelectedTcIds(new Set()); }}>Select</Button>}
+              {!isMobile && tcSelectMode && <>
                 <Button variant="secondary" small onClick={selectAllTcs}>{selectedTcIds.size === sessionTcs.length ? "Deselect All" : "Select All"}</Button>
                 <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
                 <Button variant="ghost" small onClick={() => { setTcSelectMode(false); setSelectedTcIds(new Set()); }}>Cancel</Button>
@@ -457,21 +479,30 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {sessionTcs.map(tc => {
                   const isSelected = selectedSessionTc === tc.tc_id;
+                  const borderColor = isSelected ? COLORS.accent
+                    : tc.status === "Reviewed" ? COLORS.green + "44"
+                    : tc.status === "Rejected" ? COLORS.red + "44"
+                    : COLORS.border;
                   return (
                     <div
                       key={tc.tc_id}
-                      onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : setSelectedSessionTc(isSelected ? null : tc.tc_id)}
+                      onClick={() => setSelectedSessionTc(isSelected ? null : tc.tc_id)}
                       style={{
-                        padding: "8px 12px", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
-                        border: `1px solid ${isSelected ? COLORS.accent : tcSelectMode && selectedTcIds.has(tc.tc_id) ? COLORS.accent : tc.status === "Reviewed" ? COLORS.green + "44" : tc.status === "Rejected" ? COLORS.red + "44" : COLORS.border}`,
+                        padding: "8px 12px", borderRadius: 6, cursor: "pointer",
+                        display: "flex", flexDirection: isMobile ? "column" : "row",
+                        alignItems: isMobile ? "flex-start" : "center",
+                        gap: isMobile ? 4 : 10,
+                        border: `1px solid ${borderColor}`,
                         background: isSelected ? COLORS.accentDim + "33" : COLORS.surfaceRaised,
                       }}
                     >
-                      {tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ accentColor: COLORS.accent }} onClick={e => e.stopPropagation()} />}
+                      {!isMobile && tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ accentColor: COLORS.accent }} onClick={e => e.stopPropagation()} />}
                       <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "1px 6px", borderRadius: 3, flexShrink: 0 }}>{tc.tc_id}</span>
-                      <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.status}</Badge>
-                      <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.type}</Badge>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textBright, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.title}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textBright, flex: isMobile ? "none" : 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isMobile ? "normal" : "nowrap" }}>{tc.title}</div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.status}</Badge>
+                        <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"} style={{ fontSize: 9, flexShrink: 0 }}>{tc.type}</Badge>
+                      </div>
                     </div>
                   );
                 })}
@@ -486,7 +517,7 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                   try { setup = typeof selectedTc.preconditions === "string" && selectedTc.preconditions.startsWith("{") ? JSON.parse(selectedTc.preconditions) : null; } catch {}
                   return (
                     <Card>
-                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
+                      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", marginBottom: rejectingTcId === selectedTc.tc_id ? 0 : 12, gap: 12 }}>
                         <div>
                           <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textBright, marginBottom: 6 }}>{selectedTc.title}</div>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -496,21 +527,24 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                          <Button small variant={selectedTc.status === "Reviewed" ? "primary" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Reviewed")}>
+                          <Button small variant={selectedTc.status === "Reviewed" ? "primary" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Reviewed")} style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
                             {selectedTc.status === "Reviewed" ? "✓ Approved" : "Approve"}
                           </Button>
                           <Button small variant={selectedTc.status === "Rejected" ? "danger" : "ghost"}
-                            onClick={() => setRejectingTcId(rejectingTcId === selectedTc.tc_id ? null : selectedTc.tc_id)}>
+                            onClick={() => setRejectingTcId(rejectingTcId === selectedTc.tc_id ? null : selectedTc.tc_id)}
+                            style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
                             &#10007; Reject
                           </Button>
                         </div>
                       </div>
 
                       {rejectingTcId === selectedTc.tc_id && (
-                        <RejectionPicker
-                          onReject={(reason) => updateStatus(selectedTc.tc_id, "Rejected", reason)}
-                          onCancel={() => setRejectingTcId(null)}
-                        />
+                        <div style={{ marginBottom: 12 }}>
+                          <RejectionPicker
+                            onReject={(reason) => updateStatus(selectedTc.tc_id, "Rejected", reason)}
+                            onCancel={() => setRejectingTcId(null)}
+                          />
+                        </div>
                       )}
 
                       {desc ? <>

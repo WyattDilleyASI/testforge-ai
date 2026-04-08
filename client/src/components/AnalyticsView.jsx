@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 import { useTheme, mono, font } from "../theme";
-import { Card, Badge, Button, Input, Select, ErrorBanner } from "./shared";
+import { Card, Badge, Button, Input, Select, ErrorBanner, useIsMobile, MobileWarningBanner } from "./shared";
 
 // ─── Stat Card ──────────────────────────────────────────────────────────────
 
@@ -36,6 +36,7 @@ const TabBar = ({ tabs, active, onChange, COLORS }) => (
 
 export const AnalyticsView = ({ currentUser }) => {
   const COLORS = useTheme();
+  const isMobile = useIsMobile();
   const isManager = currentUser?.role === "Admin" || currentUser?.role === "QA Manager";
   const isAdmin = currentUser?.role === "Admin";
 
@@ -824,6 +825,9 @@ export const AnalyticsView = ({ currentUser }) => {
 
   return (
     <div>
+      {isMobile && (
+        <MobileWarningBanner message="Charts and data tables are best viewed on a larger screen. Some content may be cramped on mobile." />
+      )}
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Adaptive Learning Engine</h2>
         <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>AL-002 · AL-003 · AL-004</p>

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner } from "./shared";
+import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, useIsMobile } from "./shared";
 
 export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const COLORS = useTheme();
+  const isMobile = useIsMobile();
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
   const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
@@ -63,7 +64,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
 
   const renderForm = (form, setForm, isEdit) => (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
         <Input label="REQ ID" value={form.req_id} onChange={v => setForm(p => ({ ...p, req_id: v }))} mono disabled={isEdit} />
         <Select label="Priority" value={form.priority} onChange={v => setForm(p => ({ ...p, priority: v }))} options={["High", "Medium", "Low"].map(v => ({ value: v, label: v }))} />
         <Select label="Status" value={form.status} onChange={v => setForm(p => ({ ...p, status: v }))} options={["Draft", "Review", "Approved", "Rejected"].map(v => ({ value: v, label: v }))} />
@@ -77,11 +78,11 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   );
 
   return <div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 0, marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>RS-001 – RS-006</p></div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {canDelete && !clearAllConfirm && requirements.length > 0 && <Button variant="danger" small onClick={() => setClearAllConfirm(true)}>Clear All</Button>}
-        {clearAllConfirm && <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {clearAllConfirm && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {requirements.length} requirements?</span>
           <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
           <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
@@ -125,7 +126,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
               {reqRels.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.purple, marginLeft: tcRels.length ? 8 : 0 }}>REQ: {reqRels.map(r => r.id).join(", ")}</span>}
             </div>}
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
             {isJama && <Badge color="purple">JAMA</Badge>}
             <Badge color={r.priority === "High" || r.priority === "Must Have" ? "red" : r.priority === "Medium" || r.priority === "Should Have" ? "amber" : "green"}>{r.priority}</Badge>
             <Badge color={r.status === "Approved" ? "green" : r.status === "Review" ? "amber" : r.status === "Rejected" ? "red" : "textMuted"}>{r.status}</Badge>
@@ -137,7 +138,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
           {r.description && <><SectionLabel>Requirement (EARS)</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{r.description}</div></>}
           {r.rationale && <><SectionLabel>Rationale</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{r.rationale}</div></>}
           {(r.acceptance_criteria || []).length > 0 && <><SectionLabel>Acceptance Criteria</SectionLabel>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}` }}>• {ac}</div>)}</>}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
             {r.requirement_type && <div><SectionLabel>Type</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.requirement_type}</div></div>}
             {r.verification_method && <div><SectionLabel>Verification</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.verification_method}</div></div>}
             {r.safety_level && <div><SectionLabel>Safety Level</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.safety_level}</div></div>}

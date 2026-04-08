@@ -243,7 +243,7 @@ router.post("/generate", requireAuth, async (req, res) => {
       },
       body: JSON.stringify({
         model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-        max_tokens: 4000,
+        max_tokens: 16000,
         system: systemPrompt,
         messages: [{ role: "user", content: kbImages.length > 0 ? contentBlocks : prompt }],
       }),
@@ -251,6 +251,10 @@ router.post("/generate", requireAuth, async (req, res) => {
 
     const data = await response.json();
     if (data.error) return res.status(500).json({ error: data.error.message || "Claude API error" });
+
+    if (data.stop_reason === "max_tokens") {
+      return res.status(500).json({ error: "Claude's response was cut off — the generated output exceeded the token limit. Try reducing the number of test cases or use a more focused prompt." });
+    }
 
     if (data.usage) {
       logTokenUsage(req.session.name, reqId, data.usage.input_tokens || 0, data.usage.output_tokens || 0);

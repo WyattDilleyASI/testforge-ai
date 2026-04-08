@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, THEMES, THEME_CATEGORIES, ThemeSwatch, font, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, Spinner } from "./shared";
+import { Card, Badge, Button, Input, Select, Spinner, useIsMobile } from "./shared";
 import { UserManagementView } from "./UserManagementView";
 import { McpTokensView } from "./McpTokensView";
 import { JamaView } from "./JamaView";
@@ -17,142 +17,127 @@ const SETTINGS_SECTIONS = [
 
 export const SettingsWrapper = ({ currentUser, currentTheme, onThemeChange, requirements, testCases, kbEntries }) => {
   const COLORS = useTheme();
+  const isMobile = useIsMobile();
   const [activeSection, setActiveSection] = useState("preferences");
   const isAdmin = currentUser.role === "Admin";
 
-  // Filter sections by role
   const visibleSections = SETTINGS_SECTIONS.filter(s => !s.adminOnly || isAdmin);
 
-  // If the active section becomes hidden (e.g. role change), reset to preferences
   useEffect(() => {
     if (!visibleSections.find(s => s.key === activeSection)) {
       setActiveSection("preferences");
     }
   }, [isAdmin, activeSection]);
 
-  // ── Sub-nav renderer ──────────────────────────────────────────────────
-
-  const SubNav = () => (
-    <div style={{
-      width: 200,
-      minWidth: 200,
-      borderRight: `1px solid ${COLORS.border}`,
-      padding: "12px 8px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 2,
-    }}>
-      <div style={{
-        fontSize: 11,
-        fontWeight: 600,
-        color: COLORS.textMuted,
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-        padding: "8px 12px 12px",
-        fontFamily: mono,
-      }}>
-        Settings
-      </div>
-
-      {visibleSections.map(section => {
-        const isActive = activeSection === section.key;
-        return (
-          <button
-            key={section.key}
-            onClick={() => setActiveSection(section.key)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 12px",
-              borderRadius: 7,
-              border: "none",
-              cursor: "pointer",
-              textAlign: "left",
-              fontFamily: font,
-              fontSize: 13,
-              fontWeight: isActive ? 600 : 400,
-              color: isActive ? COLORS.accent : COLORS.text,
-              background: isActive ? COLORS.accentDim : "transparent",
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={e => {
-              if (!isActive) e.currentTarget.style.background = COLORS.hover;
-            }}
-            onMouseLeave={e => {
-              if (!isActive) e.currentTarget.style.background = "transparent";
-            }}
-          >
-            <span style={{ fontSize: 14, opacity: isActive ? 1 : 0.5, width: 20, textAlign: "center" }}>
-              {section.icon}
-            </span>
-            <span>{section.label}</span>
-            {section.adminOnly && (
-              <span style={{
-                marginLeft: "auto",
-                fontSize: 9,
-                fontFamily: mono,
-                color: COLORS.amber,
-                background: COLORS.amberDim,
-                padding: "1px 6px",
-                borderRadius: 4,
-                fontWeight: 600,
-              }}>
-                ADMIN
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  // ── Panel renderer ────────────────────────────────────────────────────
-
   const renderPanel = () => {
     switch (activeSection) {
-      case "preferences":
-        return (
-          <UserPreferencesPanel
-            currentTheme={currentTheme}
-            onThemeChange={onThemeChange}
-          />
-        );
-      case "product":
-        return <ProductContextPanel />;
-      case "users":
-        return <UserManagementView currentUser={currentUser} />;
-      case "mcp":
-        return <McpTokensView currentUser={currentUser} />;
-      case "jama":
-        return (
-          <JamaView
-            currentUser={currentUser}
-            requirements={requirements}
-            testCases={testCases}
-          />
-        );
-      case "about":
-        return <AboutPanel />;
-      default:
-        return null;
+      case "preferences": return <UserPreferencesPanel currentTheme={currentTheme} onThemeChange={onThemeChange} />;
+      case "product":     return <ProductContextPanel />;
+      case "users":       return <UserManagementView currentUser={currentUser} />;
+      case "mcp":         return <McpTokensView currentUser={currentUser} />;
+      case "jama":        return <JamaView currentUser={currentUser} requirements={requirements} testCases={testCases} />;
+      case "about":       return <AboutPanel />;
+      default:            return null;
     }
   };
 
-  // ── Layout ────────────────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", minHeight: "calc(100vh - 120px)" }}>
+        {/* Horizontal tab strip */}
+        <div style={{
+          display: "flex",
+          overflowX: "auto",
+          borderBottom: `1px solid ${COLORS.border}`,
+          background: COLORS.surface,
+          gap: 2,
+          padding: "4px 4px 0",
+          flexShrink: 0,
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+        }}>
+          {visibleSections.map(section => {
+            const isActive = activeSection === section.key;
+            return (
+              <button
+                key={section.key}
+                onClick={() => setActiveSection(section.key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "10px 14px", border: "none", cursor: "pointer",
+                  fontFamily: font, fontSize: 12, whiteSpace: "nowrap", flexShrink: 0,
+                  fontWeight: isActive ? 600 : 400,
+                  color: isActive ? COLORS.accent : COLORS.textMuted,
+                  background: "transparent",
+                  borderBottom: isActive ? `2px solid ${COLORS.accent}` : "2px solid transparent",
+                  borderRadius: "4px 4px 0 0",
+                }}
+              >
+                <span style={{ fontSize: 13, opacity: isActive ? 1 : 0.5 }}>{section.icon}</span>
+                {section.label}
+                {section.adminOnly && (
+                  <span style={{ fontSize: 8, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 4px", borderRadius: 3, fontWeight: 600, marginLeft: 2 }}>
+                    ADMIN
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {/* Panel */}
+        <div style={{ flex: 1, padding: "20px 0", overflowY: "auto" }}>
+          {renderPanel()}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{
-      display: "flex",
-      height: "100%",
-      minHeight: "calc(100vh - 60px)",
-    }}>
-      <SubNav />
+    <div style={{ display: "flex", height: "100%", minHeight: "calc(100vh - 60px)" }}>
+      {/* Desktop left sub-nav */}
       <div style={{
-        flex: 1,
-        padding: 24,
-        overflowY: "auto",
+        width: 200, minWidth: 200,
+        borderRight: `1px solid ${COLORS.border}`,
+        padding: "12px 8px",
+        display: "flex", flexDirection: "column", gap: 2,
       }}>
+        <div style={{
+          fontSize: 11, fontWeight: 600, color: COLORS.textMuted,
+          textTransform: "uppercase", letterSpacing: "0.06em",
+          padding: "8px 12px 12px", fontFamily: mono,
+        }}>
+          Settings
+        </div>
+        {visibleSections.map(section => {
+          const isActive = activeSection === section.key;
+          return (
+            <button
+              key={section.key}
+              onClick={() => setActiveSection(section.key)}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", borderRadius: 7, border: "none",
+                cursor: "pointer", textAlign: "left", fontFamily: font, fontSize: 13,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? COLORS.accent : COLORS.text,
+                background: isActive ? COLORS.accentDim : "transparent",
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = COLORS.hover; }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+            >
+              <span style={{ fontSize: 14, opacity: isActive ? 1 : 0.5, width: 20, textAlign: "center" }}>{section.icon}</span>
+              <span>{section.label}</span>
+              {section.adminOnly && (
+                <span style={{ marginLeft: "auto", fontSize: 9, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>
+                  ADMIN
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ flex: 1, padding: 24, overflowY: "auto" }}>
         {renderPanel()}
       </div>
     </div>

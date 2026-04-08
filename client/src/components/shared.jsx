@@ -1,5 +1,84 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme, font, mono, DRAFT_DISCLAIMER } from "../theme";
+
+// ── RESPONSIVE BREAKPOINT HOOK ───────────────────────────────────────────────
+// Returns true when the viewport is narrower than the given pixel width.
+// Default breakpoint is 768px (tablet/mobile boundary).
+export const useIsMobile = (breakpoint = 768) => {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < breakpoint);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, [breakpoint]);
+  return isMobile;
+};
+
+// ── MOBILE GATE ──────────────────────────────────────────────────────────────
+// Full-page placeholder shown on mobile for views that require a desktop.
+// icon: large character/emoji shown at top
+// title: view name
+// description: one-sentence explanation
+// copyUrl: if true, shows a "Copy link" button so the user can open on desktop
+export const MobileGate = ({ icon = "◈", title, description, copyUrl = true }) => {
+  const T = useTheme();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      minHeight: "60vh", padding: "40px 24px", textAlign: "center", fontFamily: font,
+    }}>
+      <div style={{ fontSize: 48, marginBottom: 20, opacity: 0.4, color: T.accent }}>{icon}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: T.textBright, marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 13, color: T.textMuted, lineHeight: 1.7, maxWidth: 280, marginBottom: 28 }}>
+        {description || "This view is designed for a larger screen and works best on a desktop or tablet."}
+      </div>
+      {copyUrl && (
+        <button
+          onClick={handleCopy}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "10px 20px", borderRadius: 8, cursor: "pointer",
+            background: T.accentDim, border: `1px solid ${T.accent}44`,
+            color: T.accent, fontFamily: font, fontSize: 13, fontWeight: 600,
+          }}
+        >
+          {copied ? "✓ Copied!" : "⎘ Copy link to open on desktop"}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ── MOBILE WARNING BANNER ─────────────────────────────────────────────────────
+// Dismissible top banner for views that work on mobile but have limitations.
+export const MobileWarningBanner = ({ message }) => {
+  const T = useTheme();
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between",
+      padding: "10px 14px", marginBottom: 16, borderRadius: 8,
+      background: T.amberDim, border: `1px solid ${T.amber}44`,
+      fontFamily: font, fontSize: 12, color: T.amber,
+    }}>
+      <span>⚠ {message}</span>
+      <button
+        onClick={() => setDismissed(true)}
+        style={{ background: "none", border: "none", color: T.amber, cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 4px", opacity: 0.7 }}
+      >✕</button>
+    </div>
+  );
+};
 
 export const Badge = ({ color = "accent", children, style }) => {
   const T = useTheme();
@@ -122,6 +201,7 @@ export const ErrorBanner = ({ msg }) => { const T = useTheme(); return msg ? <di
 
 export const RejectionPicker = ({ onReject, onCancel }) => {
   const T = useTheme();
+  const isMobile = useIsMobile();
   const reasons = [
     { key: "missing_edge_case",  label: "Missing edge case" },
     { key: "wrong_precondition", label: "Wrong preconditions" },
@@ -144,23 +224,33 @@ export const RejectionPicker = ({ onReject, onCancel }) => {
       }}>
         What's the main issue?
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <div style={{
+        display: "flex",
+        flexDirection: isMobile ? "column" : "row",
+        flexWrap: isMobile ? "nowrap" : "wrap",
+        gap: 6,
+      }}>
         {reasons.map(r => (
           <button key={r.key} onClick={() => onReject(r.key)} style={{
-            padding: "5px 12px", borderRadius: 5, fontSize: 11,
+            padding: isMobile ? "12px 16px" : "5px 12px",
+            borderRadius: 5,
+            fontSize: isMobile ? 13 : 11,
             fontFamily: font, fontWeight: 500, cursor: "pointer",
             border: `1px solid ${T.red}44`,
             background: T.redDim || "rgba(255,80,80,0.08)",
             color: T.red,
+            textAlign: isMobile ? "left" : "center",
+            width: isMobile ? "100%" : "auto",
           }}>
             {r.label}
           </button>
         ))}
       </div>
       <button onClick={onCancel} style={{
-        marginTop: 8, background: "none", border: "none",
-        color: T.textMuted, cursor: "pointer", fontSize: 11,
-        fontFamily: mono, padding: 0,
+        marginTop: 10, background: "none", border: "none",
+        color: T.textMuted, cursor: "pointer",
+        fontSize: isMobile ? 13 : 11,
+        fontFamily: mono, padding: isMobile ? "4px 0" : 0,
       }}>
         Cancel
       </button>

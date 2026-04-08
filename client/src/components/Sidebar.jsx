@@ -11,13 +11,33 @@ export const NAV_ITEMS = [
   { key: "deferred",      label: "Deferred to v2",       icon: "◬", reqs: "AL-xxx · KB-007" },
 ];
 
-export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentTheme, onThemeChange }) => {
+export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentTheme, onThemeChange, isMobile = false, isOpen = false, onClose }) => {
   const T = useTheme();
-  return <div style={{ width: 250, minHeight: "100vh", background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", fontFamily: font, flexShrink: 0 }}>
+  return <div style={{
+    width: 250,
+    minHeight: "100vh",
+    background: T.surface,
+    borderRight: `1px solid ${T.border}`,
+    display: "flex",
+    flexDirection: "column",
+    fontFamily: font,
+    flexShrink: 0,
+    ...(isMobile ? {
+      position: "fixed",
+      top: 0, left: 0, bottom: 0,
+      zIndex: 200,
+      transform: isOpen ? "translateX(0)" : "translateX(-100%)",
+      transition: "transform 0.25s ease",
+      boxShadow: isOpen ? "4px 0 24px rgba(0,0,0,0.35)" : "none",
+    } : {}),
+  }}>
     <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${T.border}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 20, color: T.accent }}>◈</span>
-        <span style={{ fontSize: 15, fontWeight: 700, color: T.textBright }}>TestForge AI</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: T.textBright, flex: 1 }}>TestForge AI</span>
+        {isMobile && (
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontSize: 18, lineHeight: 1, padding: "4px 6px", borderRadius: 4 }}>✕</button>
+        )}
       </div>
       <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.5</div>
     </div>
