@@ -61,6 +61,10 @@ export const AnalyticsView = ({ currentUser }) => {
   const [maintenanceResult, setMaintenanceResult] = useState(null);
   const [runningMaintenance, setRunningMaintenance] = useState(false);
 
+  // Aggregation state
+  const [aggregating, setAggregating] = useState(false);
+  const [aggResult, setAggResult] = useState(null);
+
   const tabs = [
     { key: "overview", label: "Overview" },
     { key: "feedback", label: "Feedback" },
@@ -151,6 +155,23 @@ export const AnalyticsView = ({ currentUser }) => {
       loadExemplars();
       loadDashboard();
     } catch (e) { console.error(e); }
+  };
+
+// ── Aggregation Actions ─────────────────────────────────────────────
+
+  const runAggregation = async () => {
+    setAggregating(true);
+    setAggResult(null);
+    try {
+      const result = await api.runAggregation();
+      setAggResult(result);
+      if (!result.skipped) {
+        loadHealth();
+        loadDashboard();
+        loadRules();
+      }
+    } catch (e) { setAggResult({ ok: false, error: e.message }); }
+    finally { setAggregating(false); }
   };
 
   // ── Maintenance Actions ─────────────────────────────────────────────
@@ -451,10 +472,15 @@ export const AnalyticsView = ({ currentUser }) => {
             <div>
               <p>You have everything a QA Manager does, plus the <strong>System</strong> tab:</p>
               <div style={{ padding: "10px 14px", background: COLORS.surface, borderRadius: 6, margin: "10px 0", fontSize: 12, lineHeight: 2 }}>
-                <div><strong>Run maintenance periodically</strong> — Hit the "Run Maintenance" button monthly (or more often during heavy use). It prunes old feedback, clears stale snapshots, and removes orphaned records.</div>
+                <div><strong>Run aggregation when feedback accumulates</strong> — This is the key action. When unprocessed feedback events build up (minimum 5), hit "Run Aggregation" to analyze patterns and synthesize adaptive rules via Claude. The engine looks at which fields get edited most, what gets rejected, and which generation depths perform best — then creates or reinforces rules automatically. Each run costs roughly $0.03–0.05 in tokens.</div>
+                <div><strong>Review what aggregation created</strong> — After running, the results panel shows each new or reinforced rule with Claude's reasoning. Check the Rules tab to verify the new rules make sense. You can edit or delete any rule that doesn't fit.</div>
+                <div><strong>Run maintenance periodically</strong> — Hit "Run Maintenance" monthly (or more often during heavy use). It prunes old processed feedback, clears stale snapshots, and removes orphaned records. This is cleanup — it does not create rules or process feedback.</div>
                 <div><strong>Watch for model drift</strong> — When the AI model in .env changes (e.g., a new Claude version), the System tab will show "DRIFT DETECTED." Reset rule confidence so old rules re-prove themselves against the new model.</div>
-                <div><strong>Monitor health numbers</strong> — Unprocessed feedback events should stay manageable. If snapshots pile up, engineers aren't reviewing their drafts.</div>
+                <div><strong>Monitor health numbers</strong> — Unprocessed feedback events should stay manageable. If they pile up past 50+, run aggregation. If snapshots pile up, engineers aren't reviewing their drafts.</div>
               </div>
+              <p style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 8 }}>
+                <strong>Typical cadence:</strong> Run aggregation whenever you see 10+ unprocessed events (roughly every 1–2 weeks during active use). Run maintenance monthly. Check for model drift after any .env update.
+              </p>
             </div>
           ),
         },
@@ -789,6 +815,71 @@ export const AnalyticsView = ({ currentUser }) => {
           </div>}
         </Card>
       </>}
+
+      {/* Aggregation */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: aggResult ? 0 : undefined }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>Aggregation</div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+              Analyze {health?.feedback_events?.unprocessed || 0} unprocessed feedback events, synthesize adaptive rules via Claude
+            </div>
+          </div>
+          <Button
+            onClick={runAggregation}
+            disabled={aggregating || (health?.feedback_events?.unprocessed || 0) === 0}
+          >
+            {aggregating ? "Analyzing..." : "Run Aggregation"}
+          </Button>
+        </div>
+
+        {aggResult && (
+          <div style={{
+            marginTop: 12, padding: 14, background: COLORS.surface, borderRadius: 6,
+            border: `1px solid ${aggResult.error ? COLORS.red : aggResult.skipped ? COLORS.yellow : COLORS.green}33`,
+            fontSize: 12, fontFamily: mono,
+          }}>
+            {aggResult.error ? (
+              <div style={{ color: COLORS.red }}>{aggResult.error}</div>
+            ) : aggResult.skipped ? (
+              <div style={{ color: COLORS.yellow }}>{aggResult.reason}</div>
+            ) : (
+              <>
+                <div style={{ color: COLORS.green, fontWeight: 600, marginBottom: 8 }}>
+                  Aggregation Complete — {aggResult.ran_at?.slice(0, 19)}
+                </div>
+                <div style={{ color: COLORS.text, lineHeight: 1.8 }}>
+                  Events processed: {aggResult.events_processed} ·
+                  Rules created: {aggResult.rules_created} ·
+                  Rules reinforced: {aggResult.rules_reinforced} ·
+                  Tokens: {aggResult.token_usage?.input_tokens || 0} in / {aggResult.token_usage?.output_tokens || 0} out
+                </div>
+                {aggResult.rules?.length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}33`, paddingTop: 10 }}>
+                    <div style={{ color: COLORS.textMuted, fontSize: 10, textTransform: "uppercase", fontWeight: 600, marginBottom: 6 }}>
+                      Rule Details
+                    </div>
+                    {aggResult.rules.map((r, i) => (
+                      <div key={i} style={{ marginBottom: 6, lineHeight: 1.6 }}>
+                        <span style={{ color: r.action === "created" ? COLORS.green : COLORS.accent, fontWeight: 600 }}>
+                          {r.action === "created" ? "NEW" : "REINFORCED"}
+                        </span>
+                        {" "}<span style={{ color: COLORS.textBright }}>{r.rule_id}</span>
+                        {" — "}<span style={{ color: COLORS.text }}>{r.rule_text}</span>
+                        {r.reasoning && (
+                          <div style={{ color: COLORS.textMuted, fontSize: 11, marginTop: 2, paddingLeft: 12 }}>
+                            ↳ {r.reasoning}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* Maintenance */}
       <Card>
