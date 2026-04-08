@@ -138,21 +138,31 @@ function getExemplarsForGeneration({ testType, depth, limit } = {}) {
       .all(maxResults);
   }
 
-  // Relevance-ranked query — best matches first
+  // Build relevance-ranked query with anonymous positional params.
+  // Uses COALESCE to handle NULL test_type/depth in the exemplar rows,
+  // and only scores a dimension if the caller actually provided a filter.
+  const hasType = !!testType;
+  const hasDepth = !!depth;
+
+  const params = [];
+  const typeScore = hasType
+    ? (params.push(testType), `(COALESCE(test_type, '') = ? )`)
+    : "0";
+  const depthScore = hasDepth
+    ? (params.push(depth), `(COALESCE(depth, '') = ? )`)
+    : "0";
+
+  params.push(maxResults);
+
   return getTcDb()
     .prepare(`
       SELECT tc_id, req_type, test_type, depth,
-        CASE
-          WHEN test_type = ?1 AND depth = ?2 THEN 3
-          WHEN test_type = ?1 THEN 2
-          WHEN depth = ?2 THEN 1
-          ELSE 0
-        END AS relevance
+        (${typeScore}) * 2 + (${depthScore}) AS relevance
       FROM exemplar_test_cases
       ORDER BY relevance DESC, curated_at DESC
-      LIMIT ?3
+      LIMIT ?
     `)
-    .all(testType || "", depth || "", maxResults);
+    .all(...params);
 }
 
 /**
