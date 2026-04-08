@@ -194,4 +194,5 @@ export const api = {
   getAnalyticsHealth: () => request("/analytics/health"),
   runMaintenance: (opts) => request("/analytics/maintenance", { method: "POST", body: opts || {} }),
   resetModelVersion: () => request("/analytics/model-reset", { method: "POST" }),
+  runAggregation: (opts) => request("/analytics/aggregate", { method: "POST", body: opts || {} }),
 };
