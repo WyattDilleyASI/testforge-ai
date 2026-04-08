@@ -19,6 +19,7 @@ const analytics   = require("./analytics");
 const rules       = require("./rules");
 const exemplars   = require("./exemplars");
 const maintenance = require("./maintenance");
+const aggregation = require("./aggregation");
 
 module.exports = {
 
@@ -65,6 +66,11 @@ module.exports = {
   getRuleEvidence:       rules.getRuleEvidence,
   // Prompt building
   formatRulesForPrompt:  rules.formatRulesForPrompt,
+
+  // ── Aggregation ────────────────────────────────────────────────────
+  MIN_EVENTS_FOR_SYNTHESIS: aggregation.MIN_EVENTS_FOR_SYNTHESIS,
+  runLocalAggregation:      aggregation.runLocalAggregation,
+  runAggregation:           aggregation.runAggregation,
 
   // ── Exemplars ──────────────────────────────────────────────────────
   // Constants
