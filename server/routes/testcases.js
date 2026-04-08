@@ -419,6 +419,17 @@ router.post("/import", requireAuth, (req, res) => {
   }
 });
 
+// DELETE /api/testcases/bulk — delete specific test cases by ID
+router.delete("/bulk", requireAuth, (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids must be a non-empty array" });
+  const db = getTcDb();
+  const placeholders = ids.map(() => "?").join(",");
+  db.prepare(`DELETE FROM test_cases WHERE tc_id IN (${placeholders})`).run(...ids);
+  logAudit(req.session.name, "TC_DELETE_BULK", `Deleted ${ids.length} test case(s): ${ids.join(", ")}`);
+  res.json({ ok: true, deleted: ids.length });
+});
+
 // DELETE /api/testcases — clear all test cases
 router.delete("/", requireAuth, (req, res) => {
   const db = getTcDb();

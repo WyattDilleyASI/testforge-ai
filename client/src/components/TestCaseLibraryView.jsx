@@ -98,6 +98,17 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
   const selectAllTcs = () => setSelectedTcIds(prev => prev.size === filteredTcs.length ? new Set() : new Set(filteredTcs.map(tc => tc.tc_id)));
   const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); setTcSelectMode(false); setSelectedTcIds(new Set()); };
 
+  const deleteSelected = async () => {
+    const count = selectedTcIds.size;
+    if (!window.confirm(`Delete ${count} selected test case${count !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+    try {
+      await api.deleteTestCases([...selectedTcIds]);
+      setTcSelectMode(false);
+      setSelectedTcIds(new Set());
+      refresh();
+    } catch (err) { alert(`Failed: ${err.message}`); }
+  };
+
   const counts = {
     all: testCases.length,
     draft: testCases.filter(tc => tc.status === "Draft").length,
@@ -138,6 +149,7 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
           {tcSelectMode && <>
             <Button variant="secondary" small onClick={selectAllTcs}>{selectedTcIds.size === filteredTcs.length ? "Deselect All" : "Select All"}</Button>
             <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
+            <Button variant="danger" small onClick={deleteSelected} disabled={selectedTcIds.size === 0}>Delete Selected ({selectedTcIds.size})</Button>
             <Button variant="ghost" small onClick={() => { setTcSelectMode(false); setSelectedTcIds(new Set()); }}>Cancel</Button>
           </>}
           {rejectedCount > 0 && <Button variant="danger" small onClick={clearRejected}>Clear Rejected ({rejectedCount})</Button>}

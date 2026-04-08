@@ -55,6 +55,7 @@ export const api = {
   importTestCases: (reqId, depth, tcs) => request("/testcases/import", { method: "POST", body: { reqId, depth, tcs } }),
   refineTestCase: (tcId, feedback) => request(`/testcases/${tcId}/refine`, { method: "POST", body: { feedback } }),
   refinePrompt: (tcId, feedback) => request(`/testcases/${tcId}/refine-prompt`, { method: "POST", body: { feedback } }),
+  deleteTestCases: (ids) => request("/testcases/bulk", { method: "DELETE", body: { ids } }),
   clearTestCases: () => request("/testcases", { method: "DELETE" }),
   clearRejectedTestCases: () => request("/testcases/rejected", { method: "DELETE" }),
   exportTestCasesXlsx: (tcIds) => {
