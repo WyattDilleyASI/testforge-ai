@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, useIsMobile } from "./shared";
+import { useAsyncAction, useSelection, useInlineEdit } from "../hooks";
 
 export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const COLORS = useTheme();
@@ -40,21 +41,21 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
 
   // Export select state
   const [tcSelectMode, setTcSelectMode] = useState(false);
-  const [selectedTcIds, setSelectedTcIds] = useState(new Set());
 
   // Adaptive Learning Engine Stuff
   const [rejectingTcId, setRejectingTcId] = useState(null);
   const [genHint, setGenHint] = useState(null);
 
-  // Edit state
-  const [editingTcId, setEditingTcId] = useState(null);
-  const [editForm, setEditForm] = useState(null);
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState("");
+  // Edit state — via hooks
+  const edit = useInlineEdit();
+  const [runEdit, { loading: editSaving, error: editError, clearError: clearEditError }] = useAsyncAction();
 
   const sessionTcs = sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : [];
   const sessionRejectedCount = sessionTcs.filter(tc => tc.status === "Rejected").length;
   const focusArray = [...focuses];
+
+  // Selection operates on the current session TCs
+  const { selectedIds: selectedTcIds, toggle: toggleTcSelect, toggleAll: selectAllTcs, clear: clearTcSelection, allSelected: allTcsSelected } = useSelection(sessionTcs, tc => tc.tc_id);
 
   // Load KB on mount
   useEffect(() => {
@@ -154,19 +155,15 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
     let setup = { preconditions: [], environment: [], equipment: [], testData: [] };
     try { if (typeof tc.description === "string" && tc.description.startsWith("{")) desc = JSON.parse(tc.description); else if (tc.description) desc.objective = tc.description; } catch {}
     try { if (typeof tc.preconditions === "string" && tc.preconditions.startsWith("{")) setup = JSON.parse(tc.preconditions); else if (tc.preconditions) setup.preconditions = [tc.preconditions]; } catch {}
-    setEditForm({ title: tc.title || "", type: tc.type || "Happy Path", description: desc, setup, steps: tc.steps || [] });
-    setEditingTcId(tc.tc_id);
+    edit.startEdit(tc.tc_id, { title: tc.title || "", type: tc.type || "Happy Path", description: desc, setup, steps: tc.steps || [] });
   };
 
   const saveEdit = async (tcId) => {
-    setEditSaving(true); setEditError("");
-    try {
-      await api.updateTestCase(tcId, { title: editForm.title, type: editForm.type, description: editForm.description, preconditions: editForm.setup, steps: editForm.steps });
+    await runEdit(async () => {
+      await api.updateTestCase(tcId, { title: edit.editForm.title, type: edit.editForm.type, description: edit.editForm.description, preconditions: edit.editForm.setup, steps: edit.editForm.steps });
       await refresh();
-      setEditingTcId(null);
-      setEditForm(null);
-    } catch (err) { setEditError(err.message); }
-    finally { setEditSaving(false); }
+      edit.cancelEdit();
+    });
   };
 
   const copyPrompt = async () => {
@@ -211,9 +208,7 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
     finally { setHtmlImporting(false); e.target.value = ""; }
   };
 
-  const toggleTcSelect = (tcId) => setSelectedTcIds(prev => { const next = new Set(prev); next.has(tcId) ? next.delete(tcId) : next.add(tcId); return next; });
-  const selectAllTcs = () => setSelectedTcIds(prev => prev.size === sessionTcs.length ? new Set() : new Set(sessionTcs.map(tc => tc.tc_id)));
-  const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); setTcSelectMode(false); setSelectedTcIds(new Set()); };
+  const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); setTcSelectMode(false); clearTcSelection(); };
 
   const selectedTc = selectedSessionTc ? testCases.find(tc => tc.tc_id === selectedSessionTc) : null;
 
@@ -484,11 +479,11 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               {!isMobile && !tcSelectMode && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={sessionTcs.length === 0}>Export XLSX</Button>}
-              {!isMobile && !tcSelectMode && sessionTcs.length > 0 && <Button variant="secondary" small onClick={() => { setTcSelectMode(true); setSelectedTcIds(new Set()); }}>Select</Button>}
+              {!isMobile && !tcSelectMode && sessionTcs.length > 0 && <Button variant="secondary" small onClick={() => { setTcSelectMode(true); clearTcSelection(); }}>Select</Button>}
               {!isMobile && tcSelectMode && <>
-                <Button variant="secondary" small onClick={selectAllTcs}>{selectedTcIds.size === sessionTcs.length ? "Deselect All" : "Select All"}</Button>
+                <Button variant="secondary" small onClick={selectAllTcs}>{allTcsSelected ? "Deselect All" : "Select All"}</Button>
                 <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
-                <Button variant="ghost" small onClick={() => { setTcSelectMode(false); setSelectedTcIds(new Set()); }}>Cancel</Button>
+                <Button variant="ghost" small onClick={() => { setTcSelectMode(false); clearTcSelection(); }}>Cancel</Button>
               </>}
               {sessionRejectedCount > 0 && (
                 <Button variant="danger" small onClick={clearRejected}>Clear Rejected ({sessionRejectedCount})</Button>
@@ -512,7 +507,7 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                   return (
                     <div
                       key={tc.tc_id}
-                      onClick={() => { setSelectedSessionTc(isSelected ? null : tc.tc_id); setEditingTcId(null); setEditForm(null); setEditError(""); }}
+                      onClick={() => { setSelectedSessionTc(isSelected ? null : tc.tc_id); edit.cancelEdit(); clearEditError(); }}
                       style={{
                         padding: "8px 12px", borderRadius: 6, cursor: "pointer",
                         display: "flex", flexDirection: isMobile ? "column" : "row",
@@ -553,8 +548,8 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                          <Button small variant="secondary" onClick={() => editingTcId === selectedTc.tc_id ? (setEditingTcId(null), setEditForm(null), setEditError("")) : startEdit(selectedTc)} style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
-                            {editingTcId === selectedTc.tc_id ? "Cancel" : "Edit"}
+                          <Button small variant="secondary" onClick={() => edit.isEditing(selectedTc.tc_id) ? (edit.cancelEdit(), clearEditError()) : startEdit(selectedTc)} style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
+                            {edit.isEditing(selectedTc.tc_id) ? "Cancel" : "Edit"}
                           </Button>
                           <Button small variant={selectedTc.status === "Reviewed" ? "primary" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Reviewed")} style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
                             {selectedTc.status === "Reviewed" ? "✓ Approved" : "Approve"}
@@ -576,14 +571,14 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                         </div>
                       )}
 
-                      {editingTcId === selectedTc.tc_id && editForm ? (() => {
+                      {edit.isEditing(selectedTc.tc_id) && edit.editForm ? (() => {
                         const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", fontFamily: mono, letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
                         const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
                         const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
                         const arrVal = (arr) => (arr || []).join("\n");
                         const arrChange = (path, e) => {
                           const items = e.target.value.split("\n");
-                          setEditForm(p => {
+                          edit.setEditForm(p => {
                             const parts = path.split(".");
                             if (parts.length === 1) return { ...p, [parts[0]]: items };
                             if (parts[0] === "description") return { ...p, description: { ...p.description, [parts[1]]: items } };
@@ -598,35 +593,35 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                             <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                               <div style={{ flex: 1 }}>
                                 {lbl("Title")}
-                                {inp(editForm.title, e => setEditForm(p => ({ ...p, title: e.target.value })))}
+                                {inp(edit.editForm.title, e => edit.setEditForm(p => ({ ...p, title: e.target.value })))}
                               </div>
                               <div style={{ minWidth: 150 }}>
                                 {lbl("Type")}
-                                <select value={editForm.type} onChange={e => setEditForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", outline: "none" }}>
+                                <select value={edit.editForm.type} onChange={e => edit.setEditForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", outline: "none" }}>
                                   {["Happy Path", "Negative", "Boundary", "Edge Case"].map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                               </div>
                             </div>
                             {section("Description")}
-                            <div>{lbl("Objective")}{ta(editForm.description?.objective || "", e => setEditForm(p => ({ ...p, description: { ...p.description, objective: e.target.value } })), 4)}</div>
-                            <div>{lbl("Scope")}{ta(editForm.description?.scope || "", e => setEditForm(p => ({ ...p, description: { ...p.description, scope: e.target.value } })), 2)}</div>
-                            <div>{lbl("Assumptions")}{arrHint}{ta(arrVal(editForm.description?.assumptions), e => arrChange("description.assumptions", e), 3)}</div>
+                            <div>{lbl("Objective")}{ta(edit.editForm.description?.objective || "", e => edit.setEditForm(p => ({ ...p, description: { ...p.description, objective: e.target.value } })), 4)}</div>
+                            <div>{lbl("Scope")}{ta(edit.editForm.description?.scope || "", e => edit.setEditForm(p => ({ ...p, description: { ...p.description, scope: e.target.value } })), 2)}</div>
+                            <div>{lbl("Assumptions")}{arrHint}{ta(arrVal(edit.editForm.description?.assumptions), e => arrChange("description.assumptions", e), 3)}</div>
                             {section("Setup")}
-                            <div>{lbl("Preconditions")}{arrHint}{ta(arrVal(editForm.setup?.preconditions), e => arrChange("setup.preconditions", e), 3)}</div>
-                            <div>{lbl("Environment")}{arrHint}{ta(arrVal(editForm.setup?.environment), e => arrChange("setup.environment", e), 2)}</div>
-                            <div>{lbl("Equipment")}{arrHint}{ta(arrVal(editForm.setup?.equipment), e => arrChange("setup.equipment", e), 2)}</div>
-                            <div>{lbl("Test Data")}{arrHint}{ta(arrVal(editForm.setup?.testData), e => arrChange("setup.testData", e), 2)}</div>
+                            <div>{lbl("Preconditions")}{arrHint}{ta(arrVal(edit.editForm.setup?.preconditions), e => arrChange("setup.preconditions", e), 3)}</div>
+                            <div>{lbl("Environment")}{arrHint}{ta(arrVal(edit.editForm.setup?.environment), e => arrChange("setup.environment", e), 2)}</div>
+                            <div>{lbl("Equipment")}{arrHint}{ta(arrVal(edit.editForm.setup?.equipment), e => arrChange("setup.equipment", e), 2)}</div>
+                            <div>{lbl("Test Data")}{arrHint}{ta(arrVal(edit.editForm.setup?.testData), e => arrChange("setup.testData", e), 2)}</div>
                             {section("Test Steps")}
-                            {(editForm.steps || []).map((s, i) => (
+                            {(edit.editForm.steps || []).map((s, i) => (
                               <div key={i} style={{ paddingLeft: 10, borderLeft: `2px solid ${COLORS.border}` }}>
                                 <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>Step {i + 1}</div>
-                                <div style={{ marginBottom: 4 }}>{lbl("Action")}{ta(s.step, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, step: e.target.value } : st) })), 2)}</div>
-                                <div>{lbl("Expected Result")}{ta(s.expectedResult, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
+                                <div style={{ marginBottom: 4 }}>{lbl("Action")}{ta(s.step, e => edit.setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, step: e.target.value } : st) })), 2)}</div>
+                                <div>{lbl("Expected Result")}{ta(s.expectedResult, e => edit.setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
                               </div>
                             ))}
                             <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                              <Button small onClick={() => saveEdit(selectedTc.tc_id)} disabled={editSaving || !editForm.title.trim()}>{editSaving ? "Saving..." : "Save"}</Button>
-                              <Button small variant="ghost" onClick={() => { setEditingTcId(null); setEditForm(null); setEditError(""); }}>Cancel</Button>
+                              <Button small onClick={() => saveEdit(selectedTc.tc_id)} disabled={editSaving || !edit.editForm.title.trim()}>{editSaving ? "Saving..." : "Save"}</Button>
+                              <Button small variant="ghost" onClick={() => { edit.cancelEdit(); clearEditError(); }}>Cancel</Button>
                               {editError && <span style={{ fontSize: 11, color: COLORS.red, fontFamily: mono }}>{editError}</span>}
                             </div>
                           </div>

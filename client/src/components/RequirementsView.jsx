@@ -2,64 +2,102 @@ import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, useIsMobile } from "./shared";
+import { useAsyncAction, useExpandCollapse, useInlineEdit, useSelection } from "../hooks";
 
 export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const COLORS = useTheme();
   const isMobile = useIsMobile();
+
+  const { isExpanded, toggle: toggleExpand } = useExpandCollapse();
+  const edit = useInlineEdit();
+  const [runAsync, { error, clearError }] = useAsyncAction();
+
   const [showAdd, setShowAdd] = useState(false);
-  const [editId, setEditId] = useState(null);
   const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
-  const [editForm, setEditForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
-  const [error, setError] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
-  const [expandedReq, setExpandedReq] = useState(null);
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const { selectedIds: selectedReqIds, toggle: toggleReqSelect, toggleAll: selectAllReqs, isSelected, allSelected, selectMode: reqSelectMode, enterSelectMode, exitSelectMode } = useSelection(requirements, r => r.req_id);
 
   const canDelete = currentUser?.role === "Admin" || currentUser?.role === "QA Manager";
 
   const handleClearAll = async () => {
-    setError("");
-    try { await api.clearRequirements(); setClearAllConfirm(false); refresh(); } catch (err) { setError(err.message); }
+    await runAsync(async () => {
+      await api.clearRequirements();
+      setClearAllConfirm(false);
+      refresh();
+    });
   };
 
   const handleImportDoc = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     e.target.value = "";
-    setImporting(true); setImportMsg(""); setError("");
-    try {
+    setImporting(true); setImportMsg("");
+    await runAsync(async () => {
       const result = await api.importRequirementsDoc(file);
       setImportMsg(`Imported ${result.imported} requirement(s). Auto-linked ${result.linked} test case(s).`);
       refresh();
-    } catch (err) { setError(err.message); }
-    finally { setImporting(false); }
+    });
+    setImporting(false);
   };
 
-  const startAdd = () => { setAddForm({ req_id: `REQ-${String(requirements.length + 1).padStart(3, "0")}`, title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" }); setShowAdd(true); setEditId(null); setError(""); setDeleteConfirm(null); };
+  const startAdd = () => {
+    setAddForm({ req_id: `REQ-${String(requirements.length + 1).padStart(3, "0")}`, title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
+    setShowAdd(true);
+    edit.cancelEdit();
+    setDeleteConfirm(null);
+    clearError();
+  };
 
   const startEdit = (r) => {
-    if (editId === r.req_id) { setEditId(null); return; }
-    setEditForm({ req_id: r.req_id, title: r.title, description: r.description || "", acceptanceCriteria: (r.acceptance_criteria || []).join("\n"), priority: r.priority, status: r.status, module: r.module || "" });
-    setEditId(r.req_id); setShowAdd(false); setError(""); setDeleteConfirm(null);
+    if (edit.isEditing(r.req_id)) { edit.cancelEdit(); return; }
+    edit.startEdit(r.req_id, {
+      req_id: r.req_id, title: r.title, description: r.description || "",
+      acceptanceCriteria: (r.acceptance_criteria || []).join("\n"),
+      priority: r.priority, status: r.status, module: r.module || "",
+    });
+    setShowAdd(false);
+    setDeleteConfirm(null);
+    clearError();
   };
 
   const saveAdd = async () => {
-    setError("");
     const data = { req_id: addForm.req_id, title: addForm.title, description: addForm.description, acceptance_criteria: addForm.acceptanceCriteria.split("\n").filter(s => s.trim()), priority: addForm.priority, status: addForm.status, module: addForm.module };
-    try { await api.createRequirement(data); setShowAdd(false); refresh(); } catch (err) { setError(err.message); }
+    await runAsync(async () => {
+      await api.createRequirement(data);
+      setShowAdd(false);
+      refresh();
+    });
   };
 
   const saveEdit = async () => {
-    setError("");
-    const data = { title: editForm.title, description: editForm.description, acceptance_criteria: editForm.acceptanceCriteria.split("\n").filter(s => s.trim()), priority: editForm.priority, status: editForm.status, module: editForm.module };
-    try { await api.updateRequirement(editId, data); setEditId(null); refresh(); } catch (err) { setError(err.message); }
+    const data = { title: edit.editForm.title, description: edit.editForm.description, acceptance_criteria: edit.editForm.acceptanceCriteria.split("\n").filter(s => s.trim()), priority: edit.editForm.priority, status: edit.editForm.status, module: edit.editForm.module };
+    await runAsync(async () => {
+      await api.updateRequirement(edit.editingId, data);
+      edit.cancelEdit();
+      refresh();
+    });
   };
 
   const doDelete = async (reqId) => {
-    setError("");
-    try { await api.deleteRequirement(reqId); setEditId(null); setDeleteConfirm(null); refresh(); } catch (err) { setError(err.message); }
+    await runAsync(async () => {
+      await api.deleteRequirement(reqId);
+      edit.cancelEdit();
+      setDeleteConfirm(null);
+      refresh();
+    });
+  };
+
+  const deleteSelected = async () => {
+    const count = selectedReqIds.size;
+    if (!window.confirm(`Delete ${count} selected requirement${count !== 1 ? "s" : ""}? Linked test cases will be orphaned.`)) return;
+    await runAsync(async () => {
+      await Promise.all([...selectedReqIds].map(id => api.deleteRequirement(id)));
+      exitSelectMode();
+      refresh();
+    });
   };
 
   const renderForm = (form, setForm, isEdit) => (
@@ -81,17 +119,25 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
     <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 0, marginBottom: 24 }}>
       <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>RS-001 – RS-006</p></div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        {canDelete && !clearAllConfirm && requirements.length > 0 && <Button variant="danger" small onClick={() => setClearAllConfirm(true)}>Clear All</Button>}
-        {clearAllConfirm && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {requirements.length} requirements?</span>
-          <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
-          <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
-        </div>}
-        <label style={{ cursor: importing ? "not-allowed" : "pointer" }}>
-          <input type="file" accept=".doc" style={{ display: "none" }} onChange={handleImportDoc} disabled={importing} />
-          <Button variant="secondary" small onClick={undefined} style={{ pointerEvents: "none" }}>{importing ? "Importing..." : "Import JAMA Requirements"}</Button>
-        </label>
-        <Button onClick={startAdd}>+ Add Requirement</Button>
+        {!reqSelectMode && <>
+          {canDelete && !clearAllConfirm && requirements.length > 0 && <Button variant="danger" small onClick={() => setClearAllConfirm(true)}>Clear All</Button>}
+          {clearAllConfirm && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {requirements.length} requirements?</span>
+            <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
+            <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
+          </div>}
+          <label style={{ cursor: importing ? "not-allowed" : "pointer" }}>
+            <input type="file" accept=".doc" style={{ display: "none" }} onChange={handleImportDoc} disabled={importing} />
+            <Button variant="secondary" small onClick={undefined} style={{ pointerEvents: "none" }}>{importing ? "Importing..." : "Import JAMA Requirements"}</Button>
+          </label>
+          {canDelete && requirements.length > 0 && <Button variant="secondary" small onClick={() => { enterSelectMode(); edit.cancelEdit(); }}>Select</Button>}
+          <Button onClick={startAdd}>+ Add Requirement</Button>
+        </>}
+        {reqSelectMode && <>
+          <Button variant="secondary" small onClick={selectAllReqs}>{allSelected ? "Deselect All" : "Select All"}</Button>
+          <Button variant="danger" small onClick={deleteSelected} disabled={selectedReqIds.size === 0}>Delete Selected ({selectedReqIds.size})</Button>
+          <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
+        </>}
       </div>
     </div>
     {importMsg && <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.greenDim, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.green }}>{importMsg}</div>}
@@ -106,22 +152,23 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
     </Card>}
 
     {requirements.map(r => {
-      const isEditing = editId === r.req_id;
-      const isExpanded = expandedReq === r.req_id;
+      const expanded = isExpanded(r.req_id);
+      const isEditing = edit.isEditing(r.req_id);
       const isJama = r.source === "JAMA Import";
       const SectionLabel = ({ children }) => <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 12, marginBottom: 4 }}>{children}</div>;
       const rels = r.relationships || [];
       const tcRels = rels.filter(rel => rel.group === "Verification Test Case" || rel.direction === "Downstream");
       const reqRels = rels.filter(rel => rel.group !== "Verification Test Case" && rel.direction !== "Downstream");
 
-      return <Card key={r.req_id} style={{ marginBottom: 10, cursor: isEditing ? "default" : "pointer", borderColor: isEditing ? COLORS.accent + "44" : undefined, boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined }} onClick={() => { if (!isEditing) { if (isExpanded) setExpandedReq(null); else { setExpandedReq(r.req_id); setEditId(null); } } }}>
+      return <Card key={r.req_id} style={{ marginBottom: 10, cursor: isEditing ? "default" : "pointer", borderColor: isEditing ? COLORS.accent + "44" : reqSelectMode && isSelected(r.req_id) ? COLORS.accent : undefined, boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined }} onClick={() => { if (reqSelectMode) { toggleReqSelect(r.req_id); return; } if (!isEditing) { edit.cancelEdit(); toggleExpand(r.req_id); } }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          {reqSelectMode && <input type="checkbox" checked={isSelected(r.req_id)} onChange={() => toggleReqSelect(r.req_id)} onClick={e => e.stopPropagation()} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
           <ReqIdTag id={r.req_id} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>{r.title}</div>
-            {!isEditing && !isExpanded && <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.5 }}>{r.description}</div>}
-            {!isEditing && !isExpanded && (r.acceptance_criteria || []).length > 0 && <div style={{ marginTop: 8 }}><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase" }}>Acceptance Criteria:</span>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}` }}>• {ac}</div>)}</div>}
-            {!isEditing && !isExpanded && rels.length > 0 && <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {!isEditing && !expanded && <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.5 }}>{r.description}</div>}
+            {!isEditing && !expanded && (r.acceptance_criteria || []).length > 0 && <div style={{ marginTop: 8 }}><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase" }}>Acceptance Criteria:</span>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}` }}>• {ac}</div>)}</div>}
+            {!isEditing && !expanded && rels.length > 0 && <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
               {tcRels.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.green }}>TC: {tcRels.map(r => r.id).join(", ")}</span>}
               {reqRels.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.purple, marginLeft: tcRels.length ? 8 : 0 }}>REQ: {reqRels.map(r => r.id).join(", ")}</span>}
             </div>}
@@ -130,11 +177,11 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
             {isJama && <Badge color="purple">JAMA</Badge>}
             <Badge color={r.priority === "High" || r.priority === "Must Have" ? "red" : r.priority === "Medium" || r.priority === "Should Have" ? "amber" : "green"}>{r.priority}</Badge>
             <Badge color={r.status === "Approved" ? "green" : r.status === "Review" ? "amber" : r.status === "Rejected" ? "red" : "textMuted"}>{r.status}</Badge>
-            {!isEditing && <button onClick={e => { e.stopPropagation(); startEdit(r); }} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 12, fontFamily: mono, padding: "2px 6px" }}>Edit</button>}
+            {!isEditing && !reqSelectMode && <button onClick={e => { e.stopPropagation(); startEdit(r); }} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 12, fontFamily: mono, padding: "2px 6px" }}>Edit</button>}
           </div>
         </div>
 
-        {isExpanded && !isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
+        {expanded && !isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
           {r.description && <><SectionLabel>Requirement (EARS)</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{r.description}</div></>}
           {r.rationale && <><SectionLabel>Rationale</SectionLabel><div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{r.rationale}</div></>}
           {(r.acceptance_criteria || []).length > 0 && <><SectionLabel>Acceptance Criteria</SectionLabel>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}` }}>• {ac}</div>)}</>}
@@ -163,20 +210,20 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
 
         {isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
           <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Editing</div>
-          {renderForm(editForm, setEditForm, true)}
+          {renderForm(edit.editForm, edit.setEditForm, true)}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-            {canDelete && deleteConfirm !== editId && (
-              <Button variant="danger" small onClick={() => setDeleteConfirm(editId)} style={{ marginRight: "auto" }}>Delete</Button>
+            {canDelete && deleteConfirm !== edit.editingId && (
+              <Button variant="danger" small onClick={() => setDeleteConfirm(edit.editingId)} style={{ marginRight: "auto" }}>Delete</Button>
             )}
-            {canDelete && deleteConfirm === editId && (
+            {canDelete && deleteConfirm === edit.editingId && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "auto" }}>
                 <span style={{ fontSize: 11, color: COLORS.red }}>Delete? Linked TCs will be orphaned.</span>
-                <Button variant="danger" small onClick={() => doDelete(editId)}>Confirm</Button>
+                <Button variant="danger" small onClick={() => doDelete(edit.editingId)}>Confirm</Button>
                 <Button variant="ghost" small onClick={() => setDeleteConfirm(null)}>No</Button>
               </div>
             )}
-            <Button variant="secondary" onClick={() => setEditId(null)}>Cancel</Button>
-            <Button onClick={saveEdit} disabled={!editForm.title}>Save</Button>
+            <Button variant="secondary" onClick={() => edit.cancelEdit()}>Cancel</Button>
+            <Button onClick={saveEdit} disabled={!edit.editForm?.title}>Save</Button>
           </div>
         </div>}
       </Card>;

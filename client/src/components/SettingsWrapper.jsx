@@ -151,17 +151,15 @@ const ProductContextPanel = () => {
   const COLORS = useTheme();
   const [productContext, setProductContext] = useState("");
   const [keyTerms, setKeyTerms] = useState("");
-  const [exampleTc, setExampleTc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.getProductContext(), api.getExampleTc()])
-      .then(([ctx, ex]) => {
+    api.getProductContext()
+      .then((ctx) => {
         setProductContext(ctx.product_context || "");
         setKeyTerms(ctx.key_terms || "");
-        setExampleTc(ex.example_tc || null);
       }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -210,22 +208,6 @@ const ProductContextPanel = () => {
         />
       </Card>
 
-      <Card style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Example Test Case</div>
-        <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12 }}>
-          A real test case used as a few-shot example in generation prompts. Set this from any test case card using the "Use as Example" button.
-        </div>
-        {exampleTc ? <div style={{ background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}`, padding: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.accent, marginBottom: 4 }}>{exampleTc.tc_id}</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 8 }}>{exampleTc.title}</div>
-          {exampleTc.type && <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 4 }}>Type: {exampleTc.type}</div>}
-          {(() => { try { const d = typeof exampleTc.description === "string" ? JSON.parse(exampleTc.description) : exampleTc.description; return d?.objective ? <div style={{ fontSize: 11, color: COLORS.text, marginBottom: 4 }}>Objective: {d.objective}</div> : null; } catch { return null; } })()}
-          {(() => { try { const s = typeof exampleTc.steps === "string" ? JSON.parse(exampleTc.steps) : exampleTc.steps; return s?.length ? <div style={{ fontSize: 11, color: COLORS.textMuted }}>{s.length} step(s)</div> : null; } catch { return null; } })()}
-          <Button small variant="ghost" style={{ marginTop: 8 }} onClick={async () => { try { await api.clearExampleTc(); setExampleTc(null); } catch {} }}>Clear Example</Button>
-        </div> : <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic", padding: "12px 0" }}>
-          No example set. Open any test case and click "Use as Example" to set one.
-        </div>}
-      </Card>
 
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <Button onClick={save} disabled={saving}>{saving ? "Saving..." : saved ? "Saved!" : "Save"}</Button>
