@@ -662,7 +662,7 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
           ? "approved_with_edits"
           : "approved_unchanged";
 
-        al.logFeedbackEvent({
+         al.logFeedbackEvent({
           tcId: req.params.tcId,
           reqId,
           eventType,
@@ -672,6 +672,23 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
           depth: tc.depth,
           testType: tc.type,
         });
+
+        // ── AL: Auto-promote to exemplar pool if approved unchanged ──
+        // A TC approved without edits is a strong positive signal —
+        // the AI got it right. Add it to the exemplar pool as a
+        // few-shot example for future generations.
+        if (eventType === "approved_unchanged") {
+          try {
+            al.addExemplar(req.params.tcId, {
+              reqType: reqId ? reqId.replace(/-\d+$/, "") : null,
+              testType: tc.type || null,
+              depth: tc.depth || "standard",
+              selectedBy: "system",
+            });
+          } catch (exErr) {
+            console.warn("⚠ Exemplar auto-promotion failed:", exErr.message);
+          }
+        }
 
         // Clear the snapshot — the diff has been captured
         db.prepare(
