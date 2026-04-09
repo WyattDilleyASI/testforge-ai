@@ -1,54 +1,52 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker } from "./shared";
+import { useAsyncAction, useSelection, useExpandCollapse, useInlineEdit } from "../hooks";
 
 export const TestCaseLibraryView = ({ testCases, refresh }) => {
   const COLORS = useTheme();
-  const [expandedTc, setExpandedTc] = useState(null);
+
+  // ── Hooks ──────────────────────────────────────────────────────────────────
+  const { isExpanded, toggle: toggleExpand } = useExpandCollapse();
+  const edit = useInlineEdit();
+  const [runAsync, { loading: asyncLoading }] = useAsyncAction();
+  const [runEdit, { loading: editSaving, error: editError, clearError: clearEditError }] = useAsyncAction();
+
+  // ── Local state ────────────────────────────────────────────────────────────
   const [clearing, setClearing] = useState(false);
   const [refiningTcId, setRefiningTcId] = useState(null);
   const [refineFeedback, setRefineFeedback] = useState("");
   const [refineLoading, setRefineLoading] = useState(false);
   const [refineError, setRefineError] = useState("");
   const [refineCopyState, setRefineCopyState] = useState("idle");
-  const [tcSelectMode, setTcSelectMode] = useState(false);
-  const [selectedTcIds, setSelectedTcIds] = useState(new Set());
-  const [exampleTcId, setExampleTcId] = useState(null);
-  const [filter, setFilter] = useState("all"); // all | draft | reviewed | rejected
-  const [editingTcId, setEditingTcId] = useState(null);
-  const [editForm, setEditForm] = useState(null);
-  const [editSaving, setEditSaving] = useState(false);
-  const [rejectingTcId, setRejectingTcId] = useState(null);
 
-  useEffect(() => {
-    api.getExampleTc().then(d => { if (d.example_tc) setExampleTcId(d.example_tc.tc_id); }).catch(() => {});
-  }, []);
+  const [filter, setFilter] = useState("all"); // all | draft | reviewed | rejected
+  const [rejectingTcId, setRejectingTcId] = useState(null);
 
   const sortedTcs = [...testCases].sort((a, b) => (b.generated_at || "").localeCompare(a.generated_at || ""));
   const filteredTcs = filter === "all" ? sortedTcs : sortedTcs.filter(tc => tc.status.toLowerCase() === filter);
   const rejectedCount = testCases.filter(tc => tc.status === "Rejected").length;
 
-  const startEdit = (tc) => {
+  // Selection operates on the filtered list so "Select All" matches what's visible
+  const { selectedIds: selectedTcIds, toggle: toggleTcSelect, toggleAll: selectAllTcs, isSelected, allSelected, selectMode: tcSelectMode, enterSelectMode, exitSelectMode } = useSelection(filteredTcs, tc => tc.tc_id);
+
+  // ── Form helpers ───────────────────────────────────────────────────────────
+  const parseEditForm = (tc) => {
     let desc = { objective: "", scope: "", assumptions: [] };
     let setup = { preconditions: [], environment: [], equipment: [], testData: [] };
     try { if (typeof tc.description === "string" && tc.description.startsWith("{")) desc = JSON.parse(tc.description); else if (tc.description) desc.objective = tc.description; } catch {}
     try { if (typeof tc.preconditions === "string" && tc.preconditions.startsWith("{")) setup = JSON.parse(tc.preconditions); else if (tc.preconditions) setup.preconditions = [tc.preconditions]; } catch {}
-    setEditForm({ title: tc.title || "", type: tc.type || "Happy Path", description: desc, setup, steps: tc.steps || [] });
-    setEditingTcId(tc.tc_id);
+    return { title: tc.title || "", type: tc.type || "Happy Path", description: desc, setup, steps: tc.steps || [] };
   };
 
-  const [editError, setEditError] = useState("");
-
+  // ── Actions ────────────────────────────────────────────────────────────────
   const saveEdit = async (tcId) => {
-    setEditSaving(true); setEditError("");
-    try {
-      await api.updateTestCase(tcId, { title: editForm.title, type: editForm.type, description: editForm.description, preconditions: editForm.setup, steps: editForm.steps });
-      setEditingTcId(null);
-      setEditForm(null);
+    await runEdit(async () => {
+      await api.updateTestCase(tcId, { title: edit.editForm.title, type: edit.editForm.type, description: edit.editForm.description, preconditions: edit.editForm.setup, steps: edit.editForm.steps });
+      edit.cancelEdit();
       refresh();
-    } catch (err) { setEditError(err.message); }
-    finally { setEditSaving(false); }
+    });
   };
 
   const updateStatus = async (tcId, status, rejectionReason) => {
@@ -94,19 +92,16 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
     catch (err) { alert(`Failed: ${err.message}`); }
   };
 
-  const toggleTcSelect = (tcId) => setSelectedTcIds(prev => { const next = new Set(prev); next.has(tcId) ? next.delete(tcId) : next.add(tcId); return next; });
-  const selectAllTcs = () => setSelectedTcIds(prev => prev.size === filteredTcs.length ? new Set() : new Set(filteredTcs.map(tc => tc.tc_id)));
-  const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); setTcSelectMode(false); setSelectedTcIds(new Set()); };
+  const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); exitSelectMode(); };
 
   const deleteSelected = async () => {
     const count = selectedTcIds.size;
     if (!window.confirm(`Delete ${count} selected test case${count !== 1 ? "s" : ""}? This cannot be undone.`)) return;
-    try {
+    await runAsync(async () => {
       await api.deleteTestCases([...selectedTcIds]);
-      setTcSelectMode(false);
-      setSelectedTcIds(new Set());
+      exitSelectMode();
       refresh();
-    } catch (err) { alert(`Failed: ${err.message}`); }
+    });
   };
 
   const counts = {
@@ -145,12 +140,12 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 8 }}>
           {!tcSelectMode && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>}
-          {!tcSelectMode && testCases.length > 0 && <Button variant="secondary" small onClick={() => { setTcSelectMode(true); setSelectedTcIds(new Set()); }}>Select</Button>}
+          {!tcSelectMode && testCases.length > 0 && <Button variant="secondary" small onClick={enterSelectMode}>Select</Button>}
           {tcSelectMode && <>
-            <Button variant="secondary" small onClick={selectAllTcs}>{selectedTcIds.size === filteredTcs.length ? "Deselect All" : "Select All"}</Button>
+            <Button variant="secondary" small onClick={selectAllTcs}>{allSelected ? "Deselect All" : "Select All"}</Button>
             <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
-            <Button variant="danger" small onClick={deleteSelected} disabled={selectedTcIds.size === 0}>Delete Selected ({selectedTcIds.size})</Button>
-            <Button variant="ghost" small onClick={() => { setTcSelectMode(false); setSelectedTcIds(new Set()); }}>Cancel</Button>
+            <Button variant="danger" small onClick={deleteSelected} disabled={selectedTcIds.size === 0 || asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
+            <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
           </>}
           {rejectedCount > 0 && <Button variant="danger" small onClick={clearRejected}>Clear Rejected ({rejectedCount})</Button>}
           <Button variant="danger" small onClick={clearAll} disabled={testCases.length === 0 || clearing}>{clearing ? "Clearing..." : "Clear All"}</Button>
@@ -166,12 +161,12 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
             let desc = null, setup = null;
             try { desc = typeof tc.description === "string" && tc.description.startsWith("{") ? JSON.parse(tc.description) : null; } catch {}
             try { setup = typeof tc.preconditions === "string" && tc.preconditions.startsWith("{") ? JSON.parse(tc.preconditions) : null; } catch {}
-            const isExpanded = expandedTc === tc.tc_id;
+            const expanded = isExpanded(tc.tc_id);
 
             return (
-              <Card key={tc.tc_id} style={{ marginBottom: 10, border: tcSelectMode && selectedTcIds.has(tc.tc_id) ? `1px solid ${COLORS.accent}` : undefined }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }} onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : setExpandedTc(isExpanded ? null : tc.tc_id)}>
-                  {tcSelectMode && <input type="checkbox" checked={selectedTcIds.has(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
+              <Card key={tc.tc_id} style={{ marginBottom: 10, border: tcSelectMode && isSelected(tc.tc_id) ? `1px solid ${COLORS.accent}` : undefined }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }} onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : toggleExpand(tc.tc_id)}>
+                  {tcSelectMode && <input type="checkbox" checked={isSelected(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
                   <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}>{tc.tc_id}</span>
                   <div style={{ flex: 1, cursor: "pointer" }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, display: "flex", alignItems: "center", gap: 8 }}>
@@ -185,7 +180,7 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                       <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
                     </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
-                    {isExpanded && <Button small variant="secondary" onClick={e => { e.stopPropagation(); editingTcId === tc.tc_id ? (setEditingTcId(null), setEditForm(null)) : startEdit(tc); }}>{editingTcId === tc.tc_id ? "Cancel" : "Edit"}</Button>}
+                    {expanded && <Button small variant="secondary" onClick={e => { e.stopPropagation(); edit.isEditing(tc.tc_id) ? edit.cancelEdit() : edit.startEdit(tc.tc_id, parseEditForm(tc)); }}>{edit.isEditing(tc.tc_id) ? "Cancel" : "Edit"}</Button>}
                     <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
                     <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}> &#10007;</Button>
                     <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
@@ -203,10 +198,10 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                 )}
                 </div>
 
-                {isExpanded && (() => {
+                {expanded && (() => {
                   const SL = ({ children }) => <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>;
                   const BL = ({ items }) => items?.length > 0 ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul> : null;
-                  const isEditing = editingTcId === tc.tc_id && editForm;
+                  const isEditing = edit.isEditing(tc.tc_id) && edit.editForm;
                   return (
                     <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.border}` }}>
                       {isEditing && (() => {
@@ -216,7 +211,7 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                         const arrVal = (arr) => (arr || []).join("\n");
                         const arrChange = (path, e) => {
                           const items = e.target.value.split("\n");
-                          setEditForm(p => {
+                          edit.setEditForm(p => {
                             const parts = path.split(".");
                             if (parts.length === 1) return { ...p, [parts[0]]: items };
                             if (parts[0] === "description") return { ...p, description: { ...p.description, [parts[1]]: items } };
@@ -231,35 +226,35 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                             <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
                               <div style={{ flex: 1 }}>
                                 {lbl("Title")}
-                                {inp(editForm.title, e => setEditForm(p => ({ ...p, title: e.target.value })))}
+                                {inp(edit.editForm.title, e => edit.setEditForm(p => ({ ...p, title: e.target.value })))}
                               </div>
                               <div style={{ minWidth: 150 }}>
                                 {lbl("Type")}
-                                <select value={editForm.type} onChange={e => setEditForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", outline: "none" }}>
+                                <select value={edit.editForm.type} onChange={e => edit.setEditForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", outline: "none" }}>
                                   {["Happy Path", "Negative", "Boundary", "Edge Case"].map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                               </div>
                             </div>
                             {section("Description")}
-                            <div>{lbl("Objective")}{ta(editForm.description?.objective || "", e => setEditForm(p => ({ ...p, description: { ...p.description, objective: e.target.value } })), 4)}</div>
-                            <div>{lbl("Scope")}{ta(editForm.description?.scope || "", e => setEditForm(p => ({ ...p, description: { ...p.description, scope: e.target.value } })), 2)}</div>
-                            <div>{lbl("Assumptions")}{arrHint}{ta(arrVal(editForm.description?.assumptions), e => arrChange("description.assumptions", e), 3)}</div>
+                            <div>{lbl("Objective")}{ta(edit.editForm.description?.objective || "", e => edit.setEditForm(p => ({ ...p, description: { ...p.description, objective: e.target.value } })), 4)}</div>
+                            <div>{lbl("Scope")}{ta(edit.editForm.description?.scope || "", e => edit.setEditForm(p => ({ ...p, description: { ...p.description, scope: e.target.value } })), 2)}</div>
+                            <div>{lbl("Assumptions")}{arrHint}{ta(arrVal(edit.editForm.description?.assumptions), e => arrChange("description.assumptions", e), 3)}</div>
                             {section("Setup")}
-                            <div>{lbl("Preconditions")}{arrHint}{ta(arrVal(editForm.setup?.preconditions), e => arrChange("setup.preconditions", e), 3)}</div>
-                            <div>{lbl("Environment")}{arrHint}{ta(arrVal(editForm.setup?.environment), e => arrChange("setup.environment", e), 2)}</div>
-                            <div>{lbl("Equipment")}{arrHint}{ta(arrVal(editForm.setup?.equipment), e => arrChange("setup.equipment", e), 2)}</div>
-                            <div>{lbl("Test Data")}{arrHint}{ta(arrVal(editForm.setup?.testData), e => arrChange("setup.testData", e), 2)}</div>
+                            <div>{lbl("Preconditions")}{arrHint}{ta(arrVal(edit.editForm.setup?.preconditions), e => arrChange("setup.preconditions", e), 3)}</div>
+                            <div>{lbl("Environment")}{arrHint}{ta(arrVal(edit.editForm.setup?.environment), e => arrChange("setup.environment", e), 2)}</div>
+                            <div>{lbl("Equipment")}{arrHint}{ta(arrVal(edit.editForm.setup?.equipment), e => arrChange("setup.equipment", e), 2)}</div>
+                            <div>{lbl("Test Data")}{arrHint}{ta(arrVal(edit.editForm.setup?.testData), e => arrChange("setup.testData", e), 2)}</div>
                             {section("Test Steps")}
-                            {(editForm.steps || []).map((s, i) => (
+                            {(edit.editForm.steps || []).map((s, i) => (
                               <div key={i} style={{ paddingLeft: 10, borderLeft: `2px solid ${COLORS.border}` }}>
                                 <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>Step {i + 1}</div>
-                                <div style={{ marginBottom: 4 }}>{lbl("Action")}{ta(s.step, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, step: e.target.value } : st) })), 2)}</div>
-                                <div>{lbl("Expected Result")}{ta(s.expectedResult, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
+                                <div style={{ marginBottom: 4 }}>{lbl("Action")}{ta(s.step, e => edit.setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, step: e.target.value } : st) })), 2)}</div>
+                                <div>{lbl("Expected Result")}{ta(s.expectedResult, e => edit.setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
                               </div>
                             ))}
                             <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                              <Button small onClick={e => { e.stopPropagation(); saveEdit(tc.tc_id); }} disabled={editSaving || !editForm.title.trim()}>{editSaving ? "Saving..." : "Save"}</Button>
-                              <Button small variant="ghost" onClick={e => { e.stopPropagation(); setEditingTcId(null); setEditForm(null); setEditError(""); }}>Cancel</Button>
+                              <Button small onClick={e => { e.stopPropagation(); saveEdit(tc.tc_id); }} disabled={editSaving || !edit.editForm.title.trim()}>{editSaving ? "Saving..." : "Save"}</Button>
+                              <Button small variant="ghost" onClick={e => { e.stopPropagation(); edit.cancelEdit(); clearEditError(); }}>Cancel</Button>
                               {editError && <span style={{ fontSize: 11, color: COLORS.red, fontFamily: mono }}>{editError}</span>}
                             </div>
                           </div>
@@ -355,9 +350,6 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                         ) : (
                           <div style={{ display: "flex", gap: 8 }}>
                             <Button small variant="secondary" onClick={e => { e.stopPropagation(); setRefiningTcId(tc.tc_id); setRefineFeedback(""); setRefineError(""); setRefineCopyState("idle"); }}>Refine</Button>
-                            <Button small variant="ghost" onClick={async e => { e.stopPropagation(); try { await api.setExampleTc(tc.tc_id); setExampleTcId(tc.tc_id); } catch {} }}>
-                              {exampleTcId === tc.tc_id ? "★ Example TC" : "Use as Example"}
-                            </Button>
                           </div>
                         )}
                       </div>

@@ -2,21 +2,20 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 import { useTheme, font, mono } from "../theme";
 import { Card, Badge, Button, Input, Select, EmptyState, ErrorBanner } from "./shared";
+import { useAsyncAction, useInlineEdit } from "../hooks";
 
 export const McpServerConfigView = ({ currentUser }) => {
   const COLORS = useTheme();
   const [servers, setServers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [editId, setEditId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [testResults, setTestResults] = useState({});
-  const [error, setError] = useState("");
   const [addForm, setAddForm] = useState({
     name: "", url: "", auth_type: "none", auth_token: "", description: "", enabled: true,
   });
-  const [editForm, setEditForm] = useState({
-    name: "", url: "", auth_type: "none", auth_token: "", description: "", enabled: true,
-  });
+
+  const edit = useInlineEdit();
+  const [runAsync, { error, clearError }] = useAsyncAction();
 
   const isAdmin = currentUser.role === "Admin";
 
@@ -28,40 +27,49 @@ export const McpServerConfigView = ({ currentUser }) => {
 
   const startAdd = () => {
     setAddForm({ name: "", url: "", auth_type: "none", auth_token: "", description: "", enabled: true });
-    setShowAdd(true); setEditId(null); setError(""); setDeleteConfirm(null);
+    setShowAdd(true);
+    edit.cancelEdit();
+    setDeleteConfirm(null);
+    clearError();
   };
 
   const startEdit = (s) => {
-    if (editId === s.id) { setEditId(null); return; }
-    setEditForm({
+    if (edit.isEditing(s.id)) { edit.cancelEdit(); return; }
+    edit.startEdit(s.id, {
       name: s.name, url: s.url, auth_type: s.auth_type,
       auth_token: "", description: s.description || "", enabled: !!s.enabled,
     });
-    setEditId(s.id); setShowAdd(false); setError(""); setDeleteConfirm(null);
+    setShowAdd(false);
+    setDeleteConfirm(null);
+    clearError();
   };
 
   const saveAdd = async () => {
-    setError("");
-    try {
+    await runAsync(async () => {
       await api.createMcpServer(addForm);
-      setShowAdd(false); loadServers();
-    } catch (err) { setError(err.message); }
+      setShowAdd(false);
+      loadServers();
+    });
   };
 
   const saveEdit = async () => {
-    setError("");
-    const payload = { ...editForm };
+    const payload = { ...edit.editForm };
     // Only send auth_token if the user typed something (avoid clearing on edit)
     if (!payload.auth_token) delete payload.auth_token;
-    try {
-      await api.updateMcpServer(editId, payload);
-      setEditId(null); loadServers();
-    } catch (err) { setError(err.message); }
+    await runAsync(async () => {
+      await api.updateMcpServer(edit.editingId, payload);
+      edit.cancelEdit();
+      loadServers();
+    });
   };
 
   const doDelete = async (id) => {
-    try { await api.deleteMcpServer(id); setDeleteConfirm(null); setEditId(null); loadServers(); }
-    catch (err) { setError(err.message); }
+    await runAsync(async () => {
+      await api.deleteMcpServer(id);
+      setDeleteConfirm(null);
+      edit.cancelEdit();
+      loadServers();
+    });
   };
 
   const doToggle = async (id) => {
@@ -98,7 +106,7 @@ export const McpServerConfigView = ({ currentUser }) => {
         {form.auth_type !== "none" && (
           <Input label="Auth Token / Secret" value={form.auth_token}
             onChange={v => setForm(p => ({ ...p, auth_token: v }))}
-            placeholder={editId ? "(leave blank to keep existing)" : "Enter token"}
+            placeholder={edit.editingId ? "(leave blank to keep existing)" : "Enter token"}
             type="password" mono />
         )}
       </div>
@@ -148,7 +156,7 @@ export const McpServerConfigView = ({ currentUser }) => {
       )}
 
       {servers.map(s => {
-        const isEditing = editId === s.id;
+        const isEditing = edit.isEditing(s.id);
         const test = testResults[s.id];
 
         return (
@@ -224,7 +232,7 @@ export const McpServerConfigView = ({ currentUser }) => {
                   fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12,
                   fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em",
                 }}>Editing</div>
-                {renderForm(editForm, setEditForm)}
+                {renderForm(edit.editForm, edit.setEditForm)}
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
                   {deleteConfirm !== s.id ? (
                     <Button variant="danger" small onClick={() => setDeleteConfirm(s.id)}
@@ -236,8 +244,8 @@ export const McpServerConfigView = ({ currentUser }) => {
                       <Button variant="ghost" small onClick={() => setDeleteConfirm(null)}>No</Button>
                     </div>
                   )}
-                  <Button variant="secondary" onClick={() => setEditId(null)}>Cancel</Button>
-                  <Button onClick={saveEdit} disabled={!editForm.name || !editForm.url}>Save</Button>
+                  <Button variant="secondary" onClick={() => edit.cancelEdit()}>Cancel</Button>
+                  <Button onClick={saveEdit} disabled={!edit.editForm?.name || !edit.editForm?.url}>Save</Button>
                 </div>
               </div>
             )}
