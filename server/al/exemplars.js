@@ -117,9 +117,6 @@ function isExemplar(tcId) {
  *   3. Match on depth only
  *   4. Any exemplar (newest first)
  *
- * The CASE/ORDER trick ensures the most relevant exemplars bubble
- * to the top without requiring multiple queries.
- *
  * @param {object} [opts]
  * @param {string} [opts.testType]  - Preferred test type to match
  * @param {string} [opts.depth]     - Preferred depth to match
@@ -129,7 +126,7 @@ function isExemplar(tcId) {
 function getExemplarsForGeneration({ testType, depth, limit } = {}) {
   const maxResults = limit || 3;
 
-  // If no filters, just return the newest exemplars
+  // ── No filters → just return newest exemplars ──
   if (!testType && !depth) {
     return getTcDb()
       .prepare(
@@ -138,26 +135,32 @@ function getExemplarsForGeneration({ testType, depth, limit } = {}) {
       .all(maxResults);
   }
 
-  // Build relevance-ranked query with anonymous positional params.
-  // Uses COALESCE to handle NULL test_type/depth in the exemplar rows,
-  // and only scores a dimension if the caller actually provided a filter.
-  const hasType = !!testType;
-  const hasDepth = !!depth;
-
+  // ── Build relevance-ranked query ──
+  // Score each exemplar: +2 for type match, +1 for depth match.
+  // Explicit param array built step-by-step for clarity.
+  const scoreParts = [];
   const params = [];
-  const typeScore = hasType
-    ? (params.push(testType), `(COALESCE(test_type, '') = ? )`)
-    : "0";
-  const depthScore = hasDepth
-    ? (params.push(depth), `(COALESCE(depth, '') = ? )`)
-    : "0";
 
+  if (testType) {
+    scoreParts.push("(CASE WHEN COALESCE(test_type, '') = ? THEN 2 ELSE 0 END)");
+    params.push(testType);
+  }
+
+  if (depth) {
+    scoreParts.push("(CASE WHEN COALESCE(depth, '') = ? THEN 1 ELSE 0 END)");
+    params.push(depth);
+  }
+
+  // At least one filter is present (we checked for neither above)
+  const relevanceExpr = scoreParts.join(" + ");
+
+  // LIMIT param is always last
   params.push(maxResults);
 
   return getTcDb()
     .prepare(`
       SELECT tc_id, req_type, test_type, depth,
-        (${typeScore}) * 2 + (${depthScore}) AS relevance
+        ${relevanceExpr} AS relevance
       FROM exemplar_test_cases
       ORDER BY relevance DESC, curated_at DESC
       LIMIT ?
