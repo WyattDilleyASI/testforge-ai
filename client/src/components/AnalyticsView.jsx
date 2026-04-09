@@ -55,6 +55,9 @@ export const AnalyticsView = ({ currentUser }) => {
 
   // Exemplars state
   const [exemplars, setExemplars] = useState([]);
+  const [showAddExemplar, setShowAddExemplar] = useState(false);
+  const [newExemplarTcId, setNewExemplarTcId] = useState("");
+  const [exemplarError, setExemplarError] = useState("");
 
   // Health state
   const [health, setHealth] = useState(null);
@@ -148,6 +151,19 @@ export const AnalyticsView = ({ currentUser }) => {
   };
 
   // ── Exemplar Actions ────────────────────────────────────────────────
+
+  const addExemplar = async () => {
+    const tcId = newExemplarTcId.trim();
+    if (!tcId) { setExemplarError("TC ID is required"); return; }
+    try {
+      setExemplarError("");
+      await api.addExemplar(tcId);
+      setNewExemplarTcId("");
+      setShowAddExemplar(false);
+      loadExemplars();
+      loadDashboard();
+    } catch (e) { setExemplarError(e.message); }
+  };
 
   const removeExemplar = async (tcId) => {
     try {
@@ -742,12 +758,46 @@ export const AnalyticsView = ({ currentUser }) => {
         </div>
       </Card>}
 
+      {/* Add exemplar toggle + form */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: COLORS.textMuted, fontFamily: mono }}>
+          {exemplars.length} / {d.exemplars.max} exemplars
+        </div>
+        <Button small onClick={() => { setShowAddExemplar(!showAddExemplar); setExemplarError(""); }}>
+          {showAddExemplar ? "Cancel" : "+ Add Exemplar"}
+        </Button>
+      </div>
+
+      {exemplarError && <div style={{ fontSize: 12, color: COLORS.red, marginBottom: 12 }}>{exemplarError}</div>}
+
+      {showAddExemplar && <Card glow style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 12 }}>Promote Test Case to Exemplar</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12, lineHeight: 1.6 }}>
+          Enter the ID of a reviewed test case to add it to the exemplar pool.
+          Exemplars are injected as few-shot examples into future generation prompts.
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <Input
+              label="Test Case ID"
+              value={newExemplarTcId}
+              onChange={v => setNewExemplarTcId(v)}
+              mono
+              placeholder="e.g. TC-RS-001-001"
+            />
+          </div>
+          <Button onClick={addExemplar} disabled={!newExemplarTcId.trim()}>
+            Add to Pool
+          </Button>
+        </div>
+      </Card>}
+
       {/* Exemplar list */}
       <Card>
         <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 14 }}>Exemplar Test Cases</div>
         {exemplars.length === 0
           ? <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic", textAlign: "center", padding: "20px 0" }}>
-              No exemplars yet. Test cases approved without edits are candidates for auto-promotion.
+              No exemplars yet. Test cases approved without edits are auto-promoted, or use the button above to add manually.
             </div>
           : <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", fontSize: 12, fontFamily: mono, borderCollapse: "collapse" }}>
