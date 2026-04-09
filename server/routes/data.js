@@ -421,6 +421,33 @@ router.get("/kb", requireAuth, (req, res) => {
   })));
 });
 
+// GET /api/kb/matched/:reqId — return KB entries that match a requirement (by tags or related_reqs)
+// Used by the SysML diagram context menu to show relevant KB context before generation
+router.get("/kb/matched/:reqId", requireAuth, (req, res) => {
+  const reqId = req.params.reqId;
+
+  // Look up the requirement's tags
+  const requirement = getReqDb().prepare("SELECT * FROM requirements WHERE req_id = ?").get(reqId);
+  if (!requirement) return res.status(404).json({ error: "Requirement not found" });
+
+  const reqTags = JSON.parse(requirement.tags || "[]");
+
+  // Find KB entries that share a tag with this requirement OR list it in related_reqs
+  const allKb = getKbDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
+  const matched = allKb.filter(kb => {
+    const kbTags = JSON.parse(kb.tags || "[]");
+    const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
+    return kbTags.some(t => reqTags.includes(t)) || kbRelReqs.includes(reqId);
+  });
+
+  res.json(matched.map(kb => ({
+    kb_id: kb.kb_id,
+    title: kb.title,
+    type: kb.type,
+    subsection_id: kb.subsection_id || null,
+  })));
+});
+
 // POST /api/kb
 router.post("/kb", requireAuth, (req, res) => {
   const { title, type, content, tags, related_reqs, subsection_id } = req.body;

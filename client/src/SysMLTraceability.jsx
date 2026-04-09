@@ -542,6 +542,8 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   const [showTcs, setShowTcs] = useState(true);
   const [generating, setGenerating] = useState(null); // { reqId, depth } while in progress
   const [toast, setToast] = useState(null); // { message, isError }
+  const [kbEntries, setKbEntries] = useState([]);       // KB entries matched to right-clicked req
+  const [kbSelected, setKbSelected] = useState(new Set()); // checked KB entry IDs
 
   // Transform — includeTestCases controlled by toggle
   const diagramData = useMemo(
@@ -622,6 +624,31 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   useEffect(() => { const h = () => setContextMenu(null); document.addEventListener("click", h); return () => document.removeEventListener("click", h); }, []);
   useEffect(() => { const h = (e) => { if (e.key === "Escape") { setEditingReq(null); setContextMenu(null); } }; document.addEventListener("keydown", h); return () => document.removeEventListener("keydown", h); }, []);
 
+  // Fetch matched KB entries when context menu opens on a requirement
+  useEffect(() => {
+    if (!contextMenu || contextMenu.req._isTc) {
+      setKbEntries([]);
+      setKbSelected(new Set());
+      return;
+    }
+    setKbEntries([]);
+    setKbSelected(new Set());
+    let cancelled = false;
+    api.getMatchedKbEntries(contextMenu.req.id)
+      .then(entries => {
+        if (cancelled) return;
+        setKbEntries(entries);
+        // Pre-check all matched entries by default
+        setKbSelected(new Set(entries.map(e => e.kb_id)));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setKbEntries([]);
+        setKbSelected(new Set());
+      });
+    return () => { cancelled = true; };
+  }, [contextMenu]);
+
   // Toast auto-dismiss
   useEffect(() => {
     if (!toast) return;
@@ -631,11 +658,12 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
 
   // Generate TCs handler
   const handleGenerateTCs = useCallback(async (reqId, depth) => {
+    const selectedKbIds = [...kbSelected];
     setContextMenu(null);
     setGenerating({ reqId, depth });
     setToast(null);
     try {
-      const newTcs = await api.generateTestCases(reqId, depth);
+      const newTcs = await api.generateTestCases(reqId, depth, [], selectedKbIds.length > 0 ? selectedKbIds : null);
       const count = Array.isArray(newTcs) ? newTcs.length : 0;
       setToast({ message: `✓ Generated ${count} test case${count !== 1 ? "s" : ""} for ${reqId}`, isError: false });
       if (refresh) await refresh();
@@ -646,7 +674,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
     } finally {
       setGenerating(null);
     }
-  }, [refresh, showTcs]);
+  }, [refresh, showTcs, kbSelected]);
 
   // Family view — walks up to true root(s), then shows the complete subtree beneath
   const enterFamilyView = useCallback((rootId) => {
@@ -944,13 +972,74 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
 
         {/* Context menu */}
         {contextMenu && (
-          <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 0", minWidth: 230, zIndex: 10000, boxShadow: _isLight ? "0 8px 32px rgba(0,0,0,0.12)" : "0 8px 32px rgba(0,0,0,0.7)" }}>
+          <div style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 0", minWidth: 280, zIndex: 10000, boxShadow: _isLight ? "0 8px 32px rgba(0,0,0,0.12)" : "0 8px 32px rgba(0,0,0,0.7)" }}>
             <div style={{ padding: "6px 14px 5px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, marginBottom: 3 }}>{contextMenu.req.id}</div>
             <div onClick={() => { enterFamilyView(contextMenu.req.id); setContextMenu(null); }} style={{ padding: "8px 14px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 9 }}>
               <span style={{ fontSize: 14 }}>◈</span> View Requirement Family
             </div>
             {!contextMenu.req._isTc && (
               <>
+                <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
+
+                {/* ── KB Context Section ── */}
+                <div style={{ padding: "6px 14px 4px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>KB Context{kbEntries.length > 0 ? ` (${kbSelected.size}/${kbEntries.length})` : ""}</span>
+                  {kbEntries.length > 1 && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setKbSelected(prev => prev.size === kbEntries.length ? new Set() : new Set(kbEntries.map(e => e.kb_id)));
+                      }}
+                      style={{ cursor: "pointer", fontSize: 8, color: T.accent, fontWeight: 600, textTransform: "none", letterSpacing: 0 }}
+                    >
+                      {kbSelected.size === kbEntries.length ? "Deselect All" : "Select All"}
+                    </span>
+                  )}
+                </div>
+
+                {kbEntries.length === 0 ? (
+                  <div style={{ padding: "4px 14px 6px 28px", fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>
+                    No linked KB entries
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: 140, overflowY: "auto", padding: "2px 0" }}>
+                    {kbEntries.map(kb => (
+                      <div
+                        key={kb.kb_id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setKbSelected(prev => {
+                            const next = new Set(prev);
+                            next.has(kb.kb_id) ? next.delete(kb.kb_id) : next.add(kb.kb_id);
+                            return next;
+                          });
+                        }}
+                        style={{ padding: "5px 14px 5px 16px", fontSize: 11, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                      >
+                        <span style={{
+                          width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                          border: `1.5px solid ${kbSelected.has(kb.kb_id) ? T.accent : T.textMuted}`,
+                          background: kbSelected.has(kb.kb_id) ? T.accent + "22" : "transparent",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 10, color: T.accent, lineHeight: 1,
+                        }}>
+                          {kbSelected.has(kb.kb_id) ? "✓" : ""}
+                        </span>
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {kb.title}
+                        </span>
+                        <span style={{
+                          fontSize: 8, fontWeight: 700, color: T.textMuted,
+                          background: T.surface, padding: "1px 5px", borderRadius: 3,
+                          flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.3px",
+                        }}>
+                          {kb.type.split(" ").map(w => w[0]).join("")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
                 <div style={{ padding: "6px 14px 4px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase" }}>Generate Test Cases</div>
                 {[

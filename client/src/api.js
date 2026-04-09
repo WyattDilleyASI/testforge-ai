@@ -86,6 +86,7 @@ export const api = {
   enhanceTestLinkTc: (testcase, kbEntryIds) => request("/testcases/enhance-xml-tc", { method: "POST", body: { testcase, kbEntryIds } }),
   importTestLinkConfirmed: (testcase, originalExternalId) => request("/testcases/import-xml-confirmed", { method: "POST", body: { testcase, originalExternalId } }),
 
+  getMatchedKbEntries: (reqId) => request(`/kb/matched/${reqId}`),
   // Knowledge Base — Sections & Subsections
   getKbSections: () => request("/kb/sections"),
   createKbSection: (name) => request("/kb/sections", { method: "POST", body: { name } }),
