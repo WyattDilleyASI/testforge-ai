@@ -243,15 +243,38 @@ router.get("/exemplars", requireRole("Admin", "QA Manager"), (req, res) => {
 
 // POST /api/analytics/exemplars
 // Manually promote a TC to the exemplar pool.
+// Auto-lookups TC metadata (type, depth, linked reqs) when not provided,
+// so the exemplar gets proper relevance scoring in prompt selection.
 router.post("/exemplars", requireRole("Admin", "QA Manager"), (req, res) => {
-  const { tcId, reqType, testType, depth } = req.body;
+  const { tcId } = req.body;
   if (!tcId) return res.status(400).json({ error: "tcId is required" });
 
   try {
+    // Look up the TC to validate it exists and extract metadata
+    const { getTcDb } = require("../db");
+    const tc = getTcDb()
+      .prepare("SELECT tc_id, type, depth, linked_req_ids, status FROM test_cases WHERE tc_id = ?")
+      .get(tcId);
+
+    if (!tc) return res.status(404).json({ error: `Test case '${tcId}' not found` });
+
+    if (tc.status === "Rejected") {
+      return res.status(400).json({ error: `Cannot promote a rejected test case (${tcId} is ${tc.status})` });
+    }
+
+    // Derive reqType from the first linked requirement ID (e.g. "RS-001" → "RS")
+    let reqType = req.body.reqType || null;
+    if (!reqType) {
+      try {
+        const linkedReqs = JSON.parse(tc.linked_req_ids || "[]");
+        if (linkedReqs[0]) reqType = linkedReqs[0].replace(/-\d+$/, "");
+      } catch { /* skip */ }
+    }
+
     al.addExemplar(tcId, {
       reqType,
-      testType,
-      depth,
+      testType: req.body.testType || tc.type || null,
+      depth: req.body.depth || tc.depth || "standard",
       selectedBy: req.session.name,
     });
 
