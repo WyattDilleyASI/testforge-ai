@@ -46,6 +46,12 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const [rejectingTcId, setRejectingTcId] = useState(null);
   const [genHint, setGenHint] = useState(null);
 
+  // Edit state
+  const [editingTcId, setEditingTcId] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
   const sessionTcs = sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : [];
   const sessionRejectedCount = sessionTcs.filter(tc => tc.status === "Rejected").length;
   const focusArray = [...focuses];
@@ -141,6 +147,26 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
       setRejectingTcId(null);
       refresh();
     } catch (err) { console.error(err); }
+  };
+
+  const startEdit = (tc) => {
+    let desc = { objective: "", scope: "", assumptions: [] };
+    let setup = { preconditions: [], environment: [], equipment: [], testData: [] };
+    try { if (typeof tc.description === "string" && tc.description.startsWith("{")) desc = JSON.parse(tc.description); else if (tc.description) desc.objective = tc.description; } catch {}
+    try { if (typeof tc.preconditions === "string" && tc.preconditions.startsWith("{")) setup = JSON.parse(tc.preconditions); else if (tc.preconditions) setup.preconditions = [tc.preconditions]; } catch {}
+    setEditForm({ title: tc.title || "", type: tc.type || "Happy Path", description: desc, setup, steps: tc.steps || [] });
+    setEditingTcId(tc.tc_id);
+  };
+
+  const saveEdit = async (tcId) => {
+    setEditSaving(true); setEditError("");
+    try {
+      await api.updateTestCase(tcId, { title: editForm.title, type: editForm.type, description: editForm.description, preconditions: editForm.setup, steps: editForm.steps });
+      await refresh();
+      setEditingTcId(null);
+      setEditForm(null);
+    } catch (err) { setEditError(err.message); }
+    finally { setEditSaving(false); }
   };
 
   const copyPrompt = async () => {
@@ -486,7 +512,7 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                   return (
                     <div
                       key={tc.tc_id}
-                      onClick={() => setSelectedSessionTc(isSelected ? null : tc.tc_id)}
+                      onClick={() => { setSelectedSessionTc(isSelected ? null : tc.tc_id); setEditingTcId(null); setEditForm(null); setEditError(""); }}
                       style={{
                         padding: "8px 12px", borderRadius: 6, cursor: "pointer",
                         display: "flex", flexDirection: isMobile ? "column" : "row",
@@ -527,6 +553,9 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <Button small variant="secondary" onClick={() => editingTcId === selectedTc.tc_id ? (setEditingTcId(null), setEditForm(null), setEditError("")) : startEdit(selectedTc)} style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
+                            {editingTcId === selectedTc.tc_id ? "Cancel" : "Edit"}
+                          </Button>
                           <Button small variant={selectedTc.status === "Reviewed" ? "primary" : "ghost"} onClick={() => updateStatus(selectedTc.tc_id, "Reviewed")} style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
                             {selectedTc.status === "Reviewed" ? "✓ Approved" : "Approve"}
                           </Button>
@@ -547,36 +576,93 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
                         </div>
                       )}
 
-                      {desc ? <>
-                        <SL>Description</SL>
-                        {desc.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.objective}</span></div>}
-                        {desc.scope?.length > 0 && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{Array.isArray(desc.scope) ? desc.scope.join(", ") : desc.scope}</span></div>}
-                        {desc.assumptions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BL items={desc.assumptions} /></>}
-                      </> : selectedTc.description ? <><SL>Description</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{selectedTc.description}</div></> : null}
+                      {editingTcId === selectedTc.tc_id && editForm ? (() => {
+                        const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", fontFamily: mono, letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
+                        const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
+                        const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
+                        const arrVal = (arr) => (arr || []).join("\n");
+                        const arrChange = (path, e) => {
+                          const items = e.target.value.split("\n");
+                          setEditForm(p => {
+                            const parts = path.split(".");
+                            if (parts.length === 1) return { ...p, [parts[0]]: items };
+                            if (parts[0] === "description") return { ...p, description: { ...p.description, [parts[1]]: items } };
+                            if (parts[0] === "setup") return { ...p, setup: { ...p.setup, [parts[1]]: items } };
+                            return p;
+                          });
+                        };
+                        const arrHint = <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>One item per line</div>;
+                        const section = (label) => <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 16, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${COLORS.border}` }}>{label}</div>;
+                        return (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
+                            <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+                              <div style={{ flex: 1 }}>
+                                {lbl("Title")}
+                                {inp(editForm.title, e => setEditForm(p => ({ ...p, title: e.target.value })))}
+                              </div>
+                              <div style={{ minWidth: 150 }}>
+                                {lbl("Type")}
+                                <select value={editForm.type} onChange={e => setEditForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 12, padding: "6px 10px", outline: "none" }}>
+                                  {["Happy Path", "Negative", "Boundary", "Edge Case"].map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            {section("Description")}
+                            <div>{lbl("Objective")}{ta(editForm.description?.objective || "", e => setEditForm(p => ({ ...p, description: { ...p.description, objective: e.target.value } })), 4)}</div>
+                            <div>{lbl("Scope")}{ta(editForm.description?.scope || "", e => setEditForm(p => ({ ...p, description: { ...p.description, scope: e.target.value } })), 2)}</div>
+                            <div>{lbl("Assumptions")}{arrHint}{ta(arrVal(editForm.description?.assumptions), e => arrChange("description.assumptions", e), 3)}</div>
+                            {section("Setup")}
+                            <div>{lbl("Preconditions")}{arrHint}{ta(arrVal(editForm.setup?.preconditions), e => arrChange("setup.preconditions", e), 3)}</div>
+                            <div>{lbl("Environment")}{arrHint}{ta(arrVal(editForm.setup?.environment), e => arrChange("setup.environment", e), 2)}</div>
+                            <div>{lbl("Equipment")}{arrHint}{ta(arrVal(editForm.setup?.equipment), e => arrChange("setup.equipment", e), 2)}</div>
+                            <div>{lbl("Test Data")}{arrHint}{ta(arrVal(editForm.setup?.testData), e => arrChange("setup.testData", e), 2)}</div>
+                            {section("Test Steps")}
+                            {(editForm.steps || []).map((s, i) => (
+                              <div key={i} style={{ paddingLeft: 10, borderLeft: `2px solid ${COLORS.border}` }}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>Step {i + 1}</div>
+                                <div style={{ marginBottom: 4 }}>{lbl("Action")}{ta(s.step, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, step: e.target.value } : st) })), 2)}</div>
+                                <div>{lbl("Expected Result")}{ta(s.expectedResult, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
+                              </div>
+                            ))}
+                            <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+                              <Button small onClick={() => saveEdit(selectedTc.tc_id)} disabled={editSaving || !editForm.title.trim()}>{editSaving ? "Saving..." : "Save"}</Button>
+                              <Button small variant="ghost" onClick={() => { setEditingTcId(null); setEditForm(null); setEditError(""); }}>Cancel</Button>
+                              {editError && <span style={{ fontSize: 11, color: COLORS.red, fontFamily: mono }}>{editError}</span>}
+                            </div>
+                          </div>
+                        );
+                      })() : <>
+                        {desc ? <>
+                          <SL>Description</SL>
+                          {desc.objective && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Objective: </span><span style={{ fontSize: 12, color: COLORS.text }}>{desc.objective}</span></div>}
+                          {desc.scope?.length > 0 && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Scope: </span><span style={{ fontSize: 12, color: COLORS.text }}>{Array.isArray(desc.scope) ? desc.scope.join(", ") : desc.scope}</span></div>}
+                          {desc.assumptions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Assumptions:</span><BL items={desc.assumptions} /></>}
+                        </> : selectedTc.description ? <><SL>Description</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{selectedTc.description}</div></> : null}
 
-                      {setup ? <>
-                        <SL>Setup</SL>
-                        {setup.preconditions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Preconditions:</span><BL items={setup.preconditions} /></>}
-                        {setup.environment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Environment:</span><BL items={setup.environment} /></>}
-                        {setup.equipment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Equipment:</span><BL items={setup.equipment} /></>}
-                        {setup.testData?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Test Data:</span><BL items={setup.testData} /></>}
-                      </> : selectedTc.preconditions ? <><SL>Setup</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{selectedTc.preconditions}</div></> : null}
+                        {setup ? <>
+                          <SL>Setup</SL>
+                          {setup.preconditions?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Preconditions:</span><BL items={setup.preconditions} /></>}
+                          {setup.environment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Environment:</span><BL items={setup.environment} /></>}
+                          {setup.equipment?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Equipment:</span><BL items={setup.equipment} /></>}
+                          {setup.testData?.length > 0 && <><span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>Test Data:</span><BL items={setup.testData} /></>}
+                        </> : selectedTc.preconditions ? <><SL>Setup</SL><div style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{selectedTc.preconditions}</div></> : null}
 
-                      <SL>Test Steps</SL>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                        <thead><tr>
-                          <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>#</th>
-                          <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Step Action</th>
-                          <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Expected Result</th>
-                        </tr></thead>
-                        <tbody>{(selectedTc.steps || []).map((s, i) => (
-                          <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                            <td style={{ padding: "8px 10px", color: COLORS.textMuted, fontFamily: mono, verticalAlign: "top" }}>{i + 1}</td>
-                            <td style={{ padding: "8px 10px", color: COLORS.text, verticalAlign: "top" }}>{s.step}</td>
-                            <td style={{ padding: "8px 10px", color: COLORS.green, verticalAlign: "top" }}>{s.expectedResult}</td>
-                          </tr>
-                        ))}</tbody>
-                      </table>
+                        <SL>Test Steps</SL>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                          <thead><tr>
+                            <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>#</th>
+                            <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Step Action</th>
+                            <th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Expected Result</th>
+                          </tr></thead>
+                          <tbody>{(selectedTc.steps || []).map((s, i) => (
+                            <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                              <td style={{ padding: "8px 10px", color: COLORS.textMuted, fontFamily: mono, verticalAlign: "top" }}>{i + 1}</td>
+                              <td style={{ padding: "8px 10px", color: COLORS.text, verticalAlign: "top" }}>{s.step}</td>
+                              <td style={{ padding: "8px 10px", color: COLORS.green, verticalAlign: "top" }}>{s.expectedResult}</td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      </>}
                     </Card>
                   );
                 })()}
