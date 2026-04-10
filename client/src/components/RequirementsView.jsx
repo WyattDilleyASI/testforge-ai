@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, useIsMobile } from "./shared";
+import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, JamaImportPanel, useIsMobile } from "./shared";
 import { useAsyncAction, useExpandCollapse, useInlineEdit, useSelection } from "../hooks";
 
 export const RequirementsView = ({ requirements, refresh, currentUser }) => {
@@ -17,6 +17,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [showJamaHelp, setShowJamaHelp] = useState(false);
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { selectedIds: selectedReqIds, toggle: toggleReqSelect, toggleAll: selectAllReqs, isSelected, allSelected, selectMode: reqSelectMode, enterSelectMode, exitSelectMode } = useSelection(requirements, r => r.req_id);
@@ -127,10 +128,9 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
             <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
             <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
           </div>}
-          <label style={{ cursor: importing ? "not-allowed" : "pointer" }}>
-            <input type="file" accept=".doc" style={{ display: "none" }} onChange={handleImportDoc} disabled={importing} />
-            <Button variant="secondary" small onClick={undefined} style={{ pointerEvents: "none" }}>{importing ? "Importing..." : "Import JAMA Requirements"}</Button>
-          </label>
+          <Button variant="secondary" small onClick={() => setShowJamaHelp(v => !v)} disabled={importing}>
+            {importing ? "Importing..." : "Import JAMA Requirements"}
+          </Button>
           {canDelete && requirements.length > 0 && <Button variant="secondary" small onClick={() => { enterSelectMode(); edit.cancelEdit(); }}>Select</Button>}
           <Button onClick={startAdd}>+ Add Requirement</Button>
         </>}
@@ -142,6 +142,24 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
       </div>
     </div>
     
+    {/* Jama Import Help — shown when "Import JAMA Requirements" is clicked */}
+    {showJamaHelp && (
+      <JamaImportPanel
+        title="How to export requirements from Jama"
+        accept=".doc"
+        importing={importing}
+        steps={[
+          { step: "Go to Advanced Search in Jama.", detail: "" },
+          { step: "Create a new filter.", detail: "Set the match to Any of the following conditions, with Item Type equal to: Product Requirements, System Requirements, Subsystem Requirements, and Component Requirements." },
+          { step: "Click View in List", detail: "to see the filtered results." },
+          { step: "Click Export → View All Export Options → All Item Details.", detail: "Select Word format, check Include Relationships and Include Tags, then click Run." },
+          { step: "Download the report using the link in the notification,", detail: "then upload the file below." },
+        ]}
+        onFile={file => { setShowJamaHelp(false); handleImportDoc({ target: { files: [file], value: "" } }); }}
+        onCancel={() => setShowJamaHelp(false)}
+      />
+    )}
+
     {/* Search */}
     <div style={{ marginBottom: 16, maxWidth: 420 }}>
       <input

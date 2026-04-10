@@ -199,6 +199,50 @@ export const DraftDisclaimer = ({ style }) => { const T = useTheme(); return <di
 
 export const ErrorBanner = ({ msg }) => { const T = useTheme(); return msg ? <div style={{ marginBottom: 16, padding: "8px 12px", background: T.redDim, borderRadius: 6, border: `1px solid ${T.red}33`, fontSize: 12, color: T.red }}>{msg}</div> : null; };
 
+// JamaImportPanel — collapsible tutorial shown when an import button is clicked.
+// Props:
+//   title    — heading text
+//   steps    — array of { step: string, detail: string }
+//   accept   — file input accept string, e.g. ".doc" or ".doc,.docx"
+//   importing — boolean, disables the file picker while in-flight
+//   onFile   — called with the File object when the user picks a file
+//   onCancel — called when the user dismisses the panel
+//   result   — optional success node rendered below the file picker
+//   error    — optional error string rendered below the file picker
+export const JamaImportPanel = ({ title, steps, accept = ".doc", importing, onFile, onCancel, result, error }) => {
+  const T = useTheme();
+  const handleChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    onFile(file);
+  };
+  return (
+    <div style={{ marginBottom: 16, border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ padding: "14px 16px 16px", background: T.bg }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: T.textBright, marginBottom: 10 }}>{title}</div>
+        <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+          {steps.map(({ step, detail }, i) => (
+            <li key={i} style={{ fontSize: 12, color: T.text, lineHeight: 1.6 }}>
+              <span style={{ fontWeight: 600, color: T.textBright }}>{step}</span>
+              <span style={{ color: T.textMuted }}> {detail}</span>
+            </li>
+          ))}
+        </ol>
+        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
+          <label style={{ cursor: importing ? "not-allowed" : "pointer" }}>
+            <input type="file" accept={accept} style={{ display: "none" }} disabled={importing} onChange={handleChange} />
+            <Button variant="primary" small onClick={undefined} style={{ pointerEvents: "none" }}>{importing ? "Importing..." : "Choose File"}</Button>
+          </label>
+          <Button variant="ghost" small onClick={onCancel}>Cancel</Button>
+        </div>
+        {error && <div style={{ marginTop: 8, fontSize: 11, color: T.red, fontFamily: mono }}>{error}</div>}
+        {result}
+      </div>
+    </div>
+  );
+};
+
 export const RejectionPicker = ({ onReject, onCancel }) => {
   const T = useTheme();
   const isMobile = useIsMobile();

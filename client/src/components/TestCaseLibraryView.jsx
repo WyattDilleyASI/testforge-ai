@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker } from "./shared";
+import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useExpandCollapse, useInlineEdit } from "../hooks";
 
 export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) => {
   const COLORS = useTheme();
+  const isMobile = useIsMobile();
 
   // ── Hooks ──────────────────────────────────────────────────────────────────
   const { isExpanded, toggle: toggleExpand } = useExpandCollapse();
@@ -132,17 +133,33 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Library</h2>
-        <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
-          {testCases.length} test case{testCases.length !== 1 ? "s" : ""} total
-          {tcSelectMode && selectedTcIds.size > 0 ? ` · ${selectedTcIds.size} selected` : ""}
-        </p>
+      {/* Header row — title left, actions right */}
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 0, marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Library</h2>
+          <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
+            {testCases.length} test case{testCases.length !== 1 ? "s" : ""} total
+            {tcSelectMode && selectedTcIds.size > 0 ? ` · ${selectedTcIds.size} selected` : ""}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {!tcSelectMode && <>
+            {rejectedCount > 0 && <Button variant="danger" small onClick={clearRejected}>Clear Rejected ({rejectedCount})</Button>}
+            <Button variant="danger" small onClick={clearAll} disabled={testCases.length === 0 || clearing}>{clearing ? "Clearing..." : "Clear All"}</Button>
+            {testCases.length > 0 && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>}
+            {testCases.length > 0 && <Button variant="secondary" small onClick={enterSelectMode}>Select</Button>}
+          </>}
+          {tcSelectMode && <>
+            <Button variant="secondary" small onClick={selectAllTcs}>{allSelected ? "Deselect All" : "Select All"}</Button>
+            <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
+            <Button variant="danger" small onClick={deleteSelected} disabled={selectedTcIds.size === 0 || asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
+            <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
+          </>}
+        </div>
       </div>
 
-      {/* Toolbar */}
+      {/* Filter tabs + search */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        {/* Filter tabs */}
         <div style={{ display: "flex", gap: 4 }}>
           {[["all", "All"], ["draft", "Draft"], ["reviewed", "Reviewed"], ["rejected", "Rejected"]].map(([key, label]) => (
             <button key={key} onClick={() => setFilter(key)} style={{
@@ -155,8 +172,6 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
             </button>
           ))}
         </div>
-
-        {/* Search */}
         <div style={{ flex: "1 1 180px", maxWidth: 320, minWidth: 140 }}>
           <input
             value={searchQuery}
@@ -169,20 +184,6 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
               fontFamily: mono, outline: "none",
             }}
           />
-        </div>
-
-        {/* Action buttons */}
-        <div style={{ display: "flex", gap: 8 }}>
-          {!tcSelectMode && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>}
-          {!tcSelectMode && testCases.length > 0 && <Button variant="secondary" small onClick={enterSelectMode}>Select</Button>}
-          {tcSelectMode && <>
-            <Button variant="secondary" small onClick={selectAllTcs}>{allSelected ? "Deselect All" : "Select All"}</Button>
-            <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
-            <Button variant="danger" small onClick={deleteSelected} disabled={selectedTcIds.size === 0 || asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
-            <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
-          </>}
-          {rejectedCount > 0 && <Button variant="danger" small onClick={clearRejected}>Clear Rejected ({rejectedCount})</Button>}
-          <Button variant="danger" small onClick={clearAll} disabled={testCases.length === 0 || clearing}>{clearing ? "Clearing..." : "Clear All"}</Button>
         </div>
       </div>
 
