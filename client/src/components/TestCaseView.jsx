@@ -14,6 +14,7 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
   const [focuses, setFocuses] = useState(new Set());
   const [generating, setGenerating] = useState(false);
   const [apiError, setApiError] = useState(null);
+  const [budgetWarning, setBudgetWarning] = useState(null);
   const [sessionTcIds, setSessionTcIds] = useState(null);
   const [selectedSessionTc, setSelectedSessionTc] = useState(null);
 
@@ -132,9 +133,11 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
 
   const generate = async () => {
     if (!selectedReqId) return;
-    setGenerating(true); setApiError(null); setSelectedSessionTc(null);
+    setGenerating(true); setApiError(null); setSelectedSessionTc(null); setBudgetWarning(null);
     try {
-      const newTcs = await api.generateTestCases(selectedReqId, depth, focusArray, [...kbSelected]);
+      const result = await api.generateTestCases(selectedReqId, depth, focusArray, [...kbSelected]);
+      const newTcs = result.testcases || result; // Handle wrapped or plain array response
+      if (result.budget_warning) setBudgetWarning(result.budget_warning);
       setSessionTcIds(newTcs.map(tc => tc.tc_id));
       setSelectedSessionTc(newTcs[0]?.tc_id || null);
       refresh();
@@ -339,6 +342,19 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
             </Button>
             {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
             {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
+            {budgetWarning && (
+              <div style={{
+                marginTop: 10, padding: "10px 12px", borderRadius: 6, fontSize: 12, fontFamily: mono,
+                background: budgetWarning.overridden ? `${COLORS.red}18` : `${COLORS.amber}18`,
+                border: `1px solid ${budgetWarning.overridden ? COLORS.red : COLORS.amber}40`,
+                color: budgetWarning.overridden ? COLORS.red : COLORS.amber,
+              }}>
+                {budgetWarning.overridden
+                  ? `⚠ Budget exceeded — generated via admin override. ${budgetWarning.remaining.toLocaleString()} of ${budgetWarning.budget.toLocaleString()} tokens remaining.`
+                  : `⚠ Token budget ${budgetWarning.percent}% used — ${budgetWarning.remaining.toLocaleString()} of ${budgetWarning.budget.toLocaleString()} tokens remaining.`
+                }
+              </div>
+            )}
           </div>
 
           {/* KB selector */}
