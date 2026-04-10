@@ -26,6 +26,7 @@ import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas
   SunshineCanvas,
   MainlyClearCanvas,
   WeatherInfoCard,
+  WhiteboardCanvas,
   ClippyCompanion,
  } from "./components/EasterEggs";
 
@@ -462,6 +463,7 @@ useEffect(() => {
       {activeTheme._fog && <FogCanvas />}
       {activeTheme._sunshine && <SunshineCanvas />}
       {activeTheme._mainlyClear && <MainlyClearCanvas />}
+      {activeTheme._whiteboard && <WhiteboardCanvas />}
       {activeTheme._clippy && <ClippyCompanion />}
       {!(activeTheme._starfield || activeTheme._matrixRain || activeTheme._aurora ||
          activeTheme._vaporwave || activeTheme._fireflies || activeTheme._fishTank ||
