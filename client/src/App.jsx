@@ -107,6 +107,7 @@ export default function App() {
 
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (themeName !== "weather") { setWeatherData(null); return; }
@@ -488,6 +489,8 @@ useEffect(() => {
       <Sidebar
         active={page}
         onNavigate={navigate}
+        collapsed={!isMobile && sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(v => !v)}
         currentUser={currentUser}
         onLogout={handleLogout}
         currentTheme={themeName}
