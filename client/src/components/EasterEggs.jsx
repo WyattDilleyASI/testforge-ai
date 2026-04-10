@@ -3116,3 +3116,437 @@ export const ClippyCompanion = () => {
     </>
   );
 };
+
+// ── WHITEBOARD MARKERS ────────────────────────────────────────────────────────
+// Shared interactive drawing canvas for the Whiteboard theme.
+// Strokes persist to the server so all users see the same board.
+// A floating marker tray provides color, size, eraser, and clear controls.
+
+const MARKER_COLORS = [
+  { hex: "#D02020", border: "#B01818", name: "Red" },
+  { hex: "#2060D0", border: "#1850B0", name: "Blue" },
+  { hex: "#208040", border: "#186830", name: "Green" },
+  { hex: "#2A2A2A", border: "#1A1A1A", name: "Black" },
+  { hex: "#D09020", border: "#B07818", name: "Orange" },
+  { hex: "#8040C0", border: "#6830A0", name: "Purple" },
+  { hex: "#E03080", border: "#C02068", name: "Pink" },
+  { hex: "#18A0A0", border: "#108888", name: "Teal" },
+  { hex: "#C8A030", border: "#A88820", name: "Gold" },
+  { hex: "#6B4226", border: "#55341E", name: "Brown" },
+];
+
+const BRUSH_SIZES = [
+  { label: "S", width: 2 },
+  { label: "M", width: 5 },
+  { label: "L", width: 10 },
+];
+
+const POLL_INTERVAL = 3000; // ms
+
+export const WhiteboardCanvas = () => {
+  const [drawMode, setDrawMode] = useState(false);
+  const [activeColor, setActiveColor] = useState("#D02020");
+  const [activeSize, setActiveSize] = useState(5);
+  const [eraserOn, setEraserOn] = useState(false);
+  const canvasRef = useRef(null);
+  const isDrawing = useRef(false);
+  const strokesRef = useRef([]);
+  const currentPoints = useRef([]);
+  const knownCount = useRef(0);
+  const pollTimer = useRef(null);
+
+  // ── Stroke renderer (smooth bezier, marker-like opacity) ──
+  const drawStroke = (ctx, stroke) => {
+    const pts = stroke.points;
+    if (!pts || pts.length === 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = stroke.eraser ? 1 : 0.65;
+    ctx.globalCompositeOperation = stroke.eraser ? "destination-out" : "source-over";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    if (pts.length === 1) {
+      ctx.fillStyle = stroke.color;
+      ctx.beginPath();
+      ctx.arc(pts[0].x, pts[0].y, stroke.width / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) / 2;
+      const my = (pts[i].y + pts[i + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    }
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  const redrawAll = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const s of strokesRef.current) drawStroke(ctx, s);
+  }, []);
+
+  // ── Server sync helpers ──
+  const fetchAllStrokes = useCallback(async () => {
+    try {
+      const { api } = await import("../api");
+      const strokes = await api.getWhiteboardStrokes();
+      strokesRef.current = strokes;
+      knownCount.current = strokes.length;
+      redrawAll();
+    } catch (err) {
+      console.warn("Whiteboard fetch failed:", err.message);
+    }
+  }, [redrawAll]);
+
+  const pollForChanges = useCallback(async () => {
+    try {
+      const { api } = await import("../api");
+      const { count } = await api.getWhiteboardCount();
+      if (count !== knownCount.current) {
+        await fetchAllStrokes();
+      }
+    } catch {
+      // silent — poll will retry
+    }
+  }, [fetchAllStrokes]);
+
+  const saveStroke = useCallback(async (stroke) => {
+    try {
+      const { api } = await import("../api");
+      await api.saveWhiteboardStroke(stroke);
+    } catch (err) {
+      console.warn("Whiteboard save failed:", err.message);
+    }
+  }, []);
+
+  const clearBoard = useCallback(async () => {
+    try {
+      const { api } = await import("../api");
+      await api.clearWhiteboard();
+      strokesRef.current = [];
+      knownCount.current = 0;
+      const canvas = canvasRef.current;
+      if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    } catch (err) {
+      console.warn("Whiteboard clear failed:", err.message);
+    }
+  }, []);
+
+  // ── Lifecycle: resize, initial fetch, polling ──
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      redrawAll();
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    // Initial load
+    fetchAllStrokes();
+
+    // Start polling
+    pollTimer.current = setInterval(pollForChanges, POLL_INTERVAL);
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      if (pollTimer.current) clearInterval(pollTimer.current);
+    };
+  }, [redrawAll, fetchAllStrokes, pollForChanges]);
+
+  // ── Coordinate helper ──
+  const getPos = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const evt = e.touches ? e.touches[0] || e.changedTouches[0] : e;
+    return {
+      x: (evt.clientX - rect.left) * (canvas.width / rect.width),
+      y: (evt.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
+
+  // ── Pointer event handlers ──
+  const handleDown = (e) => {
+    if (!drawMode) return;
+    e.preventDefault();
+    isDrawing.current = true;
+    currentPoints.current = [getPos(e)];
+  };
+
+  const handleMove = (e) => {
+    if (!isDrawing.current) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    currentPoints.current.push(pos);
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const pts = currentPoints.current;
+    if (pts.length < 2) return;
+
+    ctx.save();
+    ctx.globalAlpha = eraserOn ? 1 : 0.65;
+    ctx.globalCompositeOperation = eraserOn ? "destination-out" : "source-over";
+    ctx.strokeStyle = activeColor;
+    ctx.lineWidth = activeSize;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  const handleUp = () => {
+    if (!isDrawing.current) return;
+    isDrawing.current = false;
+    if (currentPoints.current.length > 0) {
+      const stroke = {
+        points: [...currentPoints.current],
+        color: activeColor,
+        width: activeSize,
+        eraser: eraserOn,
+      };
+      strokesRef.current.push(stroke);
+      knownCount.current = strokesRef.current.length;
+      currentPoints.current = [];
+      redrawAll();
+      saveStroke(stroke);
+    }
+  };
+
+  // ── Shared styles ──
+  const markerBody = {
+    width: 10, height: 28,
+    background: "linear-gradient(90deg, #F0EDE8, #E8E4DE, #F0EDE8)",
+    borderRadius: 1, border: "1px solid #C8C4BC", borderTop: "none",
+  };
+  const markerTip = {
+    width: 7, height: 5,
+    background: "#AAA69E", borderRadius: "0 0 2px 2px",
+  };
+
+  return (
+    <>
+      {/* ── Drawing Canvas ── */}
+      <canvas
+        ref={canvasRef}
+        onMouseDown={handleDown}
+        onMouseMove={handleMove}
+        onMouseUp={handleUp}
+        onMouseLeave={handleUp}
+        onTouchStart={handleDown}
+        onTouchMove={handleMove}
+        onTouchEnd={handleUp}
+        style={{
+          position: "fixed", top: 0, left: 0,
+          width: "100vw", height: "100vh",
+          zIndex: drawMode ? 9999 : 0,
+          pointerEvents: drawMode ? "auto" : "none",
+          cursor: drawMode ? (eraserOn ? "cell" : "crosshair") : "default",
+        }}
+      />
+
+      {/* ── Floating Marker Tray ── */}
+      <div style={{
+        position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)",
+        zIndex: 10001,
+        display: "flex", alignItems: "flex-end",
+        padding: drawMode ? "6px 14px 10px" : "10px 20px 8px",
+        background: "linear-gradient(180deg, #E8E4DC 0%, #D8D4CC 100%)",
+        borderRadius: "8px 8px 14px 14px",
+        border: "1px solid #C8C4BC", borderTop: "1px solid #EEEBE4",
+        boxShadow: "0 3px 12px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.6)",
+        gap: drawMode ? 4 : 8,
+        fontFamily: "system-ui, sans-serif",
+        cursor: drawMode ? "default" : "pointer",
+      }}
+        onClick={!drawMode ? () => setDrawMode(true) : undefined}
+      >
+        {/* Tray lip */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 8, right: 8, height: 6,
+          background: "linear-gradient(180deg, #CCC8C0, #D8D4CC)",
+          borderRadius: "0 0 10px 10px",
+        }} />
+
+        {!drawMode ? (
+          /* ── Collapsed: marker tips peeking out + "Draw" label ── */
+          <>
+            {[0,1,2,3].map(i => (
+              <div key={i} style={{
+                width: 7,
+                height: 12 + (i % 3) * 3,
+                background: MARKER_COLORS[i].hex,
+                borderRadius: "2px 2px 1px 1px",
+                transform: "translateY(-2px)",
+              }} />
+            ))}
+            <div style={{
+              fontSize: 13, fontWeight: 500, color: "#555",
+              padding: "0 6px", letterSpacing: "0.01em",
+            }}>Draw</div>
+          </>
+        ) : (
+          /* ── Expanded: full marker tray ── */
+          <>
+            {/* Markers */}
+            <div style={{ display: "flex", gap: 4, alignItems: "flex-end", padding: "0 2px" }}>
+              {MARKER_COLORS.map(m => {
+                const selected = !eraserOn && activeColor === m.hex;
+                return (
+                  <div
+                    key={m.hex}
+                    onClick={() => { setActiveColor(m.hex); setEraserOn(false); }}
+                    title={m.name}
+                    style={{
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      cursor: "pointer",
+                      transform: selected ? "translateY(-12px)" : "translateY(-2px)",
+                      transition: "transform 0.2s ease",
+                    }}
+                  >
+                    {/* Cap */}
+                    <div style={{
+                      width: 12, height: 20,
+                      background: m.hex,
+                      borderRadius: "3px 3px 2px 2px",
+                      border: `1px solid ${m.border}`,
+                    }} />
+                    {/* Body */}
+                    <div style={markerBody} />
+                    {/* Tip */}
+                    <div style={markerTip} />
+                    {/* Selection arrow */}
+                    {selected && (
+                      <div style={{
+                        width: 0, height: 0, marginTop: 3,
+                        borderLeft: "4px solid transparent",
+                        borderRight: "4px solid transparent",
+                        borderTop: "5px solid #888",
+                      }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 48, background: "#C0BDB6", margin: "0 4px", alignSelf: "center" }} />
+
+            {/* Size dots */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, alignSelf: "center", padding: "4px 2px" }}>
+              {BRUSH_SIZES.map(s => (
+                <div
+                  key={s.label}
+                  onClick={() => setActiveSize(s.width)}
+                  title={`Size: ${s.label}`}
+                  style={{
+                    width: Math.max(s.width + 6, 8),
+                    height: Math.max(s.width + 6, 8),
+                    borderRadius: "50%",
+                    background: "#888",
+                    cursor: "pointer",
+                    border: activeSize === s.width ? "2px solid #444" : "2px solid transparent",
+                    transition: "border-color 0.15s",
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 48, background: "#C0BDB6", margin: "0 4px", alignSelf: "center" }} />
+
+            {/* Eraser */}
+            <div
+              onClick={() => setEraserOn(e => !e)}
+              title="Eraser"
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                cursor: "pointer", alignSelf: "center", padding: 2,
+                borderRadius: 4,
+                outline: eraserOn ? "2px solid #D02020" : "none",
+              }}
+            >
+              <div style={{
+                width: 36, height: 14,
+                background: "linear-gradient(180deg, #F5F0E8, #E0DBD0)",
+                borderRadius: "3px 3px 0 0",
+                border: "1px solid #C8C4BC", borderBottom: "none",
+              }} />
+              <div style={{
+                width: 38, height: 10,
+                background: "#888",
+                borderRadius: "0 0 2px 2px",
+              }} />
+              <div style={{ fontSize: 9, color: "#888", marginTop: 2, letterSpacing: "0.02em" }}>eraser</div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 48, background: "#C0BDB6", margin: "0 4px", alignSelf: "center" }} />
+
+            {/* Clear — spray bottle SVG */}
+            <div
+              onClick={() => { if (window.confirm("Clear the whiteboard for all users?")) clearBoard(); }}
+              title="Clear board for everyone"
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                cursor: "pointer", alignSelf: "center", padding: "2px 4px",
+                borderRadius: 4, transition: "background 0.15s",
+              }}
+              onMouseOver={e => e.currentTarget.style.background = "rgba(208,32,32,0.08)"}
+              onMouseOut={e => e.currentTarget.style.background = "transparent"}
+            >
+              <svg width="28" height="40" viewBox="0 0 28 40" fill="none" style={{ display: "block" }}>
+                <rect x="11" y="2" width="6" height="4" rx="1" fill="#999"/>
+                <rect x="5" y="4" width="8" height="3" rx="1" fill="#AAA"/>
+                <rect x="2" y="5" width="4" height="2" rx="1" fill="#BBB"/>
+                <rect x="12" y="6" width="4" height="6" rx="1" fill="#CCC8C0"/>
+                <path d="M8 12 L20 12 L22 16 L22 34 Q22 37 19 37 L9 37 Q6 37 6 34 L6 16 Z" fill="#70A8D8" stroke="#5088B8" strokeWidth="0.75"/>
+                <rect x="8" y="20" width="12" height="8" rx="1" fill="white" opacity="0.85"/>
+                <line x1="10" y1="23" x2="18" y2="23" stroke="#AAA" strokeWidth="0.5"/>
+                <line x1="10" y1="25" x2="16" y2="25" stroke="#AAA" strokeWidth="0.5"/>
+                <rect x="7" y="30" width="14" height="6" rx="0" fill="rgba(80,140,200,0.3)"/>
+              </svg>
+              <div style={{ fontSize: 9, color: "#888", marginTop: 1, letterSpacing: "0.02em" }}>clear</div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 48, background: "#C0BDB6", margin: "0 4px", alignSelf: "center" }} />
+
+            {/* Done */}
+            <div
+              onClick={() => { setDrawMode(false); setEraserOn(false); }}
+              style={{
+                alignSelf: "center", cursor: "pointer",
+                fontSize: 11, fontWeight: 500, color: "#888",
+                padding: "6px 10px", borderRadius: 6,
+                transition: "background 0.15s", letterSpacing: "0.02em",
+              }}
+              onMouseOver={e => e.currentTarget.style.background = "rgba(0,0,0,0.06)"}
+              onMouseOut={e => e.currentTarget.style.background = "transparent"}
+            >Done</div>
+          </>
+        )}
+      </div>
+    </>
+  );
+};
