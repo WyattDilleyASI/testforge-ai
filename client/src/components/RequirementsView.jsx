@@ -18,6 +18,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const { selectedIds: selectedReqIds, toggle: toggleReqSelect, toggleAll: selectAllReqs, isSelected, allSelected, selectMode: reqSelectMode, enterSelectMode, exitSelectMode } = useSelection(requirements, r => r.req_id);
 
   const canDelete = currentUser?.role === "Admin" || currentUser?.role === "QA Manager";
@@ -140,6 +141,22 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
         </>}
       </div>
     </div>
+    
+    {/* Search */}
+    <div style={{ marginBottom: 16, maxWidth: 420 }}>
+      <input
+        value={searchQuery}
+        onChange={e => setSearchQuery(e.target.value)}
+        placeholder="Search by ID, title, description, priority, or status..."
+        style={{
+          width: "100%", boxSizing: "border-box", background: COLORS.surface,
+          border: `1px solid ${COLORS.border}`, borderRadius: 6,
+          color: COLORS.textBright, fontSize: 12, padding: "6px 12px",
+          fontFamily: mono, outline: "none",
+        }}
+      />
+    </div>
+
     {importMsg && <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.greenDim, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.green }}>{importMsg}</div>}
 
     {showAdd && <Card glow style={{ marginBottom: 20 }}>
@@ -151,7 +168,20 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
       </div>
     </Card>}
 
-    {requirements.map(r => {
+    {(() => {
+      const q = searchQuery.toLowerCase().trim();
+      const filtered = !q ? requirements : requirements.filter(r => {
+        if (r.req_id?.toLowerCase().includes(q)) return true;
+        if (r.title?.toLowerCase().includes(q)) return true;
+        if (r.description?.toLowerCase().includes(q)) return true;
+        if (r.priority?.toLowerCase().includes(q)) return true;
+        if (r.status?.toLowerCase().includes(q)) return true;
+        if (r.module?.toLowerCase().includes(q)) return true;
+        if ((r.acceptance_criteria || []).some(ac => ac.toLowerCase().includes(q))) return true;
+        return false;
+      });
+      return filtered;
+    })().map(r => {
       const expanded = isExpanded(r.req_id);
       const isEditing = edit.isEditing(r.req_id);
       const isJama = r.source === "JAMA Import";

@@ -22,11 +22,26 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
   const [refineCopyState, setRefineCopyState] = useState("idle");
 
   const [filter, setFilter] = useState("all"); // all | draft | reviewed | rejected
+  const [searchQuery, setSearchQuery] = useState("");
   const [rejectingTcId, setRejectingTcId] = useState(null);
   const [traceSearch, setTraceSearch] = useState("");
 
   const sortedTcs = [...testCases].sort((a, b) => (b.generated_at || "").localeCompare(a.generated_at || ""));
-  const filteredTcs = filter === "all" ? sortedTcs : sortedTcs.filter(tc => tc.status.toLowerCase() === filter);
+  const statusFiltered = filter === "all" ? sortedTcs : sortedTcs.filter(tc => tc.status.toLowerCase() === filter);
+  const filteredTcs = !searchQuery.trim() ? statusFiltered : (() => {
+    const q = searchQuery.toLowerCase().trim();
+    return statusFiltered.filter(tc => {
+      if (tc.tc_id?.toLowerCase().includes(q)) return true;
+      if (tc.title?.toLowerCase().includes(q)) return true;
+      if (tc.type?.toLowerCase().includes(q)) return true;
+      // Search linked requirement IDs
+      const reqs = Array.isArray(tc.linked_req_ids) ? tc.linked_req_ids : (() => { try { return JSON.parse(tc.linked_req_ids || "[]"); } catch { return []; } })();
+      if (reqs.some(r => r.toLowerCase().includes(q))) return true;
+      // Search description objective
+      try { const d = typeof tc.description === "string" && tc.description.startsWith("{") ? JSON.parse(tc.description) : null; if (d?.objective?.toLowerCase().includes(q)) return true; } catch {}
+      return false;
+    });
+  })();
   const rejectedCount = testCases.filter(tc => tc.status === "Rejected").length;
 
   // Selection operates on the filtered list so "Select All" matches what's visible
@@ -139,6 +154,21 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
               {label} <span style={{ opacity: 0.6 }}>({counts[key]})</span>
             </button>
           ))}
+        </div>
+
+        {/* Search */}
+        <div style={{ flex: "1 1 180px", maxWidth: 320, minWidth: 140 }}>
+          <input
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search by ID, title, type, or requirement..."
+            style={{
+              width: "100%", boxSizing: "border-box", background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`, borderRadius: 6,
+              color: COLORS.textBright, fontSize: 12, padding: "6px 12px",
+              fontFamily: mono, outline: "none",
+            }}
+          />
         </div>
 
         {/* Action buttons */}
