@@ -4,7 +4,7 @@ const XLSX = require("xlsx");
 const cheerio = require("cheerio");
 const mammoth = require("mammoth");
 const sharp = require("sharp");
-const { getTcDb, getReqDb, getKbDb, logAudit, logTokenUsage, getProductContext, getSetting, readImageBase64 } = require("../db");
+const { getTcDb, getReqDb, getKbDb, getDb, logAudit, logTokenUsage, getProductContext, getSetting, readImageBase64 } = require("../db");
 const { requireAuth } = require("../auth");
 const al = require("../al");
 
@@ -23,6 +23,44 @@ async function resizeImageIfNeeded(base64Data, mediaType) {
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+// ─── Budget enforcement ─────────────────────────────────────────────────────
+// Pre-flight check before any Claude API call. QA Engineers are hard-blocked
+// when the budget is exceeded; Admins and QA Managers can override.
+function checkBudget(session) {
+  const budgetStr = process.env.TOKEN_BUDGET;
+  if (!budgetStr) return { hasBudget: false, canProceed: true };
+
+  const budget = parseInt(budgetStr);
+  if (isNaN(budget) || budget <= 0) return { hasBudget: false, canProceed: true };
+
+  const db = getDb();
+  const row = db.prepare("SELECT SUM(input_tokens) as total_input, SUM(output_tokens) as total_output FROM token_usage").get();
+  const used = (row.total_input || 0) + (row.total_output || 0);
+  const remaining = Math.max(0, budget - used);
+  const percent = Math.round((used / budget) * 100);
+  const exceeded = used >= budget;
+  const warning = percent >= 90 && !exceeded;
+
+  const role = session?.role || "QA Engineer";
+  const canOverride = role === "Admin" || role === "QA Manager";
+  const canProceed = !exceeded || canOverride;
+
+  return { hasBudget: true, budget, used, remaining, percent, exceeded, warning, canProceed, canOverride };
+}
+
+// Build budget_warning object for API responses (null when no budget or no concern)
+function buildBudgetWarning(budgetCheck) {
+  if (!budgetCheck.hasBudget) return null;
+  if (!budgetCheck.warning && !budgetCheck.exceeded) return null;
+  return {
+    percent: budgetCheck.percent,
+    remaining: budgetCheck.remaining,
+    budget: budgetCheck.budget,
+    exceeded: budgetCheck.exceeded,
+    overridden: budgetCheck.exceeded && budgetCheck.canOverride,
+  };
+}
 
 // GET /api/testcases
 router.get("/", requireAuth, (req, res) => {
@@ -211,6 +249,16 @@ router.post("/generate", requireAuth, async (req, res) => {
   const { reqId, depth, focuses, kbEntryIds } = req.body;
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
+  // Budget enforcement — block QA Engineers when exceeded, warn Admins/Managers
+  const budgetCheck = checkBudget(req.session);
+  if (budgetCheck.hasBudget && !budgetCheck.canProceed) {
+    logAudit(req.session.name, "BUDGET_EXCEEDED", `Generation blocked for ${reqId} — ${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used`);
+    return res.status(403).json({
+      error: `Token budget exceeded (${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used). Contact an Admin or QA Manager to continue generating.`,
+      budget_exceeded: true,
+    });
+  }
+
   const db = getTcDb();
 
   try {
@@ -332,15 +380,19 @@ router.post("/generate", requireAuth, async (req, res) => {
       generatedBy: req.session.name,
     });
 
-    // Return the newly created TCs
+    // Return the newly created TCs with budget status
     const created = db.prepare(`SELECT * FROM test_cases WHERE tc_id IN (${newTcs.map(() => "?").join(",")})`).all(...newTcs);
-    res.json(created.map(tc => ({
-      ...tc,
-      linked_req_ids: JSON.parse(tc.linked_req_ids || "[]"),
-      steps: JSON.parse(tc.steps || "[]"),
-      kb_references: JSON.parse(tc.kb_references || "[]"),
-      upstream_relationship: JSON.parse(tc.upstream_relationship || "[]"),
-    })));
+    const postCheck = checkBudget(req.session);
+    res.json({
+      testcases: created.map(tc => ({
+        ...tc,
+        linked_req_ids: JSON.parse(tc.linked_req_ids || "[]"),
+        steps: JSON.parse(tc.steps || "[]"),
+        kb_references: JSON.parse(tc.kb_references || "[]"),
+        upstream_relationship: JSON.parse(tc.upstream_relationship || "[]"),
+      })),
+      budget_warning: buildBudgetWarning(postCheck),
+    });
   } catch (err) {
     console.error("TC generation error:", err);
     res.status(500).json({ error: `Generation failed: ${err.message}` });
@@ -453,6 +505,16 @@ router.delete("/rejected", requireAuth, (req, res) => {
 router.post("/:tcId/refine", requireAuth, async (req, res) => {
   const { feedback } = req.body;
   if (!feedback) return res.status(400).json({ error: "feedback is required" });
+
+  // Budget enforcement
+  const budgetCheck = checkBudget(req.session);
+  if (budgetCheck.hasBudget && !budgetCheck.canProceed) {
+    logAudit(req.session.name, "BUDGET_EXCEEDED", `Refine blocked for ${req.params.tcId} — ${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used`);
+    return res.status(403).json({
+      error: `Token budget exceeded (${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used). Contact an Admin or QA Manager to continue generating.`,
+      budget_exceeded: true,
+    });
+  }
 
   const db = getTcDb();
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
@@ -1308,6 +1370,16 @@ router.post("/parse-xml", requireAuth, upload.single("file"), (req, res) => {
 router.post("/enhance-xml-tc", requireAuth, async (req, res) => {
   const { testcase, kbEntryIds = [] } = req.body;
   if (!testcase) return res.status(400).json({ error: "testcase is required" });
+
+  // Budget enforcement
+  const budgetCheck = checkBudget(req.session);
+  if (budgetCheck.hasBudget && !budgetCheck.canProceed) {
+    logAudit(req.session.name, "BUDGET_EXCEEDED", `TestLink enhance blocked — ${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used`);
+    return res.status(403).json({
+      error: `Token budget exceeded (${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used). Contact an Admin or QA Manager to continue generating.`,
+      budget_exceeded: true,
+    });
+  }
 
   const { product_context, key_terms } = getProductContext();
 
