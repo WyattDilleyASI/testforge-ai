@@ -4,7 +4,7 @@ import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker } from "./shared";
 import { useAsyncAction, useSelection, useExpandCollapse, useInlineEdit } from "../hooks";
 
-export const TestCaseLibraryView = ({ testCases, refresh }) => {
+export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) => {
   const COLORS = useTheme();
 
   // ── Hooks ──────────────────────────────────────────────────────────────────
@@ -23,6 +23,7 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
 
   const [filter, setFilter] = useState("all"); // all | draft | reviewed | rejected
   const [rejectingTcId, setRejectingTcId] = useState(null);
+  const [traceSearch, setTraceSearch] = useState("");
 
   const sortedTcs = [...testCases].sort((a, b) => (b.generated_at || "").localeCompare(a.generated_at || ""));
   const filteredTcs = filter === "all" ? sortedTcs : sortedTcs.filter(tc => tc.status.toLowerCase() === filter);
@@ -37,14 +38,17 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
     let setup = { preconditions: [], environment: [], equipment: [], testData: [] };
     try { if (typeof tc.description === "string" && tc.description.startsWith("{")) desc = JSON.parse(tc.description); else if (tc.description) desc.objective = tc.description; } catch {}
     try { if (typeof tc.preconditions === "string" && tc.preconditions.startsWith("{")) setup = JSON.parse(tc.preconditions); else if (tc.preconditions) setup.preconditions = [tc.preconditions]; } catch {}
-    return { title: tc.title || "", type: tc.type || "Happy Path", description: desc, setup, steps: tc.steps || [] };
+    let linkedReqs = [];
+    try { linkedReqs = Array.isArray(tc.linked_req_ids) ? tc.linked_req_ids : JSON.parse(tc.linked_req_ids || "[]"); } catch {}
+    return { title: tc.title || "", type: tc.type || "Happy Path", description: desc, setup, steps: tc.steps || [], linked_req_ids: linkedReqs };
   };
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const saveEdit = async (tcId) => {
     await runEdit(async () => {
-      await api.updateTestCase(tcId, { title: edit.editForm.title, type: edit.editForm.type, description: edit.editForm.description, preconditions: edit.editForm.setup, steps: edit.editForm.steps });
+      await api.updateTestCase(tcId, { title: edit.editForm.title, type: edit.editForm.type, description: edit.editForm.description, preconditions: edit.editForm.setup, steps: edit.editForm.steps, linked_req_ids: edit.editForm.linked_req_ids });
       edit.cancelEdit();
+      setTraceSearch("");
       refresh();
     });
   };
@@ -235,6 +239,122 @@ export const TestCaseLibraryView = ({ testCases, refresh }) => {
                                 </select>
                               </div>
                             </div>
+                            {section("Traced Requirements")}
+                            <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 6, background: COLORS.bg, overflow: "hidden" }}>
+                              {/* Selected traces as chips */}
+                              {(edit.editForm.linked_req_ids || []).length > 0 && (
+                                <div style={{
+                                  display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 8px 6px",
+                                  borderBottom: `1px solid ${COLORS.border}`, background: COLORS.accentDim,
+                                }}>
+                                  {(edit.editForm.linked_req_ids || []).map(rid => (
+                                    <span key={rid} style={{
+                                      display: "inline-flex", alignItems: "center", gap: 4,
+                                      background: COLORS.accent, color: COLORS.bg,
+                                      fontSize: 10, fontFamily: mono, fontWeight: 700,
+                                      padding: "2px 6px 2px 8px", borderRadius: 10,
+                                    }}>
+                                      {rid}
+                                      <span
+                                        role="button"
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          edit.setEditForm(p => ({
+                                            ...p,
+                                            linked_req_ids: p.linked_req_ids.filter(id => id !== rid),
+                                          }));
+                                        }}
+                                        style={{
+                                          cursor: "pointer", fontSize: 13, lineHeight: 1,
+                                          padding: "0 2px", borderRadius: "50%", opacity: 0.7,
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                                        onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+                                      >
+                                        ×
+                                      </span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Search input */}
+                              <div style={{ padding: "6px 8px", borderBottom: `1px solid ${COLORS.border}` }}>
+                                <input
+                                  value={traceSearch}
+                                  onChange={e => setTraceSearch(e.target.value)}
+                                  placeholder="Search requirements by ID or title..."
+                                  style={{
+                                    width: "100%", boxSizing: "border-box", background: COLORS.surface,
+                                    border: `1px solid ${COLORS.border}`, borderRadius: 4,
+                                    color: COLORS.textBright, fontSize: 12, padding: "6px 10px",
+                                    fontFamily: mono, outline: "none",
+                                  }}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                              </div>
+                              {/* Requirement checklist */}
+                              <div style={{ maxHeight: 180, overflowY: "auto", padding: 8 }}>
+                                {requirements.length === 0 && (
+                                  <div style={{ fontSize: 11, color: COLORS.textMuted, fontStyle: "italic" }}>No requirements loaded</div>
+                                )}
+                                {(() => {
+                                  const linked = edit.editForm.linked_req_ids || [];
+                                  const query = traceSearch.toLowerCase().trim();
+                                  const filtered = requirements.filter(req => {
+                                    const alreadyLinked = linked.includes(req.req_id);
+                                    if (alreadyLinked) return true;
+                                    if (!query) return true;
+                                    return req.req_id.toLowerCase().includes(query)
+                                      || (req.title || "").toLowerCase().includes(query);
+                                  });
+                                  const sorted = [...filtered].sort((a, b) => {
+                                    const aLinked = linked.includes(a.req_id) ? 0 : 1;
+                                    const bLinked = linked.includes(b.req_id) ? 0 : 1;
+                                    if (aLinked !== bLinked) return aLinked - bLinked;
+                                    return a.req_id.localeCompare(b.req_id);
+                                  });
+                                  if (sorted.length === 0) {
+                                    return <div style={{ fontSize: 11, color: COLORS.textMuted, fontStyle: "italic", padding: "4px 0" }}>No matches for "{traceSearch}"</div>;
+                                  }
+                                  return sorted.map(req => {
+                                    const isLinked = linked.includes(req.req_id);
+                                    return (
+                                      <label key={req.req_id} style={{
+                                        display: "flex", alignItems: "flex-start", gap: 8, padding: "5px 6px",
+                                        cursor: "pointer", fontSize: 12, color: COLORS.text,
+                                        borderRadius: 4,
+                                        background: isLinked ? `${COLORS.accent}11` : "transparent",
+                                        borderLeft: isLinked ? `3px solid ${COLORS.accent}` : "3px solid transparent",
+                                        transition: "background 0.3s ease, border-left 0.3s ease",
+                                      }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={isLinked}
+                                          onChange={() => {
+                                            edit.setEditForm(p => ({
+                                              ...p,
+                                              linked_req_ids: isLinked
+                                                ? p.linked_req_ids.filter(id => id !== req.req_id)
+                                                : [...(p.linked_req_ids || []), req.req_id],
+                                            }));
+                                          }}
+                                          style={{ marginTop: 2, accentColor: COLORS.accent }}
+                                        />
+                                        <span>
+                                          <span style={{ fontFamily: mono, fontWeight: 600, color: isLinked ? COLORS.accent : COLORS.textMuted, transition: "color 0.3s ease" }}>{req.req_id}</span>
+                                          {req.title && <span style={{ color: COLORS.textMuted }}> — {req.title}</span>}
+                                        </span>
+                                      </label>
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            </div>
+                            {(edit.editForm.linked_req_ids || []).length > 0 && (
+                              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, fontFamily: mono }}>
+                                {edit.editForm.linked_req_ids.length} requirement{edit.editForm.linked_req_ids.length !== 1 ? "s" : ""} traced
+                              </div>
+                            )}
                             {section("Description")}
                             <div>{lbl("Objective")}{ta(edit.editForm.description?.objective || "", e => edit.setEditForm(p => ({ ...p, description: { ...p.description, objective: e.target.value } })), 4)}</div>
                             <div>{lbl("Scope")}{ta(edit.editForm.description?.scope || "", e => edit.setEditForm(p => ({ ...p, description: { ...p.description, scope: e.target.value } })), 2)}</div>
