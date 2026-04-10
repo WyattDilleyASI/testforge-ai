@@ -1189,6 +1189,7 @@ export const THEMES = {
   // ── WHITEBOARD ───────────────────────────────────────────────────────────
   whiteboard: {
     name: "Whiteboard", emoji: "📋",
+    _whiteboard: true,
     bg: "#F8F8F8", surface: "#FFFFFF", surfaceRaised: "#FFFFFF",
     border: "#D0D0D0", text: "#2A2A2A", textMuted: "#888888",
     textBright: "#000000", accent: "#2060D0", accentDim: "rgba(32,96,208,0.10)",

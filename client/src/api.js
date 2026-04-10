@@ -192,4 +192,10 @@ export const api = {
   runMaintenance: (opts) => request("/analytics/maintenance", { method: "POST", body: opts || {} }),
   resetModelVersion: () => request("/analytics/model-reset", { method: "POST" }),
   runAggregation: (opts) => request("/analytics/aggregate", { method: "POST", body: opts || {} }),
+
+  // Whiteboard (shared drawing)
+  getWhiteboardStrokes: () => request("/whiteboard"),
+  getWhiteboardCount: () => request("/whiteboard/count"),
+  saveWhiteboardStroke: (stroke) => request("/whiteboard/stroke", { method: "POST", body: stroke }),
+  clearWhiteboard: () => request("/whiteboard/clear", { method: "DELETE" }),
 };
