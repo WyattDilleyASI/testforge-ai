@@ -21,7 +21,7 @@ export const TestCasesWrapper = ({ requirements, testCases, refresh }) => {
       case "generate":
         return <TestCaseView requirements={requirements} testCases={testCases} refresh={refresh} />;
       case "library":
-        return <TestCaseLibraryView testCases={testCases} refresh={refresh} />;
+        return <TestCaseLibraryView testCases={testCases} requirements={requirements} refresh={refresh} />;
       case "testlink":
         return <TestLinkImportView refresh={refresh} />;
       default:
