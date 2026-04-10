@@ -711,7 +711,6 @@ export const THEMES = {
     amberDim: "rgba(138,106,32,0.10)", purple: "#5A4A6A", purpleDim: "rgba(90,74,106,0.10)",
     hover: "rgba(138,74,42,0.06)",
   },
-
   
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // CANVAS-ANIMATED THEMES (need canvas components in EasterEggs.jsx)
@@ -1235,6 +1234,82 @@ export const THEMES = {
     hover: "rgba(255,64,32,0.06)",
   },
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// POKÉMON THEMES (+5)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // ── PIKACHU ──────────────────────────────────────────────────────────────
+  pikachu: {
+    name: "Pikachu", emoji: "⚡",
+    bg: "#F2D820", surface: "#F8E868", surfaceRaised: "#FFF4A0",
+    border: "#C8A820", text: "#3A2A10", textMuted: "#6A5420",
+    textBright: "#1A1008", accent: "#D04830", accentDim: "rgba(208,72,48,0.12)",
+    accentGlow: "rgba(208,72,48,0.22)", green: "#488830", greenDim: "rgba(72,136,48,0.10)",
+    red: "#D04830", redDim: "rgba(208,72,48,0.10)", amber: "#B08818",
+    amberDim: "rgba(176,136,24,0.10)", purple: "#6A4830", purpleDim: "rgba(106,72,48,0.10)",
+    hover: "rgba(208,72,48,0.08)",
+  },
+
+  // ── KANTO FIRE ───────────────────────────────────────────────────────────
+  kantoFire: {
+    name: "Kanto Fire", emoji: "🔥",
+    bg: "#1C0A06", surface: "#2C1208", surfaceRaised: "#3C1A0C",
+    border: "#6A3018", text: "#E8B898", textMuted: "#A07050",
+    textBright: "#FFD8B8", accent: "#E87030", accentDim: "rgba(232,112,48,0.14)",
+    accentGlow: "rgba(232,112,48,0.30)", green: "#48A8A0", greenDim: "rgba(72,168,160,0.12)",
+    red: "#D03020", redDim: "rgba(208,48,32,0.12)", amber: "#F0A020",
+    amberDim: "rgba(240,160,32,0.12)", purple: "#388898", purpleDim: "rgba(56,136,152,0.12)",
+    hover: "rgba(232,112,48,0.06)",
+  },
+
+  // ── JOHTO CRYSTAL ────────────────────────────────────────────────────────
+  johtoCrystal: {
+    name: "Johto Crystal", emoji: "💎",
+    bg: "#080E1A", surface: "#101828", surfaceRaised: "#182238",
+    border: "#203858", text: "#A0C0E0", textMuted: "#607898",
+    textBright: "#D8E8FF", accent: "#40B0E0", accentDim: "rgba(64,176,224,0.14)",
+    accentGlow: "rgba(64,176,224,0.28)", green: "#60DCA0", greenDim: "rgba(96,220,160,0.12)",
+    red: "#E05060", redDim: "rgba(224,80,96,0.12)", amber: "#C0A850",
+    amberDim: "rgba(192,168,80,0.12)", purple: "#7088D0", purpleDim: "rgba(112,136,208,0.12)",
+    hover: "rgba(64,176,224,0.06)",
+  },
+
+  // ── HOENN EMERALD ────────────────────────────────────────────────────────
+  hoennEmerald: {
+    name: "Hoenn Emerald", emoji: "🐉",
+    bg: "#081A0A", surface: "#102810", surfaceRaised: "#183818",
+    border: "#205020", text: "#A0D0A0", textMuted: "#608860",
+    textBright: "#D0F0D0", accent: "#30C850", accentDim: "rgba(48,200,80,0.14)",
+    accentGlow: "rgba(48,200,80,0.28)", green: "#30C850", greenDim: "rgba(48,200,80,0.12)",
+    red: "#D05040", redDim: "rgba(208,80,64,0.12)", amber: "#D4A830",
+    amberDim: "rgba(212,168,48,0.12)", purple: "#70A870", purpleDim: "rgba(112,168,112,0.12)",
+    hover: "rgba(48,200,80,0.06)",
+  },
+
+  // ── POKÉBALL ─────────────────────────────────────────────────────────────
+  pokeball: {
+    name: "Pokéball", emoji: "🔴",
+    bg: "#F0EDED", surface: "#FAFAFA", surfaceRaised: "#FFFFFF",
+    border: "#3A3438", text: "#2A2428", textMuted: "#787078",
+    textBright: "#1A1418", accent: "#CC3344", accentDim: "rgba(204,51,68,0.10)",
+    accentGlow: "rgba(204,51,68,0.22)", green: "#48A060", greenDim: "rgba(72,160,96,0.10)",
+    red: "#CC3344", redDim: "rgba(204,51,68,0.10)", amber: "#C09830",
+    amberDim: "rgba(192,152,48,0.10)", purple: "#884060", purpleDim: "rgba(136,64,96,0.10)",
+    hover: "rgba(204,51,68,0.06)",
+  },
+
+  // ── LAVENDER TOWN ────────────────────────────────────────────────────────
+  lavenderTown: {
+    name: "Lavender Town", emoji: "👻",
+    bg: "#10081A", surface: "#1A1028", surfaceRaised: "#241838",
+    border: "#382858", text: "#B0A0D0", textMuted: "#706090",
+    textBright: "#D8C8F0", accent: "#9060D0", accentDim: "rgba(144,96,208,0.14)",
+    accentGlow: "rgba(144,96,208,0.30)", green: "#50E0A0", greenDim: "rgba(80,224,160,0.12)",
+    red: "#D04060", redDim: "rgba(208,64,96,0.12)", amber: "#C0A050",
+    amberDim: "rgba(192,160,80,0.12)", purple: "#9060D0", purpleDim: "rgba(144,96,208,0.12)",
+    hover: "rgba(144,96,208,0.06)",
+  },
+
   // ── CLIPPY ───────────────────────────────────────────────────────────────
   // Windows 97 Office grey. The theme itself is aggressively corporate.
   clippy: {
@@ -1550,6 +1625,9 @@ export const THEME_CATEGORIES = [
     label: "Fun",
     keys: [
       "dos", "sepia", "whiteboard", "neonSign", "tundra", "magma", "clippy",
+      // ── Pokémon ──
+      "pikachu", "kantoFire", "johtoCrystal", "hoennEmerald", "lavenderTown", "pokeball",
+
     ],
   },
   {
