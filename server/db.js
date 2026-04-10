@@ -157,6 +157,19 @@ function initialize() {
     );
   `);
 
+  // ── Whiteboard (shared drawing canvas) ──
+  core.exec(`
+    CREATE TABLE IF NOT EXISTS whiteboard_strokes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      points TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#D02020',
+      width REAL NOT NULL DEFAULT 5,
+      eraser INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // ── Requirements DB ──
   const reqDb = getReqDb();
   reqDb.exec(`
