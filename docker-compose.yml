@@ -11,6 +11,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
       - SERVER_ENCRYPTION_KEY=${SERVER_ENCRYPTION_KEY}
+      - TOKEN_BUDGET=${TOKEN_BUDGET}
     volumes:
       - testforge-data:/app/data
     restart: unless-stopped
