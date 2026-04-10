@@ -3148,6 +3148,7 @@ export const WhiteboardCanvas = () => {
   const [activeColor, setActiveColor] = useState("#D02020");
   const [activeSize, setActiveSize] = useState(5);
   const [eraserOn, setEraserOn] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const canvasRef = useRef(null);
   const isDrawing = useRef(false);
   const strokesRef = useRef([]);
@@ -3505,7 +3506,7 @@ export const WhiteboardCanvas = () => {
 
             {/* Clear — spray bottle SVG */}
             <div
-              onClick={() => { if (window.confirm("Clear the whiteboard for all users?")) clearBoard(); }}
+              onClick={() => setShowClearConfirm(true)}
               title="Clear board for everyone"
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center",
@@ -3547,6 +3548,101 @@ export const WhiteboardCanvas = () => {
           </>
         )}
       </div>
+
+        {/* ── Clear Confirmation Modal ── */}
+      {showClearConfirm && (
+        <div
+          onClick={() => setShowClearConfirm(false)}
+          style={{
+            position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh",
+            background: "rgba(0,0,0,0.25)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 10002,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#FFFEF6",
+              border: "1px solid #D8D4C8",
+              borderRadius: 4,
+              padding: "28px 32px 24px",
+              minWidth: 320,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08)",
+              transform: "rotate(-0.8deg)",
+              fontFamily: "system-ui, sans-serif",
+              position: "relative",
+            }}
+          >
+            {/* Faux tape strip at top */}
+            <div style={{
+              position: "absolute", top: -8, left: "50%", transform: "translateX(-50%) rotate(1.2deg)",
+              width: 64, height: 16,
+              background: "rgba(200,195,175,0.55)",
+              borderRadius: 2,
+              border: "1px solid rgba(180,175,160,0.3)",
+            }} />
+
+            {/* Red marker X in corner */}
+            <div style={{
+              position: "absolute", top: 8, right: 12,
+              fontSize: 18, color: "#D02020", fontWeight: 700,
+              cursor: "pointer", lineHeight: 1,
+              opacity: 0.6,
+            }}
+              onClick={() => setShowClearConfirm(false)}
+            >&times;</div>
+
+            {/* Heading */}
+            <div style={{
+              fontSize: 16, fontWeight: 600, color: "#2A2A2A",
+              marginBottom: 8,
+            }}>
+              Erase the board?
+            </div>
+
+            {/* Body */}
+            <div style={{
+              fontSize: 13, color: "#666", lineHeight: 1.5,
+              marginBottom: 20,
+            }}>
+              This will clear all drawings for every user.
+              <br />
+              This can't be undone.
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                style={{
+                  padding: "7px 18px", fontSize: 13, fontWeight: 500,
+                  background: "#F0EDE6", color: "#555",
+                  border: "1px solid #D0CCC4", borderRadius: 6,
+                  cursor: "pointer", transition: "background 0.15s",
+                }}
+                onMouseOver={e => e.currentTarget.style.background = "#E8E4DC"}
+                onMouseOut={e => e.currentTarget.style.background = "#F0EDE6"}
+              >
+                Keep it
+              </button>
+              <button
+                onClick={() => { setShowClearConfirm(false); clearBoard(); }}
+                style={{
+                  padding: "7px 18px", fontSize: 13, fontWeight: 600,
+                  background: "#D02020", color: "#FFF",
+                  border: "1px solid #B01818", borderRadius: 6,
+                  cursor: "pointer", transition: "background 0.15s",
+                }}
+                onMouseOver={e => e.currentTarget.style.background = "#B81A1A"}
+                onMouseOut={e => e.currentTarget.style.background = "#D02020"}
+              >
+                Erase everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
