@@ -673,15 +673,15 @@ Respond ONLY with valid JSON object, no markdown, no preamble.`;
   res.json({ prompt, tcId: tc.tc_id });
 });
 
-// PUT /api/testcases/:tcId — update TC content (title, type, description, preconditions, steps)
+// PUT /api/testcases/:tcId — update TC content (title, type, description, preconditions, steps, req_attribute)
 router.put("/:tcId", requireMobileAuth, (req, res) => {
-  const { title, type, description, preconditions, steps, linked_req_ids } = req.body;
+  const { title, type, description, preconditions, steps, linked_req_ids, req_attribute } = req.body;
   const db = getTcDb();
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
   if (!tc) return res.status(404).json({ error: "Test case not found" });
 
   db.prepare(
-    "UPDATE test_cases SET title = ?, type = ?, description = ?, preconditions = ?, steps = ?, linked_req_ids = ?, status = 'Draft' WHERE tc_id = ?"
+    "UPDATE test_cases SET title = ?, type = ?, description = ?, preconditions = ?, steps = ?, linked_req_ids = ?, req_attribute = ?, status = 'Draft' WHERE tc_id = ?"
   ).run(
     title ?? tc.title,
     type ?? tc.type,
@@ -689,6 +689,7 @@ router.put("/:tcId", requireMobileAuth, (req, res) => {
     preconditions !== undefined ? JSON.stringify(preconditions) : tc.preconditions,
     steps !== undefined ? JSON.stringify(steps) : tc.steps,
     linked_req_ids !== undefined ? JSON.stringify(linked_req_ids) : tc.linked_req_ids,
+    req_attribute !== undefined ? req_attribute : tc.req_attribute,
     req.params.tcId
   );
 
