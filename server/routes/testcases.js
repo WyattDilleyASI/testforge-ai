@@ -63,7 +63,7 @@ function buildBudgetWarning(budgetCheck) {
 }
 
 // GET /api/testcases
-router.get("/", requireAuth, (req, res) => {
+router.get("/", (req, res) => {
   const rows = getTcDb().prepare("SELECT * FROM test_cases ORDER BY rowid").all();
   res.json(rows.map(tc => ({
     ...tc,
