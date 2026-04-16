@@ -5,7 +5,7 @@ const cheerio = require("cheerio");
 const mammoth = require("mammoth");
 const sharp = require("sharp");
 const { getTcDb, getReqDb, getKbDb, getDb, logAudit, logTokenUsage, getProductContext, getSetting, readImageBase64 } = require("../db");
-const { requireAuth } = require("../auth");
+const { requireAuth, requireMobileAuth } = require("../auth");
 const al = require("../al");
 
 const MAX_IMAGE_DIM = 1568; // Claude API max for multi-image requests (safe under 2000px limit)
@@ -63,7 +63,7 @@ function buildBudgetWarning(budgetCheck) {
 }
 
 // GET /api/testcases
-router.get("/", (req, res) => {
+router.get("/", requireMobileAuth, (req, res) => {
   const rows = getTcDb().prepare("SELECT * FROM test_cases ORDER BY rowid").all();
   res.json(rows.map(tc => ({
     ...tc,
@@ -245,7 +245,7 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
 }
 
 // POST /api/testcases/generate — call Claude API server-side
-router.post("/generate", async (req, res) => {
+router.post("/generate", requireMobileAuth, async (req, res) => {
   const { reqId, depth, focuses, kbEntryIds, generatedBy } = req.body;
   const caller = generatedBy || "Mobile App";
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
@@ -473,13 +473,13 @@ router.post("/import", requireAuth, (req, res) => {
 });
 
 // DELETE /api/testcases/bulk — delete specific test cases by ID
-router.delete("/bulk", requireAuth, (req, res) => {
+router.delete("/bulk", requireMobileAuth, (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids must be a non-empty array" });
   const db = getTcDb();
   const placeholders = ids.map(() => "?").join(",");
   db.prepare(`DELETE FROM test_cases WHERE tc_id IN (${placeholders})`).run(...ids);
-  logAudit(req.session.name, "TC_DELETE_BULK", `Deleted ${ids.length} test case(s): ${ids.join(", ")}`);
+  logAudit(req.body.deletedBy || "Mobile App", "TC_DELETE_BULK", `Deleted ${ids.length} test case(s): ${ids.join(", ")}`);
   res.json({ ok: true, deleted: ids.length });
 });
 

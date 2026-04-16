@@ -2,13 +2,13 @@ const express = require("express");
 const multer = require("multer");
 const cheerio = require("cheerio");
 const { getReqDb, getTcDb, logAudit } = require("../db");
-const { requireAuth, requireRole } = require("../auth");
+const { requireAuth, requireRole, requireMobileAuth } = require("../auth");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // GET /api/requirements
-router.get("/", (req, res) => {
+router.get("/", requireMobileAuth, (req, res) => {
   const rows = getReqDb().prepare("SELECT * FROM requirements ORDER BY rowid").all();
   res.json(rows.map(r => ({
     ...r,
