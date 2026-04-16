@@ -2,7 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
 const { getDb, getKbDb, getTcDb, getReqDb, logAudit, nextKbId, nextSectionId, nextSubsectionId, getProductContext, setSetting, getSetting, saveImage, readImageBase64, readImage, deleteImage, deleteImageDir } = require("../db");
-const { requireAuth, requireRole } = require("../auth");
+const { requireAuth, requireRole, requireMobileAuth } = require("../auth");
 
 const MAX_DESCRIBE_DIM = 1568;
 
@@ -423,7 +423,7 @@ router.get("/kb", requireAuth, (req, res) => {
 
 // GET /api/kb/matched/:reqId — return KB entries that match a requirement (by tags or related_reqs)
 // Used by the SysML diagram context menu to show relevant KB context before generation
-router.get("/kb/matched/:reqId", requireAuth, (req, res) => {
+router.get("/kb/matched/:reqId", requireMobileAuth, (req, res) => {
   const reqId = req.params.reqId;
 
   // Look up the requirement's tags
