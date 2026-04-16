@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, ReqIdTag } from "./shared";
 
-export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage }) => {
+export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, currentUser }) => {
   const COLORS = useTheme();
 
   // ── Section data for KB breakdown ───────────────────────────────────────
@@ -14,6 +14,27 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage }
   }, []);
 
   useEffect(() => { refreshSections(); }, [refreshSections]);
+
+  // ── Coverage Gap Insight ─────────────────────────────────────────────────
+  const [gapInsight, setGapInsight] = useState(null);
+  const [gapLoading, setGapLoading] = useState(true);
+  const [gapRefreshing, setGapRefreshing] = useState(false);
+
+  const loadGapInsight = useCallback(async () => {
+    try {
+      setGapLoading(true);
+      setGapInsight(await api.getCoverageGapInsight());
+    } catch { /* non-critical */ } finally { setGapLoading(false); }
+  }, []);
+
+  useEffect(() => { loadGapInsight(); }, [loadGapInsight]);
+
+  const handleRefreshInsight = async () => {
+    try {
+      setGapRefreshing(true);
+      setGapInsight(await api.refreshCoverageGapInsight());
+    } catch { /* silent */ } finally { setGapRefreshing(false); }
+  };
 
   // ── Existing coverage metrics ───────────────────────────────────────────
   const covered = requirements.filter(r => testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
@@ -127,6 +148,65 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage }
         })}
       </Card>
     </div>}
+
+    {/* Coverage Gap Insight */}
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Coverage Gap Insight</div>
+        <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.accent, background: COLORS.accentDim, padding: "1px 6px", borderRadius: 3, fontWeight: 700 }}>DAILY</span>
+        <div style={{ flex: 1 }} />
+        {(currentUser?.role === "Admin" || currentUser?.role === "QA Manager") && (
+          <button
+            onClick={handleRefreshInsight}
+            disabled={gapRefreshing || gapLoading}
+            style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 5, padding: "3px 10px", fontSize: 11, fontFamily: mono, color: COLORS.textMuted, cursor: "pointer", opacity: (gapRefreshing || gapLoading) ? 0.5 : 1 }}
+          >
+            {gapRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        )}
+      </div>
+      <Card>
+        {gapLoading && (
+          <div style={{ fontSize: 12, color: COLORS.textMuted, fontFamily: mono }}>Computing coverage gaps...</div>
+        )}
+        {!gapLoading && gapInsight && (
+          <>
+            {gapInsight.summary && (
+              <div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.7, borderLeft: `3px solid ${COLORS.accent}`, paddingLeft: 14, marginBottom: 18, fontStyle: "italic" }}>
+                {gapInsight.summary}
+              </div>
+            )}
+            {gapInsight.gaps?.length > 0 ? (
+              <>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Top ready-to-test requirements
+                </div>
+                {gapInsight.gaps.map((gap, idx) => (
+                  <div key={gap.req_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: idx < gapInsight.gaps.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+                    <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, minWidth: 18, textAlign: "right" }}>{idx + 1}.</span>
+                    <ReqIdTag id={gap.req_id} />
+                    <span style={{ fontSize: 13, color: COLORS.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gap.title}</span>
+                    <span style={{ fontSize: 10, fontFamily: mono, fontWeight: 700, color: gap.kb_match_count > 0 ? COLORS.purple : COLORS.textMuted, background: gap.kb_match_count > 0 ? COLORS.purpleDim : "transparent", padding: "2px 8px", borderRadius: 4, whiteSpace: "nowrap", border: `1px solid ${gap.kb_match_count > 0 ? "transparent" : COLORS.border}` }}>
+                      {gap.kb_match_count > 0 ? `${gap.kb_match_count} KB ${gap.kb_match_count === 1 ? "match" : "matches"}` : "no KB"}
+                    </span>
+                    <Badge color={gap.priority?.toLowerCase() === "high" || gap.priority?.toLowerCase() === "critical" ? "red" : gap.priority?.toLowerCase() === "medium" ? "amber" : "green"}>{gap.priority || "—"}</Badge>
+                  </div>
+                ))}
+                <div style={{ marginTop: 12, fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+                  {gapInsight.total_untested} untested of {gapInsight.total_requirements} total requirements
+                  {gapInsight.cached_at && <span style={{ marginLeft: 12, opacity: 0.6 }}>· cached {new Date(gapInsight.cached_at).toLocaleDateString()}</span>}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: COLORS.green, fontFamily: mono }}>All requirements have test cases.</div>
+            )}
+          </>
+        )}
+        {!gapLoading && !gapInsight && (
+          <div style={{ fontSize: 12, color: COLORS.textMuted }}>Coverage gap data unavailable.</div>
+        )}
+      </Card>
+    </div>
 
     {/* Untested Requirements */}
     {untested.length > 0 && <Card><div style={{ fontSize: 12, fontWeight: 600, color: COLORS.amber, marginBottom: 12 }}>Untested Requirements</div>{untested.map(r => <div key={r.req_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${COLORS.border}` }}><ReqIdTag id={r.req_id} /><span style={{ fontSize: 13, color: COLORS.text, flex: 1 }}>{r.title}</span><Badge color="amber">{r.priority}</Badge></div>)}</Card>}

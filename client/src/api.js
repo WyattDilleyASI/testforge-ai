@@ -198,4 +198,8 @@ export const api = {
   getWhiteboardCount: () => request("/whiteboard/count"),
   saveWhiteboardStroke: (stroke) => request("/whiteboard/stroke", { method: "POST", body: stroke }),
   clearWhiteboard: () => request("/whiteboard/clear", { method: "DELETE" }),
+
+  // Insights
+  getCoverageGapInsight: () => request("/insights/coverage-gaps"),
+  refreshCoverageGapInsight: () => request("/insights/coverage-gaps/refresh", { method: "POST" }),
 };

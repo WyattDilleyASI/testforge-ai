@@ -155,6 +155,13 @@ function initialize() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS insights_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cache_key TEXT UNIQUE NOT NULL,
+      payload TEXT NOT NULL,
+      generated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // ── Whiteboard (shared drawing canvas) ──
@@ -546,12 +553,26 @@ function getProductContext() {
   };
 }
 
+function getInsightCache(key) {
+  const row = getCoreDb()
+    .prepare("SELECT payload, generated_at FROM insights_cache WHERE cache_key = ?")
+    .get(key);
+  return row ? { ...JSON.parse(row.payload), cached_at: row.generated_at } : null;
+}
+
+function setInsightCache(key, payload) {
+  getCoreDb()
+    .prepare("INSERT OR REPLACE INTO insights_cache (cache_key, payload, generated_at) VALUES (?, ?, datetime('now'))")
+    .run(key, JSON.stringify(payload));
+}
+
 module.exports = {
   getDb, getCoreDb, getReqDb, getTcDb, getKbDb,
   initialize, logAudit, logTokenUsage, generateOtp, nextUserId, nextKbId,
   nextSectionId, nextSubsectionId,
   getMcpSettings, getMcpSettingById, getMcpEnabledServers,
   getSetting, setSetting, getProductContext,
+  getInsightCache, setInsightCache,
   saveImage, readImage, readImageBase64, deleteImage, deleteImageDir, getImageDir,
   IMAGES_DIR,
 };
