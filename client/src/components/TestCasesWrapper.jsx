@@ -11,7 +11,7 @@ const TC_SECTIONS = [
   { key: "testlink", label: "TestLink Import",  icon: "⟲", desktopOnly: true },
 ];
 
-export const TestCasesWrapper = ({ requirements, testCases, refresh }) => {
+export const TestCasesWrapper = ({ requirements, testCases, refresh, initialReqId }) => {
   const COLORS = useTheme();
   const isMobile = useIsMobile();
   const [activeSection, setActiveSection] = useState("generate");
@@ -19,7 +19,7 @@ export const TestCasesWrapper = ({ requirements, testCases, refresh }) => {
   const renderPanel = () => {
     switch (activeSection) {
       case "generate":
-        return <TestCaseView requirements={requirements} testCases={testCases} refresh={refresh} />;
+        return <TestCaseView requirements={requirements} testCases={testCases} refresh={refresh} initialReqId={initialReqId} />;
       case "library":
         return <TestCaseLibraryView testCases={testCases} requirements={requirements} refresh={refresh} />;
       case "testlink":
