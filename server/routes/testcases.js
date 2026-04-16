@@ -674,7 +674,7 @@ Respond ONLY with valid JSON object, no markdown, no preamble.`;
 });
 
 // PUT /api/testcases/:tcId — update TC content (title, type, description, preconditions, steps)
-router.put("/:tcId", requireAuth, (req, res) => {
+router.put("/:tcId", requireMobileAuth, (req, res) => {
   const { title, type, description, preconditions, steps, linked_req_ids } = req.body;
   const db = getTcDb();
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
@@ -692,11 +692,12 @@ router.put("/:tcId", requireAuth, (req, res) => {
     req.params.tcId
   );
 
-  logAudit(req.session.name, "TC_UPDATED", `Updated test case ${req.params.tcId}`);
+  const caller = req.mobileUser?.name || req.session?.name || "Mobile App";
+  logAudit(caller, "TC_UPDATED", `Updated test case ${req.params.tcId}`);
   res.json({ ok: true });
 });
 // PUT /api/testcases/:tcId/status — update TC status (Draft → Reviewed / Rejected)
-router.put("/:tcId/status", requireAuth, (req, res) => {
+router.put("/:tcId/status", requireMobileAuth, (req, res) => {
   const { status, rejectionReason } = req.body;
   if (!["Draft", "Reviewed", "Rejected"].includes(status))
     return res.status(400).json({ error: "Invalid status" });
@@ -705,8 +706,11 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
   const tc = db.prepare("SELECT * FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
   if (!tc) return res.status(404).json({ error: "Test case not found" });
 
+  const caller = req.mobileUser?.name || req.session?.name || "Mobile App";
+  const userId = req.mobileUser?.userId || req.session?.userId || 0;
+
   db.prepare("UPDATE test_cases SET status = ? WHERE tc_id = ?").run(status, req.params.tcId);
-  logAudit(req.session.name, "TC_STATUS", `${req.params.tcId}: ${tc.status} → ${status}`);
+  logAudit(caller, "TC_STATUS", `${req.params.tcId}: ${tc.status} → ${status}`);
 
   // ── AL: Log feedback event + update session counts ──
   if (status === "Reviewed" || status === "Rejected") {
@@ -731,8 +735,8 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
           reqId,
           eventType,
           diffSummary: diff,
-          userId: req.session.userId,
-          userName: req.session.name,
+          userId: userId,
+          userName: caller,
           depth: tc.depth,
           testType: tc.type,
         });
@@ -766,8 +770,8 @@ router.put("/:tcId/status", requireAuth, (req, res) => {
           reqId,
           eventType: "rejected",
           rejectionReason: rejectionReason || null,
-          userId: req.session.userId,
-          userName: req.session.name,
+          userId: userId,
+          userName: caller,
           depth: tc.depth,
           testType: tc.type,
         });
