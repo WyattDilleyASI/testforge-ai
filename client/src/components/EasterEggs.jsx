@@ -830,8 +830,8 @@ export const HotDogCanvas = () => {
     const pileCtx = pile.getContext("2d");
 
     const falling = [];
-    const COUNT = 400;
-    const COLS = 55;
+    const COUNT = 50;
+    const COLS = 100;
     let floorLevel = [];
 
     const colWidth = () => canvas.width / COLS;
@@ -893,11 +893,11 @@ export const HotDogCanvas = () => {
           ? 110 + Math.random() * 40     // giant: 110–150px
           : roll < 0.06
             ? 62 + Math.random() * 22    // large: 62–84px
-            : 32 + Math.random() * 28;   // normal: 32–60px
+            : 26 + Math.random() * 24;   // normal: 26–50px
       return {
         x: Math.random() * canvas.width,
-        y: -60 - Math.random() * 200,
-        speed: 3 + Math.random() * 4,
+        y: -60 - Math.random() * 300,
+        speed: 2 + Math.random() * 2.5,
         size,
         rot: (Math.random() - 0.5) * Math.PI * 2,
         rotSpeed: (Math.random() - 0.5) * 0.07,
@@ -909,7 +909,7 @@ export const HotDogCanvas = () => {
 
     for (let i = 0; i < COUNT; i++) {
       const h = spawnHotdog();
-      h.y = Math.random() * canvas.height;
+      h.y = Math.random() * canvas.height * 0.8;
       falling.push(h);
     }
 
@@ -943,7 +943,7 @@ export const HotDogCanvas = () => {
         if (h.y >= floor) {
           h.rot = h.rot + (Math.random() - 0.5) * 0.3;
           h.y = floor;
-          raiseFloor(h.x, h.size * 0.55);
+          raiseFloor(h.x, h.size * 0.92);
           // Paint directly onto the offscreen pile canvas — never redrawn again
           drawDog(pileCtx, h.x, h.y, h.rot, h.size);
           falling[i] = spawnHotdog();
