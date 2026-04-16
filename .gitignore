@@ -1,7 +1,6 @@
 # Ignore all files
 node_modules/
 .env
-client/dist/
 *.xlsx
 *.doc
 data/
