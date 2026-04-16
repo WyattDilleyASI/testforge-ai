@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, useIsMobile } from "./shared";
+import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, JamaImportPanel, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useInlineEdit } from "../hooks";
 
 export const TestCaseView = ({ requirements, testCases, refresh }) => {
@@ -224,39 +224,47 @@ export const TestCaseView = ({ requirements, testCases, refresh }) => {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Generation</h2>
-        <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
-          Generate draft test cases from requirements, then approve or reject below.
-        </p>
+      {/* Header row — title left, actions right */}
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 0, marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Generation</h2>
+          <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
+            Generate draft test cases from requirements, then approve or reject below.
+          </p>
+        </div>
+        {!isMobile && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Button variant="secondary" small onClick={() => { setShowHtmlImport(v => !v); setHtmlImportResult(null); setHtmlImportError(""); }}>
+              Import from JAMA DOC
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* JAMA DOC import — desktop only */}
-      {!isMobile && <>
-        <div style={{ marginBottom: 8, display: "flex", justifyContent: "flex-end" }}>
-          <Button variant="secondary" small onClick={() => { setShowHtmlImport(v => !v); setHtmlImportResult(null); setHtmlImportError(""); }}>
-            Import from JAMA DOC
-          </Button>
-        </div>
-        {showHtmlImport && (
-          <Card style={{ marginBottom: 16, border: `1px solid ${COLORS.accent}33` }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Import JAMA Test Cases</div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Upload a .docx (Verification Test Cases) or .doc (All Item Details) export from JAMA. Duplicates are skipped.</div>
-            <label style={{ display: "inline-block", cursor: htmlImporting ? "not-allowed" : "pointer" }}>
-              <input type="file" accept=".doc,.docx" onChange={doDocImport} disabled={htmlImporting} style={{ display: "none" }} />
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: mono, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}44`, cursor: "pointer", opacity: htmlImporting ? 0.5 : 1 }}>
-                {htmlImporting ? "Importing..." : "Choose DOC/DOCX file"}
-              </span>
-            </label>
-            {htmlImportError && <div style={{ marginTop: 8, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{htmlImportError}</div>}
-            {htmlImportResult && (
+      {/* JAMA DOC import panel — desktop only */}
+      {!isMobile && showHtmlImport && (
+          <JamaImportPanel
+            title="How to export test cases from Jama"
+            accept=".doc,.docx"
+            importing={htmlImporting}
+            steps={[
+              { step: "Navigate to the desired Test Case Directory in Jama.", detail: "e.g. Manual Test Cases, Mobius Test Cases, etc." },
+              { step: "Open the Verification Test Cases set", detail: "to view all test cases in that directory." },
+              { step: "Click Export → View All Export Options → All Item Details.", detail: "" },
+              { step: "Select Word format,", detail: "then check Include Relationships and Include Tags." },
+              { step: "Click Run.", detail: "A notification will appear confirming your report is being generated." },
+              { step: "Download the report using the link in the notification,", detail: "then upload the file below." },
+            ]}
+            onFile={file => { setShowHtmlImport(false); doDocImport({ target: { files: [file], value: "" } }); }}
+            onCancel={() => { setShowHtmlImport(false); setHtmlImportError(""); }}
+            error={htmlImportError}
+            result={htmlImportResult && (
               <div style={{ marginTop: 10, padding: "8px 12px", background: COLORS.greenDim, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.green }}>
                 Imported <strong>{htmlImportResult.imported}</strong> test case{htmlImportResult.imported !== 1 ? "s" : ""}{htmlImportResult.skipped > 0 ? ` · ${htmlImportResult.skipped} duplicate${htmlImportResult.skipped !== 1 ? "s" : ""} skipped` : ""}.
               </div>
             )}
-          </Card>
-        )}
-      </>}
+          />
+      )}
 
       {/* Generator — two-panel */}
       <Card glow style={{ marginBottom: 16 }}>

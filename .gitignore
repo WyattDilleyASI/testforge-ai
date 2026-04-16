@@ -6,6 +6,7 @@ client/dist/
 *.doc
 data/
 .claude/settings.local.json
+docs/
 
 
 
