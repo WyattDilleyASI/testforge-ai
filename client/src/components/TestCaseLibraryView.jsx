@@ -398,7 +398,10 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
                             {section("Test Steps")}
                             {(edit.editForm.steps || []).map((s, i) => (
                               <div key={i} style={{ paddingLeft: 10, borderLeft: `2px solid ${COLORS.border}` }}>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>Step {i + 1}</div>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono }}>Step {i + 1}</div>
+                                  <button onClick={e => { e.stopPropagation(); edit.setEditForm(p => ({ ...p, steps: p.steps.filter((_, j) => j !== i) })); }} disabled={edit.editForm.steps.length <= 1} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.red, fontFamily: mono, fontSize: 14, lineHeight: 1, padding: "0 2px", opacity: edit.editForm.steps.length <= 1 ? 0.25 : 0.6 }} title="Delete step">×</button>
+                                </div>
                                 <div style={{ marginBottom: 4 }}>{lbl("Action")}{ta(s.step, e => edit.setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, step: e.target.value } : st) })), 2)}</div>
                                 <div>{lbl("Expected Result")}{ta(s.expectedResult, e => edit.setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
                               </div>
