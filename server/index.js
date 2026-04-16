@@ -55,6 +55,7 @@ app.use("/api", require("./routes/data")); // KB, audit, jama
 app.use("/api/mcp", require("./routes/mcp"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/whiteboard", require("./routes/whiteboard"));
+app.use("/api/insights", require("./routes/insights"));
 const { mountMcpRoutes } = require("./mcp");
 mountMcpRoutes(app);
 
@@ -81,10 +82,26 @@ app.listen(PORT, () => {
   ─────────────────────────────────────
   Local:   http://localhost:${PORT}
   API:     http://localhost:${PORT}/api
-  
+
   Default admin login:
     username: admin
     password: admin
     (must be changed on first login)
   `);
+
+  // ── Daily Coverage Gap Insight ──────────────────────────────────────────────
+  const { getOrComputeInsight } = require("./insights");
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+  const runDailyInsight = async () => {
+    try {
+      const result = await getOrComputeInsight();
+      if (!result.from_cache) console.log(`[Insights] Computed — ${result.gaps?.length || 0} gaps found`);
+    } catch (err) {
+      console.error("[Insights] Daily job error:", err.message);
+    }
+  };
+
+  setTimeout(runDailyInsight, 2 * 60 * 1000); // defer 2 min on boot
+  setInterval(runDailyInsight, MS_PER_DAY);
 });
