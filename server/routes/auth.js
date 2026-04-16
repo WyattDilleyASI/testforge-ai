@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const { getDb, logAudit } = require("../db");
-const { requireAuth } = require("../auth");
+const { requireAuth, createMobileToken } = require("../auth");
 
 const router = express.Router();
 
@@ -63,6 +63,35 @@ router.post("/change-password", (req, res) => {
   req.session.role = user.role;
 
   res.json({ user: { id: user.id, username: user.username, name: user.name, role: user.role } });
+});
+
+// POST /api/auth/mobile-token — validates credentials and returns a JWT for mobile clients
+router.post("/mobile-token", (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: "Username and password required" });
+
+  const db = getDb();
+  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+  if (!user) return res.status(401).json({ error: "User not found." });
+  if (user.status === "Inactive") return res.status(401).json({ error: "Account is deactivated." });
+  if (user.failed_attempts >= 5) return res.status(401).json({ error: "Account is locked. Contact an administrator." });
+
+  if (!bcrypt.compareSync(password, user.password_hash)) {
+    const newAttempts = user.failed_attempts + 1;
+    db.prepare("UPDATE users SET failed_attempts = ? WHERE id = ?").run(newAttempts, user.id);
+    logAudit(user.name, "FAILED_LOGIN", `Mobile: invalid password (attempt ${newAttempts} of 5)`, "error");
+    if (newAttempts >= 5) return res.status(401).json({ error: "Account locked after 5 failed attempts." });
+    return res.status(401).json({ error: `Invalid password. Attempt ${newAttempts} of 5.` });
+  }
+
+  db.prepare("UPDATE users SET failed_attempts = 0, last_login = datetime('now') WHERE id = ?").run(user.id);
+  logAudit(user.name, "LOGIN", "Mobile login — JWT issued");
+
+  const token = createMobileToken(user);
+  res.json({
+    token,
+    user: { id: user.id, username: user.username, name: user.name, role: user.role },
+  });
 });
 
 // POST /api/auth/logout

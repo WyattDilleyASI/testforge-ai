@@ -15,6 +15,9 @@ RUN cd client && npm run build
 # Copy server code
 COPY server/ ./server/
 
+# Copy MCP bridge script
+COPY mcp-bridge.mjs ./
+
 # Create data directory
 RUN mkdir -p /app/data
 

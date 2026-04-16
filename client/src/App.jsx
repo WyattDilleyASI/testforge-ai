@@ -1,626 +1,275 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "./api";
+import SysMLTraceability from "./SysMLTraceability";
+import { THEMES, ThemeContext, useTheme, font, mono } from "./theme";
+import { Badge, Button, Card, useIsMobile, MobileGate } from "./components/shared";
+import { LoginScreen, PasswordChangeScreen } from "./components/LoginScreen";
+import { Sidebar } from "./components/Sidebar";
+import { DashboardView } from "./components/DashboardView";
+import { RequirementsView } from "./components/RequirementsView";
+import { TestCasesWrapper } from "./components/TestCasesWrapper";
+import { KbView } from "./components/KbView";
+import { DeferredView } from "./components/DeferredView";
+import { SettingsWrapper } from "./components/SettingsWrapper";
+import { AnalyticsView } from "./components/AnalyticsView";
+import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas, RainstormCanvas,
+  StarfieldParallaxCanvas,
+  CampfireCanvas,
+  SnowfallCanvas,
+  DeepSeaCanvas,
+  CRTCanvas,
+  AudioVisualizerCanvas,
+  AmbientCanvas,
+  CloudyCanvas,
+  ThunderstormCanvas,
+  FogCanvas,
+  SunshineCanvas,
+  MainlyClearCanvas,
+  WeatherInfoCard,
+  WhiteboardCanvas,
+  ClippyCompanion,
+ } from "./components/EasterEggs";
 
-// ─── CONSTANTS ──────────────────────────────────────────────────────────────
-
-const COLORS = {
-  bg: "#0B0E14", surface: "#121821", surfaceRaised: "#1A2233",
-  border: "#243044", text: "#C8D6E5", textMuted: "#7A8BA3",
-  textBright: "#EFF4F8", accent: "#22D3EE", accentDim: "rgba(34,211,238,0.12)",
-  accentGlow: "rgba(34,211,238,0.25)", green: "#34D399", greenDim: "rgba(52,211,153,0.12)",
-  red: "#F87171", redDim: "rgba(248,113,113,0.12)", amber: "#FBBF24",
-  amberDim: "rgba(251,191,36,0.12)", purple: "#A78BFA", purpleDim: "rgba(167,139,250,0.12)",
+// WMO weather code → theme key, split by day / night
+const WMO_TO_THEME_DAY = {
+  0: "sunshineHues",   1: "mainlyClearDay",
+  2: "cloudyDay",      3: "cloudyDay",
+  45: "fogDay",       48: "fogDay",
+  51: "rainstorm",    53: "rainstorm",    55: "rainstorm",
+  61: "rainstorm",    63: "rainstorm",    65: "rainstorm",
+  71: "snowfall",     73: "snowfall",     75: "snowfall",    77: "snowfall",
+  80: "rainstorm",    81: "rainstorm",    82: "rainstorm",
+  85: "snowfall",     86: "snowfall",
+  95: "thunderstorm", 96: "thunderstorm", 99: "thunderstorm",
 };
-const font = "'DM Sans', 'Segoe UI', system-ui, sans-serif";
-const mono = "'JetBrains Mono', 'Fira Code', monospace";
-const DRAFT_DISCLAIMER = "These test cases are AI-generated drafts and represent a suggested starting point only. QA Engineer review, augmentation, and approval are required before use.";
-
-const ROLE_PERMISSIONS = {
-  "QA Engineer": { label: "QA Engineer", color: "accent", permissions: ["Ingest & edit requirements", "Generate & edit test cases", "Add & tag KB entries", "View Traceability Matrix & Coverage Dashboard"], restricted: ["Approve TCs for export", "Modify Jama settings", "Access user management"] },
-  "QA Manager": { label: "QA Manager", color: "amber", permissions: ["All QA Engineer permissions", "Approve or reject TCs for export", "Initiate & review Jama exports", "View user activity logs"], restricted: ["Create/edit/deactivate accounts", "Configure Jama API credentials", "Access full audit log"] },
-  "Admin": { label: "Admin", color: "purple", permissions: ["All QA Manager permissions", "Create, edit, deactivate accounts", "Assign roles to users", "Configure Jama credentials", "Access full system audit log"], restricted: [] },
+const WMO_TO_THEME_NIGHT = {
+  0: "starfieldTheme", 1: "starfieldTheme",
+  2: "cloudy",         3: "cloudy",
+  45: "fog",           48: "fog",
+  51: "rainstorm",     53: "rainstorm",    55: "rainstorm",
+  61: "rainstorm",     63: "rainstorm",    65: "rainstorm",
+  71: "snowfall",      73: "snowfall",     75: "snowfall",    77: "snowfall",
+  80: "rainstorm",     81: "rainstorm",    82: "rainstorm",
+  85: "snowfall",      86: "snowfall",
+  95: "thunderstorm",  96: "thunderstorm", 99: "thunderstorm",
 };
-
-// ─── UTILITY COMPONENTS ─────────────────────────────────────────────────────
-
-const Badge = ({ color = "accent", children, style }) => {
-  const c = COLORS[color] || color;
-  const dim = COLORS[color + "Dim"] || "rgba(255,255,255,0.08)";
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, letterSpacing: "0.04em", textTransform: "uppercase", color: c, background: dim, border: `1px solid ${c}22`, whiteSpace: "nowrap", ...style }}>{children}</span>;
-};
-
-const Button = ({ variant = "primary", children, onClick, disabled, style, small }) => {
-  const base = { fontFamily: font, fontSize: small ? 12 : 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", borderRadius: 6, padding: small ? "5px 12px" : "9px 20px", transition: "all 0.2s", opacity: disabled ? 0.4 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
-  const variants = { primary: { ...base, background: COLORS.accent, color: COLORS.bg }, secondary: { ...base, background: COLORS.surfaceRaised, color: COLORS.text, border: `1px solid ${COLORS.border}` }, danger: { ...base, background: COLORS.redDim, color: COLORS.red, border: `1px solid ${COLORS.red}33` }, ghost: { ...base, background: "transparent", color: COLORS.textMuted } };
-  return <button style={{ ...variants[variant], ...style }} onClick={onClick} disabled={disabled}>{children}</button>;
-};
-
-const Card = ({ children, style, glow, ...rest }) => <div style={{ background: COLORS.surfaceRaised, border: `1px solid ${glow ? COLORS.accent + "44" : COLORS.border}`, borderRadius: 10, padding: 20, boxShadow: glow ? `0 0 20px ${COLORS.accentGlow}` : "0 2px 8px rgba(0,0,0,0.3)", ...style }} {...rest}>{children}</div>;
-
-const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    {textarea ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", resize: "vertical", minHeight: 80, outline: "none", opacity: disabled ? 0.5 : 1 }} />
-    : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
-  </div>
-);
-
-const PasswordInput = ({ label, value, onChange, placeholder, style, onKeyDown }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    <input type="password" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none" }} />
-  </div>
-);
-
-const Select = ({ label, value, onChange, options, style, disabled }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
-    {label && <label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
-    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ fontFamily: font, fontSize: 13, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-  </div>
-);
-
-const ReqIdTag = ({ id }) => <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.accent, background: COLORS.accentDim, padding: "2px 8px", borderRadius: 4, border: `1px solid ${COLORS.accent}33` }}>{id}</span>;
-
-const Spinner = () => <div style={{ display: "flex", alignItems: "center", gap: 10, color: COLORS.accent }}><div style={{ width: 18, height: 18, border: `2px solid ${COLORS.border}`, borderTopColor: COLORS.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontFamily: mono }}>Generating drafts via Claude API...</span><style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style></div>;
-
-const EmptyState = ({ icon, title, subtitle }) => <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60, color: COLORS.textMuted, textAlign: "center" }}><span style={{ fontSize: 36, marginBottom: 12, opacity: 0.4 }}>{icon}</span><span style={{ fontSize: 15, fontWeight: 600, color: COLORS.text, marginBottom: 4 }}>{title}</span><span style={{ fontSize: 13 }}>{subtitle}</span></div>;
-
-const DraftDisclaimer = ({ style }) => <div style={{ padding: "10px 14px", background: "rgba(251,191,36,0.08)", borderRadius: 6, border: `1px solid ${COLORS.amber}33`, fontSize: 11, color: COLORS.amber, lineHeight: 1.5, ...style }}><span style={{ fontFamily: mono, fontWeight: 700, marginRight: 6, fontSize: 10, textTransform: "uppercase" }}>TC-003a DRAFT</span>{DRAFT_DISCLAIMER}</div>;
-
-const ErrorBanner = ({ msg }) => msg ? <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.redDim, borderRadius: 6, border: `1px solid ${COLORS.red}33`, fontSize: 12, color: COLORS.red }}>{msg}</div> : null;
-
-// ─── LOGIN SCREEN ───────────────────────────────────────────────────────────
-
-const LoginScreen = ({ onLogin }) => {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleLogin = async () => {
-    setError(""); setLoading(true);
-    try {
-      const data = await api.login(username, password);
-      onLogin(data);
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, fontFamily: font }}>
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } } input:focus { border-color: ${COLORS.accent} !important; box-shadow: 0 0 0 2px ${COLORS.accentDim}; outline: none; } button:hover:not(:disabled) { filter: brightness(1.15); }`}</style>
-      <div style={{ animation: "fadeIn 0.4s ease-out", width: 380 }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <span style={{ fontSize: 40, color: COLORS.accent, display: "block", marginBottom: 8 }}>◈</span>
-          <span style={{ fontSize: 22, fontWeight: 800, color: COLORS.textBright }}>TestForge AI</span>
-          <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, marginTop: 6, textTransform: "uppercase", letterSpacing: "0.08em" }}>AI-Powered Test Creation Tool v1.2</div>
-        </div>
-        <Card glow style={{ padding: 28 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Sign In</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 20 }}>Enter your credentials to access the Tool</div>
-          <Input label="Username" value={username} onChange={setUsername} placeholder="Enter username" style={{ marginBottom: 14 }} />
-          <PasswordInput label="Password" value={password} onChange={setPassword} placeholder="Enter password" onKeyDown={e => e.key === "Enter" && handleLogin()} style={{ marginBottom: 20 }} />
-          <ErrorBanner msg={error} />
-          <Button onClick={handleLogin} disabled={!username || !password || loading} style={{ width: "100%", justifyContent: "center" }}>{loading ? "Signing in..." : "Sign In"}</Button>
-          <div style={{ marginTop: 16, fontSize: 10, color: COLORS.textMuted, textAlign: "center", fontFamily: mono }}>UM-008: Account locks after 5 failed attempts</div>
-        </Card>
-      </div>
-    </div>
-  );
-};
-
-// ─── PASSWORD CHANGE SCREEN ─────────────────────────────────────────────────
-
-const PasswordChangeScreen = ({ userId, userName, isOtp, onComplete }) => {
-  const [newPass, setNewPass] = useState("");
-  const [confirmPass, setConfirmPass] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async () => {
-    setError("");
-    if (newPass.length < 4) { setError("Password must be at least 4 characters."); return; }
-    if (newPass !== confirmPass) { setError("Passwords do not match."); return; }
-    setLoading(true);
-    try {
-      const data = await api.changePassword(userId, newPass);
-      onComplete(data.user);
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, fontFamily: font }}>
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } } input:focus { border-color: ${COLORS.accent} !important; box-shadow: 0 0 0 2px ${COLORS.accentDim}; outline: none; } button:hover:not(:disabled) { filter: brightness(1.15); }`}</style>
-      <div style={{ animation: "fadeIn 0.4s ease-out", width: 380 }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <span style={{ fontSize: 40, color: COLORS.accent, display: "block", marginBottom: 8 }}>◈</span>
-          <span style={{ fontSize: 22, fontWeight: 800, color: COLORS.textBright }}>TestForge AI</span>
-        </div>
-        <Card glow style={{ padding: 28 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>{isOtp ? "Create Your Password" : "Change Default Password"}</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>Welcome, {userName}.</div>
-          <div style={{ padding: "8px 12px", background: COLORS.amberDim, borderRadius: 6, border: `1px solid ${COLORS.amber}33`, fontSize: 11, color: COLORS.amber, marginBottom: 20 }}>
-            {isOtp ? "You signed in with a one-time password. Please create your own password to continue." : "This is your first login. Please change the default password to continue."}
-          </div>
-          <PasswordInput label="New Password" value={newPass} onChange={setNewPass} placeholder="Create a password" style={{ marginBottom: 14 }} />
-          <PasswordInput label="Confirm Password" value={confirmPass} onChange={setConfirmPass} placeholder="Confirm password" onKeyDown={e => e.key === "Enter" && handleSubmit()} style={{ marginBottom: 20 }} />
-          <ErrorBanner msg={error} />
-          <Button onClick={handleSubmit} disabled={!newPass || !confirmPass || loading} style={{ width: "100%", justifyContent: "center" }}>{loading ? "Setting..." : "Set Password & Continue"}</Button>
-        </Card>
-      </div>
-    </div>
-  );
-};
-
-// ─── NAVIGATION ─────────────────────────────────────────────────────────────
-
-const NAV_ITEMS = [
-  { key: "dashboard", label: "Coverage Dashboard", icon: "◫", reqs: "RS-007" },
-  { key: "requirements", label: "Requirements", icon: "◧", reqs: "RS-001 – RS-006" },
-  { key: "testcases", label: "Test Cases", icon: "◨", reqs: "TC-001 – TC-009" },
-  { key: "traceability", label: "Traceability Matrix", icon: "◩", reqs: "TC-007" },
-  { key: "kb", label: "Knowledge Base", icon: "◪", reqs: "KB-001 – KB-006" },
-  { key: "users", label: "User Management", icon: "◯", reqs: "UM-001 – UM-009" },
-  { key: "jama", label: "Jama Connect", icon: "◭", reqs: "JM-001 – JM-009" },
-  { key: "deferred", label: "Deferred to v2", icon: "◬", reqs: "AL-xxx · KB-007" },
-];
-
-const Sidebar = ({ active, onNavigate, currentUser, onLogout }) => (
-  <div style={{ width: 250, minHeight: "100vh", background: COLORS.surface, borderRight: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", fontFamily: font, flexShrink: 0 }}>
-    <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${COLORS.border}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 20, color: COLORS.accent }}>◈</span><span style={{ fontSize: 15, fontWeight: 700, color: COLORS.textBright }}>TestForge AI</span></div>
-      <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Test Creation Tool v1.2</div>
-    </div>
-    <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS.green, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: COLORS.textBright, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentUser.name}</div>
-        <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>@{currentUser.username} · {currentUser.role}</div>
-      </div>
-      <button onClick={onLogout} style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: 10, fontFamily: mono, padding: "4px 8px", borderRadius: 4 }}>Sign Out</button>
-    </div>
-    <nav style={{ padding: "12px 10px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-      {NAV_ITEMS.map(item => {
-        const d = item.key === "deferred";
-        return <button key={item.key} onClick={() => onNavigate(item.key)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 7, border: "none", cursor: "pointer", textAlign: "left", fontFamily: font, fontSize: 13, fontWeight: active === item.key ? 600 : 400, color: active === item.key ? COLORS.textBright : d ? COLORS.textMuted + "88" : COLORS.textMuted, background: active === item.key ? COLORS.accentDim : "transparent", borderLeft: active === item.key ? `2px solid ${COLORS.accent}` : "2px solid transparent", fontStyle: d ? "italic" : "normal" }}>
-          <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center" }}>{item.icon}</span>
-          <div><div>{item.label}</div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div></div>
-        </button>;
-      })}
-    </nav>
-    <div style={{ padding: "14px 16px", borderTop: `1px solid ${COLORS.border}`, fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>FRD v1.2 — 39 active REQs</div>
-  </div>
-);
-
-// ─── DASHBOARD ──────────────────────────────────────────────────────────────
-
-const DashboardView = ({ requirements, testCases, kbEntries }) => {
-  const covered = requirements.filter(r => testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
-  const untested = requirements.filter(r => !testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
-  const coveragePct = requirements.length ? Math.round((covered.length / requirements.length) * 100) : 0;
-  const reviewed = testCases.filter(tc => tc.status === "Reviewed").length;
-  const drafts = testCases.filter(tc => tc.status === "Draft").length;
-
-  const Stat = ({ label, value, color, sub, reqId }) => (
-    <Card style={{ flex: 1, minWidth: 160 }}>
-      <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, display: "flex", justifyContent: "space-between" }}><span>{label}</span>{reqId && <span style={{ color: COLORS.accent, opacity: 0.6 }}>{reqId}</span>}</div>
-      <div style={{ fontSize: 32, fontWeight: 800, color: COLORS[color] || COLORS.textBright, fontFamily: mono }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{sub}</div>}
-    </Card>
-  );
-
-  return <div>
-    <div style={{ marginBottom: 28 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements Coverage Dashboard</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>REQ RS-007</p></div>
-    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
-      <Stat label="Coverage" value={`${coveragePct}%`} color={coveragePct > 70 ? "green" : coveragePct > 40 ? "amber" : "red"} sub={`${covered.length} of ${requirements.length} REQs`} reqId="RS-007" />
-      <Stat label="TC Drafts" value={drafts} color="amber" sub="Awaiting review" reqId="TC-003a" />
-      <Stat label="TC Reviewed" value={reviewed} color="green" sub="Engineer-approved" reqId="TC-003a" />
-      <Stat label="KB Entries" value={kbEntries.length} color="purple" sub={`${kbEntries.reduce((s, e) => s + (e.usage_count || 0), 0)} usages`} reqId="KB-001" />
-    </div>
-    {untested.length > 0 && <Card><div style={{ fontSize: 12, fontWeight: 600, color: COLORS.amber, marginBottom: 12 }}>Untested Requirements</div>{untested.map(r => <div key={r.req_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${COLORS.border}` }}><ReqIdTag id={r.req_id} /><span style={{ fontSize: 13, color: COLORS.text, flex: 1 }}>{r.title}</span><Badge color="amber">{r.priority}</Badge></div>)}</Card>}
-  </div>;
-};
-
-// ─── REQUIREMENTS ───────────────────────────────────────────────────────────
-
-const RequirementsView = ({ requirements, refresh, currentUser }) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
-  const [editForm, setEditForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
-  const [error, setError] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
-
-  const canDelete = currentUser?.role === "Admin" || currentUser?.role === "QA Manager";
-
-  const startAdd = () => { setAddForm({ req_id: `REQ-${String(requirements.length + 1).padStart(3, "0")}`, title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" }); setShowAdd(true); setEditId(null); setError(""); setDeleteConfirm(null); };
-
-  const startEdit = (r) => {
-    if (editId === r.req_id) { setEditId(null); return; } // toggle closed
-    setEditForm({ req_id: r.req_id, title: r.title, description: r.description || "", acceptanceCriteria: (r.acceptance_criteria || []).join("\n"), priority: r.priority, status: r.status, module: r.module || "" });
-    setEditId(r.req_id); setShowAdd(false); setError(""); setDeleteConfirm(null);
-  };
-
-  const saveAdd = async () => {
-    setError("");
-    const data = { req_id: addForm.req_id, title: addForm.title, description: addForm.description, acceptance_criteria: addForm.acceptanceCriteria.split("\n").filter(s => s.trim()), priority: addForm.priority, status: addForm.status, module: addForm.module };
-    try { await api.createRequirement(data); setShowAdd(false); refresh(); } catch (err) { setError(err.message); }
-  };
-
-  const saveEdit = async () => {
-    setError("");
-    const data = { title: editForm.title, description: editForm.description, acceptance_criteria: editForm.acceptanceCriteria.split("\n").filter(s => s.trim()), priority: editForm.priority, status: editForm.status, module: editForm.module };
-    try { await api.updateRequirement(editId, data); setEditId(null); refresh(); } catch (err) { setError(err.message); }
-  };
-
-  const doDelete = async (reqId) => {
-    setError("");
-    try { await api.deleteRequirement(reqId); setEditId(null); setDeleteConfirm(null); refresh(); } catch (err) { setError(err.message); }
-  };
-
-  // Shared form fields renderer
-  const renderForm = (form, setForm, isEdit) => (
-    <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-        <Input label="REQ ID" value={form.req_id} onChange={v => setForm(p => ({ ...p, req_id: v }))} mono disabled={isEdit} />
-        <Select label="Priority" value={form.priority} onChange={v => setForm(p => ({ ...p, priority: v }))} options={["High", "Medium", "Low"].map(v => ({ value: v, label: v }))} />
-        <Select label="Status" value={form.status} onChange={v => setForm(p => ({ ...p, status: v }))} options={["Draft", "Review", "Approved", "Rejected"].map(v => ({ value: v, label: v }))} />
-        <Select label="Module" value={form.module} onChange={v => setForm(p => ({ ...p, module: v }))} options={["Requirement Ingestion", "Test Case Generation", "Jama Integration", "User Management"].map(v => ({ value: v, label: v }))} />
-      </div>
-      <Input label="Title" value={form.title} onChange={v => setForm(p => ({ ...p, title: v }))} style={{ marginBottom: 12 }} />
-      <Input label="Description" value={form.description} onChange={v => setForm(p => ({ ...p, description: v }))} textarea style={{ marginBottom: 12 }} />
-      <Input label="Acceptance Criteria (one per line)" value={form.acceptanceCriteria} onChange={v => setForm(p => ({ ...p, acceptanceCriteria: v }))} textarea mono style={{ marginBottom: 14 }} />
-      <ErrorBanner msg={error} />
-    </>
-  );
-
-  return <div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>RS-001 – RS-006</p></div>
-      <Button onClick={startAdd}>+ Add Requirement</Button>
-    </div>
-
-    {/* Add form — always at the top */}
-    {showAdd && <Card glow style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.accent, marginBottom: 14 }}>Add Requirement</div>
-      {renderForm(addForm, setAddForm, false)}
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
-        <Button onClick={saveAdd} disabled={!addForm.req_id || !addForm.title}>Save</Button>
-      </div>
-    </Card>}
-
-    {/* Requirement list — edit form renders inline */}
-    {requirements.map(r => {
-      const isEditing = editId === r.req_id;
-      return <Card key={r.req_id} style={{ marginBottom: 10, cursor: isEditing ? "default" : "pointer", borderColor: isEditing ? COLORS.accent + "44" : undefined, boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined }} onClick={() => !isEditing && startEdit(r)}>
-        {/* Read-only header — always visible */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <ReqIdTag id={r.req_id} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>{r.title}</div>
-            {!isEditing && <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.5 }}>{r.description}</div>}
-            {!isEditing && (r.acceptance_criteria || []).length > 0 && <div style={{ marginTop: 8 }}><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase" }}>Acceptance Criteria:</span>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}` }}>• {ac}</div>)}</div>}
-          </div>
-          <div style={{ display: "flex", gap: 6 }}><Badge color={r.priority === "High" ? "red" : r.priority === "Medium" ? "amber" : "green"}>{r.priority}</Badge><Badge color={r.status === "Approved" ? "green" : r.status === "Review" ? "amber" : r.status === "Rejected" ? "red" : "textMuted"}>{r.status}</Badge></div>
-        </div>
-
-        {/* Inline edit form — expands below the header */}
-        {isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Editing</div>
-          {renderForm(editForm, setEditForm, true)}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-            {canDelete && deleteConfirm !== editId && (
-              <Button variant="danger" small onClick={() => setDeleteConfirm(editId)} style={{ marginRight: "auto" }}>Delete</Button>
-            )}
-            {canDelete && deleteConfirm === editId && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "auto" }}>
-                <span style={{ fontSize: 11, color: COLORS.red }}>Delete? Linked TCs will be orphaned.</span>
-                <Button variant="danger" small onClick={() => doDelete(editId)}>Confirm</Button>
-                <Button variant="ghost" small onClick={() => setDeleteConfirm(null)}>No</Button>
-              </div>
-            )}
-            <Button variant="secondary" onClick={() => setEditId(null)}>Cancel</Button>
-            <Button onClick={saveEdit} disabled={!editForm.title}>Save</Button>
-          </div>
-        </div>}
-      </Card>;
-    })}
-  </div>;
-};
-
-// ─── TEST CASES ─────────────────────────────────────────────────────────────
-
-const TestCaseView = ({ requirements, testCases, kbEntries, refresh }) => {
-  const [selectedReqId, setSelectedReqId] = useState("");
-  const [depth, setDepth] = useState("standard");
-  const [generating, setGenerating] = useState(false);
-  const [expandedTc, setExpandedTc] = useState(null);
-  const [apiError, setApiError] = useState(null);
-  const [sessionTcIds, setSessionTcIds] = useState(null);
-  const [viewMode, setViewMode] = useState("library");
-
-  const visibleTcs = viewMode === "session" && sessionTcIds ? testCases.filter(tc => sessionTcIds.includes(tc.tc_id)) : testCases;
-  const isUnreviewed = tc => tc.status === "Draft";
-
-  const generate = async () => {
-    if (!selectedReqId) return;
-    setGenerating(true); setApiError(null);
-    try {
-      const newTcs = await api.generateTestCases(selectedReqId, depth);
-      setSessionTcIds(newTcs.map(tc => tc.tc_id));
-      setViewMode("session");
-      refresh();
-    } catch (err) { setApiError(err.message); }
-    finally { setGenerating(false); }
-  };
-
-  const updateStatus = async (tcId, status) => {
-    try { await api.updateTcStatus(tcId, status); refresh(); } catch (err) { console.error(err); }
-  };
-
-  return <div>
-    <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Generation</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-001 – TC-009</p></div>
-    <Card glow style={{ marginBottom: 24 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} style={{ minWidth: 280 }} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
-        <Select label="Depth" value={depth} onChange={setDepth} style={{ minWidth: 180 }} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
-        <Button onClick={generate} disabled={!selectedReqId || generating}>{generating ? "Generating..." : "Generate Drafts"}</Button>
-      </div>
-      {generating && <div style={{ marginTop: 14 }}><Spinner /></div>}
-      {apiError && <div style={{ marginTop: 10, fontSize: 12, color: COLORS.red, fontFamily: mono }}>{apiError}</div>}
-    </Card>
-    {testCases.length > 0 && <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-      <Button small variant={viewMode === "library" ? "primary" : "secondary"} onClick={() => setViewMode("library")}>Library ({testCases.length})</Button>
-      {sessionTcIds && <Button small variant={viewMode === "session" ? "primary" : "secondary"} onClick={() => setViewMode("session")}>Session ({sessionTcIds.length})</Button>}
-      <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, marginLeft: 8 }}>TC-009</span>
-    </div>}
-    {visibleTcs.length === 0 ? <EmptyState icon="◨" title="No Test Cases" subtitle="Generate drafts above" /> : <>
-      {visibleTcs.some(isUnreviewed) && <DraftDisclaimer style={{ marginBottom: 16 }} />}
-      {visibleTcs.map(tc => <Card key={tc.tc_id} style={{ marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }} onClick={() => setExpandedTc(expandedTc === tc.tc_id ? null : tc.tc_id)}>
-          <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}>{tc.tc_id}</span>
-          <div style={{ flex: 1, cursor: "pointer" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, display: "flex", alignItems: "center", gap: 8 }}>{tc.title}{isUnreviewed(tc) && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 6px", borderRadius: 3, fontWeight: 700, textTransform: "uppercase" }}>Draft</span>}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>
-              {(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}
-              <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
-            <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
-            <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Rejected"); }}>✗</Button>
-            <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
-          </div>
-        </div>
-        {expandedTc === tc.tc_id && <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.border}` }}>
-          {isUnreviewed(tc) && <div style={{ marginBottom: 14, padding: "8px 12px", background: COLORS.amberDim, borderRadius: 6, fontSize: 10, color: COLORS.amber, fontFamily: mono }}>DRAFT — Review required</div>}
-          <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 8 }}>PRECONDITIONS</div>
-          <div style={{ fontSize: 12, color: COLORS.text, marginBottom: 14, paddingLeft: 12, borderLeft: `2px solid ${COLORS.border}` }}>{tc.preconditions}</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 8 }}>TEST STEPS</div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead><tr><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>#</th><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Step</th><th style={{ textAlign: "left", padding: "6px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Expected</th></tr></thead>
-            <tbody>{(tc.steps || []).map((s, i) => <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}` }}><td style={{ padding: "8px 10px", color: COLORS.textMuted, fontFamily: mono }}>{i + 1}</td><td style={{ padding: "8px 10px", color: COLORS.text }}>{s.step}</td><td style={{ padding: "8px 10px", color: COLORS.green }}>{s.expectedResult}</td></tr>)}</tbody>
-          </table>
-          <div style={{ marginTop: 12 }}><span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>PASS/FAIL: </span><span style={{ fontSize: 12, color: COLORS.text }}>{tc.pass_fail_criteria}</span></div>
-        </div>}
-      </Card>)}
-    </>}
-  </div>;
-};
-
-// ─── TRACEABILITY MATRIX ────────────────────────────────────────────────────
-
-const TraceabilityView = ({ requirements, testCases }) => <div>
-  <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Traceability Matrix</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>TC-007</p></div>
-  <Card style={{ overflow: "auto" }}>
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-      <thead><tr><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.accent, fontFamily: mono, fontSize: 11 }}>REQ ID</th><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Requirement</th><th style={{ textAlign: "left", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Linked TCs</th><th style={{ textAlign: "center", padding: "10px 14px", background: COLORS.surface, color: COLORS.textMuted, fontSize: 11 }}>Status</th></tr></thead>
-      <tbody>{requirements.map(req => {
-        const linked = testCases.filter(tc => (tc.linked_req_ids || []).includes(req.req_id));
-        const hasReviewed = linked.some(tc => tc.status === "Reviewed");
-        return <tr key={req.req_id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-          <td style={{ padding: "10px 14px" }}><ReqIdTag id={req.req_id} /></td>
-          <td style={{ padding: "10px 14px", color: COLORS.text }}>{req.title}</td>
-          <td style={{ padding: "10px 14px" }}><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{linked.length === 0 ? <span style={{ color: COLORS.red, fontSize: 11, fontFamily: mono }}>— NONE —</span> : linked.map(tc => <span key={tc.tc_id} style={{ fontFamily: mono, fontSize: 10, padding: "2px 6px", borderRadius: 3, color: tc.status === "Reviewed" ? COLORS.green : COLORS.amber, background: tc.status === "Reviewed" ? COLORS.greenDim : COLORS.amberDim }}>{tc.tc_id}</span>)}</div></td>
-          <td style={{ padding: "10px 14px", textAlign: "center" }}>{linked.length === 0 ? <span style={{ color: COLORS.red }}>○</span> : hasReviewed ? <span style={{ color: COLORS.green }}>●</span> : <span style={{ color: COLORS.amber }}>◐</span>}</td>
-        </tr>;
-      })}</tbody>
-    </table>
-  </Card>
-</div>;
-
-// ─── KNOWLEDGE BASE ─────────────────────────────────────────────────────────
-
-const KbView = ({ kbEntries, refresh }) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ title: "", type: "Defect History", content: "", tags: "" });
-  const [error, setError] = useState("");
-
-  const save = async () => {
-    setError("");
-    try {
-      await api.createKbEntry({ title: form.title, type: form.type, content: form.content, tags: form.tags.split(",").map(t => t.trim()).filter(Boolean) });
-      setShowAdd(false); setForm({ title: "", type: "Defect History", content: "", tags: "" }); refresh();
-    } catch (err) { setError(err.message); }
-  };
-
-  return <div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Knowledge Base</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>KB-001 – KB-006</p></div>
-      <Button onClick={() => setShowAdd(!showAdd)}>+ Add Entry</Button>
-    </div>
-    {showAdd && <Card glow style={{ marginBottom: 20 }}>
-      <Input label="Title" value={form.title} onChange={v => setForm(p => ({ ...p, title: v }))} style={{ marginBottom: 12 }} />
-      <Select label="Type" value={form.type} onChange={v => setForm(p => ({ ...p, type: v }))} style={{ marginBottom: 12 }} options={["Defect History", "System Behavior", "Environment Constraint", "Business Rule", "Test Data Guideline"].map(t => ({ value: t, label: t }))} />
-      <Input label="Content" value={form.content} onChange={v => setForm(p => ({ ...p, content: v }))} textarea style={{ marginBottom: 12 }} />
-      <Input label="Tagged REQ IDs (comma-separated)" value={form.tags} onChange={v => setForm(p => ({ ...p, tags: v }))} mono style={{ marginBottom: 14 }} />
-      <ErrorBanner msg={error} />
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button><Button onClick={save} disabled={!form.title || !form.content}>Save</Button></div>
-    </Card>}
-    {kbEntries.map(e => <Card key={e.kb_id} style={{ marginBottom: 10 }}><div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}><span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.purple, background: COLORS.purpleDim, padding: "2px 8px", borderRadius: 4 }}>{e.kb_id}</span><div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>{e.title}</div><div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>{e.content}</div><div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}><Badge color="purple">{e.type}</Badge>{(e.tags || []).map(t => <ReqIdTag key={t} id={t} />)}<span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, marginLeft: 8 }}>Used {e.usage_count || 0}×</span></div></div></div></Card>)}
-  </div>;
-};
-
-// ─── USER MANAGEMENT ────────────────────────────────────────────────────────
-
-const UserManagementView = ({ currentUser, refreshAll }) => {
-  const [users, setUsers] = useState([]);
-  const [auditLog, setAuditLog] = useState([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ username: "", name: "", role: "QA Engineer" });
-  const [lastOtp, setLastOtp] = useState(null);
-  const [error, setError] = useState("");
-  const isAdmin = currentUser.role === "Admin";
-
-  const loadUsers = useCallback(async () => { try { setUsers(await api.getUsers()); } catch (e) {} }, []);
-  const loadAudit = useCallback(async () => { if (isAdmin) try { setAuditLog(await api.getAuditLog()); } catch (e) {} }, [isAdmin]);
-  useEffect(() => { loadUsers(); loadAudit(); }, [loadUsers, loadAudit]);
-
-  const addUser = async () => {
-    setError("");
-    try {
-      const data = await api.createUser(form.username, form.name, form.role);
-      setLastOtp({ username: data.username, name: data.name, otp: data.otp });
-      setShowAdd(false); setForm({ username: "", name: "", role: "QA Engineer" }); loadUsers(); loadAudit();
-    } catch (err) { setError(err.message); }
-  };
-
-  const doChangeRole = async (id, role) => { try { await api.changeRole(id, role); loadUsers(); loadAudit(); } catch (e) {} };
-  const doToggleStatus = async (id) => { try { await api.changeStatus(id); loadUsers(); loadAudit(); } catch (e) {} };
-  const doResetPw = async (id) => { try { const d = await api.resetPassword(id); setLastOtp({ username: d.username, name: d.name, otp: d.otp }); loadUsers(); loadAudit(); } catch (e) {} };
-  const doUnlock = async (id) => { try { await api.unlockUser(id); loadUsers(); loadAudit(); } catch (e) {} };
-
-  return <div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>User Management</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>UM-001 – UM-009</p></div>
-      {isAdmin && <Button onClick={() => { setShowAdd(!showAdd); setLastOtp(null); }}>+ Create Account</Button>}
-    </div>
-    {!isAdmin && <Card style={{ marginBottom: 16, padding: "12px 16px" }}><div style={{ fontSize: 12, color: COLORS.amber }}>UM-005: Admin role required for user management.</div></Card>}
-
-    {lastOtp && isAdmin && <Card glow style={{ marginBottom: 16, border: `1px solid ${COLORS.green}44` }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.green, marginBottom: 10 }}>One-Time Password Generated</div>
-      <div style={{ fontSize: 12, color: COLORS.text, marginBottom: 8 }}>Provide these credentials to <span style={{ fontWeight: 600, color: COLORS.textBright }}>{lastOtp.name}</span>:</div>
-      <div style={{ padding: "12px 16px", background: COLORS.surface, borderRadius: 6, display: "flex", gap: 24 }}>
-        <div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase" }}>Username</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: COLORS.accent, marginTop: 2 }}>{lastOtp.username}</div></div>
-        <div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase" }}>One-Time Password</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: COLORS.amber, marginTop: 2 }}>{lastOtp.otp}</div></div>
-      </div>
-      <div style={{ marginTop: 8, fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>This password will not be shown again.</div>
-      <Button small variant="secondary" onClick={() => setLastOtp(null)} style={{ marginTop: 10 }}>Dismiss</Button>
-    </Card>}
-
-    {showAdd && isAdmin && <Card glow style={{ marginBottom: 20 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
-        <Input label="Username" value={form.username} onChange={v => setForm(p => ({ ...p, username: v }))} mono placeholder="jsmith" />
-        <Input label="Full Name" value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} placeholder="Jane Smith" />
-        <Select label="Role" value={form.role} onChange={v => setForm(p => ({ ...p, role: v }))} options={["QA Engineer", "QA Manager", "Admin"].map(v => ({ value: v, label: v }))} />
-      </div>
-      <ErrorBanner msg={error} />
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button><Button onClick={addUser} disabled={!form.username || !form.name}>Create & Generate OTP</Button></div>
-    </Card>}
-
-    <Card style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 14 }}>Accounts ({users.filter(u => u.status === "Active").length} active / {users.length} total)</div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-        <thead><tr><th style={{ textAlign: "left", padding: "8px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>User</th><th style={{ textAlign: "left", padding: "8px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Role</th><th style={{ textAlign: "left", padding: "8px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Status</th><th style={{ textAlign: "left", padding: "8px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Last Login</th>{isAdmin && <th style={{ textAlign: "right", padding: "8px 10px", background: COLORS.surface, color: COLORS.textMuted, fontFamily: mono, fontSize: 10 }}>Actions</th>}</tr></thead>
-        <tbody>{users.map(u => {
-          const locked = u.failed_attempts >= 5;
-          return <tr key={u.id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-            <td style={{ padding: "10px" }}><div style={{ color: COLORS.textBright, fontWeight: 600 }}>{u.name}</div><div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>@{u.username}{u.must_change_password ? <span style={{ color: COLORS.amber, marginLeft: 6 }}>{u.is_otp ? "OTP" : "PW Change"}</span> : ""}</div></td>
-            <td style={{ padding: "10px" }}>{isAdmin && u.id !== currentUser.id ? <select value={u.role} onChange={e => doChangeRole(u.id, e.target.value)} style={{ fontFamily: mono, fontSize: 11, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "4px 8px", cursor: "pointer" }}><option>QA Engineer</option><option>QA Manager</option><option>Admin</option></select> : <Badge color={ROLE_PERMISSIONS[u.role]?.color || "accent"}>{u.role}</Badge>}</td>
-            <td style={{ padding: "10px" }}><Badge color={u.status === "Active" ? (locked ? "red" : "green") : "textMuted"}>{locked ? "LOCKED" : u.status}</Badge></td>
-            <td style={{ padding: "10px", fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>{u.last_login ? new Date(u.last_login).toLocaleString() : "Never"}</td>
-            {isAdmin && <td style={{ padding: "10px", textAlign: "right" }}><div style={{ display: "flex", gap: 4, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              {locked && <Button small variant="secondary" onClick={() => doUnlock(u.id)}>Unlock</Button>}
-              <Button small variant="secondary" onClick={() => doResetPw(u.id)}>Reset PW</Button>
-              {u.id !== currentUser.id && <Button small variant={u.status === "Active" ? "danger" : "secondary"} onClick={() => doToggleStatus(u.id)}>{u.status === "Active" ? "Deactivate" : "Reactivate"}</Button>}
-            </div></td>}
-          </tr>;
-        })}</tbody>
-      </table>
-    </Card>
-
-    {isAdmin ? <Card>
-      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 14 }}>Audit Log <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>UM-007</span></div>
-      {auditLog.length === 0 ? <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic" }}>No events yet.</div> :
-      auditLog.slice(0, 20).map((l, i) => <div key={i} style={{ padding: "6px 0", borderBottom: `1px solid ${COLORS.border}`, display: "flex", gap: 12, alignItems: "center", fontSize: 11 }}>
-        <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.textMuted, minWidth: 60 }}>{(l.timestamp || "").split("T")[1]?.slice(0, 8) || l.timestamp?.slice(11, 19)}</span>
-        <Badge color={l.status === "success" ? "green" : "red"} style={{ minWidth: 50, justifyContent: "center" }}>{l.action?.slice(0, 14)}</Badge>
-        <span style={{ color: COLORS.textMuted, fontFamily: mono, minWidth: 80 }}>{l.user_name}</span>
-        <span style={{ color: COLORS.text, flex: 1 }}>{l.details}</span>
-      </div>)}
-    </Card> : <Card style={{ padding: "14px 16px" }}><div style={{ fontSize: 12, color: COLORS.textMuted }}>UM-005 / UM-007: Audit log is Admin-only.</div></Card>}
-  </div>;
-};
-
-// ─── JAMA CONNECT ───────────────────────────────────────────────────────────
-
-const JamaView = ({ testCases, requirements, currentUser }) => {
-  const [exportLog, setExportLog] = useState([]);
-  const [config, setConfig] = useState({ url: "https://your-org.jamacloud.com", project: "AI-Test-Tool" });
-  const isManager = currentUser.role === "QA Manager" || currentUser.role === "Admin";
-  const exportable = testCases.filter(tc => (tc.linked_req_ids || []).length > 0 && tc.status === "Reviewed");
-
-  useEffect(() => { api.getJamaLog().then(setExportLog).catch(() => {}); }, []);
-
-  const doExport = async () => {
-    try { const r = await api.exportToJama(); setExportLog(prev => [{ timestamp: new Date().toISOString(), action: r.status === "success" ? "EXPORT" : "BLOCKED", details: r.details, status: r.status }, ...prev]); } catch (e) {}
-  };
-
-  return <div>
-    <div style={{ marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Jama Connect</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>JM-001 – JM-009 (simulated)</p></div>
-    <Card style={{ marginBottom: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-        <Input label="Jama URL" value={config.url} onChange={v => setConfig(p => ({ ...p, url: v }))} disabled={currentUser.role !== "Admin"} />
-        <Input label="Project" value={config.project} onChange={v => setConfig(p => ({ ...p, project: v }))} disabled={currentUser.role !== "Admin"} />
-        <div><label style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Auth</label><div style={{ fontFamily: mono, fontSize: 13, color: COLORS.green, padding: "10px 12px", background: COLORS.greenDim, borderRadius: 6 }}>OAuth 2.0</div></div>
-      </div>
-    </Card>
-    <Card style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div><div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text }}>Export to Jama</div><div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{exportable.length} reviewed TCs ready{!isManager && <span style={{ color: COLORS.amber, marginLeft: 8 }}>— Requires Manager+</span>}</div></div>
-        <Button onClick={doExport} disabled={exportable.length === 0 || !isManager}>Validate & Export</Button>
-      </div>
-    </Card>
-    <Card>
-      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, marginBottom: 12 }}>Export Log <span style={{ fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>JM-008</span></div>
-      {exportLog.length === 0 ? <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic" }}>No activity.</div> :
-      exportLog.map((l, i) => <div key={i} style={{ padding: "8px 0", borderBottom: `1px solid ${COLORS.border}`, display: "flex", gap: 12, alignItems: "center" }}><Badge color={l.status === "success" ? "green" : "red"}>{l.status}</Badge><span style={{ fontSize: 12, color: COLORS.text }}>{l.details}</span></div>)}
-    </Card>
-  </div>;
-};
-
-// ─── DEFERRED ───────────────────────────────────────────────────────────────
-
-const DeferredView = () => <div>
-  <div style={{ marginBottom: 28 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Deferred to v2</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>FRD v1.2 Section 9</p></div>
-  {[{ title: "Adaptive Learning Engine", sub: "AL-001 – AL-008", desc: "Descoped from v1 to keep the tool focused on assistive generation." },
-    { title: "Confluence KB Import", sub: "KB-007", desc: "Manual entry only in v1. v2 implements Confluence REST API import." },
-    { title: "SSO / External Identity", sub: "UM-xxx", desc: "v1 uses local accounts. v2 adds SAML/OAuth integration." }
-  ].map((item, i) => <Card key={i} style={{ marginBottom: 16 }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><Badge color="amber">DEFERRED</Badge><span style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright }}>{item.title}</span><span style={{ fontFamily: mono, fontSize: 10, color: COLORS.textMuted }}>{item.sub}</span></div>
-    <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.7 }}>{item.desc}</div>
-  </Card>)}
-</div>;
 
 // ─── MAIN APP ───────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [authState, setAuthState] = useState("loading"); // loading | login | changePassword | authenticated
+  const [authState, setAuthState] = useState("loading");
   const [currentUser, setCurrentUser] = useState(null);
   const [pendingPw, setPendingPw] = useState(null);
-  const [page, setPage] = useState("dashboard");
+  const [themeName, setThemeName] = useState(() => localStorage.getItem("tf-theme") || "midnight");
 
-  // Data
+  // Parse page and optional family ID from the URL hash.
+  // Supported formats:
+  //   #traceability/family/REQ-ID  → traceability page, auto-open family view for REQ-ID
+  //   #traceability                → traceability page, full view
+  //   #dashboard (etc.)            → named page, full view
+  const parseHash = () => {
+    const hash = window.location.hash.replace(/^#/, "");
+    const parts = hash.split("/");
+    const pg = parts[0] || "dashboard";
+    const familyId = parts[0] === "traceability" && parts[1] === "family" && parts[2]
+      ? decodeURIComponent(parts[2])
+      : null;
+    return { pg, familyId };
+  };
+
+  const [page, setPage] = useState(() => parseHash().pg);
+  const [initialFamilyId, setInitialFamilyId] = useState(() => parseHash().familyId);
+
+  // Wrap navigation so that clicking the sidebar also updates the URL hash.
+  const navigate = useCallback((newPage) => {
+    window.location.hash = newPage;
+    setPage(newPage);
+    setInitialFamilyId(null);
+    setSidebarOpen(false);
+  }, []);
+
+  // Keep React in sync if the user presses the browser Back/Forward buttons.
+  useEffect(() => {
+    const onHashChange = () => {
+      const { pg, familyId } = parseHash();
+      setPage(pg);
+      setInitialFamilyId(familyId);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
   const [requirements, setRequirements] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [kbEntries, setKbEntries] = useState([]);
+  const [tokenUsage, setTokenUsage] = useState(null);
+
+  const [weatherData, setWeatherData] = useState(null);
+
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (themeName !== "weather") { setWeatherData(null); return; }
+    let cancelled = false;
+    const fetchWeather = async (lat, lon, ipCity = "", ipState = "") => {
+      console.log(`[Weather] Fetching for lat=${lat} lon=${lon} city=${ipCity} state=${ipState}`);
+      // Weather code is required — fetch first, fail hard if it errors.
+      let wData;
+      try {
+        const wRes = await fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code,temperature_2m,is_day&timezone=auto&temperature_unit=fahrenheit`
+        );
+        wData = await wRes.json();
+        console.log("[Weather] Open-Meteo response:", wData);
+      } catch (e) {
+        console.error("[Weather] Open-Meteo failed:", e);
+        if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: ipCity, state: ipState });
+        return;
+      }
+
+      // City name is optional — a failure here must not kill the weather detection.
+      let city = ipCity, state = ipState;
+      if (!city) {
+        try {
+          const gRes = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
+          );
+          const gData = await gRes.json();
+          const addr = gData.address || {};
+          city  = addr.city || addr.town || addr.village || addr.county || "";
+          state = addr.state_code || addr.state || "";
+        } catch { /* location name is display-only — ignore failures */ }
+      }
+
+      if (!cancelled) {
+        setWeatherData({
+          code:  wData.current?.weather_code ?? 0,
+          isDay: wData.current?.is_day !== 0,
+          temp:  wData.current?.temperature_2m,
+          city,
+          state,
+        });
+      }
+    };
+
+    // IP geolocation fallback — used when browser geolocation is unavailable
+    // or blocked (e.g. HTTP dev server). Tries two services in sequence.
+    const fetchViaIp = async () => {
+      // 1. Try ipapi.co
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const d = await res.json();
+        console.log("[Weather] ipapi.co response:", d);
+        if (d.latitude && d.longitude) {
+          fetchWeather(d.latitude, d.longitude, d.city || "", d.region_code || d.region || "");
+          return;
+        }
+        console.warn("[Weather] ipapi.co: no coordinates (possibly rate-limited), trying fallback");
+      } catch (e) {
+        console.warn("[Weather] ipapi.co failed:", e);
+      }
+
+      // 2. Fallback: ip-api.com (45 req/min free, no key required)
+      try {
+        const res2 = await fetch("http://ip-api.com/json/?fields=status,lat,lon,city,region,regionName");
+        const d2 = await res2.json();
+        console.log("[Weather] ip-api.com response:", d2);
+        if (d2.status === "success" && d2.lat && d2.lon) {
+          fetchWeather(d2.lat, d2.lon, d2.city || "", d2.region || d2.regionName || "");
+          return;
+        }
+        console.warn("[Weather] ip-api.com: no coordinates");
+      } catch (e) {
+        console.warn("[Weather] ip-api.com failed:", e);
+      }
+
+      if (!cancelled) setWeatherData({ code: 0, isDay: true, temp: null, city: "", state: "" });
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+        () => fetchViaIp(),   // blocked on HTTP or permission denied → IP fallback
+        { timeout: 8000 }
+      );
+    } else {
+      fetchViaIp();
+    }
+    return () => { cancelled = true; };
+  }, [themeName]);
+
+  const resolvedThemeName = themeName === "weather" && weatherData
+    ? ((weatherData.isDay ? WMO_TO_THEME_DAY : WMO_TO_THEME_NIGHT)[weatherData.code] ?? (weatherData.isDay ? "sunshineHues" : "starfieldTheme"))
+    : themeName;
+  const activeTheme = THEMES[resolvedThemeName] || THEMES[themeName] || THEMES.midnight;
+
+  const [easterEggToast, setEasterEggToast] = useState(null);
+  const [preEasterEggTheme, setPreEasterEggTheme] = useState(null);
+  const [hotDogOverlay, setHotDogOverlay] = useState(false);
+
+  const handleThemeChange = (key) => {
+    setThemeName(key);
+    localStorage.setItem("tf-theme", key);
+  };
+
+  // Easter egg keyboard listener
+useEffect(() => {
+  let buffer = "";
+  const KONAMI = "ArrowUpArrowUpArrowDownArrowDownArrowLeftArrowRightArrowLeftArrowRightba";
+  const TRIGGERS = {
+    afterdark: { theme: "afterdark", message: "🌌 After Dark activated — enjoy the stars" },
+    matrix:    { theme: "matrix",    message: "💊 You took the red pill..." },
+  };
+
+  const handleKey = (e) => {
+    // Escape key resets to previous theme and clears hot dog overlay
+    if (e.key === "Escape") {
+      if (preEasterEggTheme) {
+        handleThemeChange(preEasterEggTheme);
+        setPreEasterEggTheme(null);
+        setEasterEggToast("↩️ Theme restored");
+      }
+      setHotDogOverlay(false);
+      return;
+    }
+
+    buffer += e.key;
+
+    if (buffer.endsWith(KONAMI)) {
+      if (!activeTheme._hidden) setPreEasterEggTheme(themeName);
+      handleThemeChange("konami");
+      setEasterEggToast("🔓 CLASSIFIED — Konami Code accepted");
+      buffer = "";
+      return;
+    }
+    if (buffer.toLowerCase().endsWith("hotdog")) {
+      setHotDogOverlay(prev => {
+        const next = !prev;
+        setEasterEggToast(next ? "🌭 Hot dogs incoming!" : "🌭 Hot dogs cleared");
+        return next;
+      });
+      buffer = "";
+      return;
+    }
+    for (const [trigger, config] of Object.entries(TRIGGERS)) {
+      if (buffer.toLowerCase().endsWith(trigger)) {
+        if (!activeTheme._hidden) setPreEasterEggTheme(themeName);
+        handleThemeChange(config.theme);
+        setEasterEggToast(config.message);
+        buffer = "";
+        return;
+      }
+    }
+    if (buffer.length > 100) buffer = buffer.slice(-50);
+  };
+
+  window.addEventListener("keydown", handleKey);
+  return () => window.removeEventListener("keydown", handleKey);
+}, [preEasterEggTheme, themeName, activeTheme._hidden, hotDogOverlay]);
 
   const loadData = useCallback(async () => {
-    // Load each independently — one failure must not block the others
     try { setRequirements(await api.getRequirements()); }
     catch (e) {
       console.error("Failed to load requirements:", e.message);
@@ -630,9 +279,10 @@ export default function App() {
     catch (e) { console.error("Failed to load test cases:", e.message); }
     try { setKbEntries(await api.getKbEntries()); }
     catch (e) { console.error("Failed to load KB entries:", e.message); }
+    try { setTokenUsage(await api.getTokenUsage()); }
+    catch (e) { console.error("Failed to load token usage:", e.message); }
   }, []);
 
-  // Check session on mount
   useEffect(() => {
     api.me().then(data => { setCurrentUser(data.user); setAuthState("authenticated"); loadData(); }).catch(() => setAuthState("login"));
   }, [loadData]);
@@ -652,27 +302,249 @@ export default function App() {
 
   const handleLogout = async () => {
     try { await api.logout(); } catch (e) {}
-    setCurrentUser(null); setAuthState("login"); setPage("dashboard");
+    setCurrentUser(null); setAuthState("login");
+    window.location.hash = "dashboard";
+    setPage("dashboard");
+    setInitialFamilyId(null);
   };
 
-  if (authState === "loading") return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, color: COLORS.accent, fontFamily: mono }}>Loading...</div>;
-  if (authState === "login") return <LoginScreen onLogin={handleLogin} />;
-  if (authState === "changePassword" && pendingPw) return <PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} />;
+  if (authState === "loading") return <ThemeContext.Provider value={activeTheme}><div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: activeTheme.bg, color: activeTheme.accent, fontFamily: mono }}>Loading...</div></ThemeContext.Provider>;
+  if (authState === "login") return <ThemeContext.Provider value={activeTheme}><LoginScreen onLogin={handleLogin} /></ThemeContext.Provider>;
+  if (authState === "changePassword" && pendingPw) return <ThemeContext.Provider value={activeTheme}><PasswordChangeScreen userId={pendingPw.userId} userName={pendingPw.name} isOtp={pendingPw.isOtp} onComplete={handlePwComplete} /></ThemeContext.Provider>;
 
-  const globalStyle = `input:focus, textarea:focus, select:focus { border-color: ${COLORS.accent} !important; box-shadow: 0 0 0 2px ${COLORS.accentDim}; } button:hover:not(:disabled) { filter: brightness(1.15); }`;
+  const isCycling = !!activeTheme._cycleSpeed;
+  const isAero = activeTheme._aero || false;
+  const isXP = activeTheme._xpStyle || false;
+  const isLavaLamp = activeTheme._lavaLamp || false;
+  const isSynthwave = activeTheme._synthwave || false;
+  const isBlueprint = activeTheme._blueprint || false;
+  const isNewspaper = activeTheme._newspaper || false;
 
-  return <div style={{ display: "flex", minHeight: "100vh", background: COLORS.bg, fontFamily: font, color: COLORS.text }}>
-    <style>{globalStyle}</style>
-    <Sidebar active={page} onNavigate={setPage} currentUser={currentUser} onLogout={handleLogout} />
-    <main style={{ flex: 1, padding: "28px 36px", maxWidth: 1100, overflowY: "auto" }}>
-      {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
-      {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
-      {page === "testcases" && <TestCaseView requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
-      {page === "traceability" && <TraceabilityView requirements={requirements} testCases={testCases} />}
-      {page === "kb" && <KbView kbEntries={kbEntries} refresh={loadData} />}
-      {page === "users" && <UserManagementView currentUser={currentUser} refreshAll={loadData} />}
-      {page === "jama" && <JamaView testCases={testCases} requirements={requirements} currentUser={currentUser} />}
-      {page === "deferred" && <DeferredView />}
-    </main>
-  </div>;
+  const globalStyle = `
+    input:focus, textarea:focus, select:focus {
+      border-color: ${activeTheme.accent} !important;
+      box-shadow: 0 0 0 2px ${activeTheme.accentDim};
+    }
+    button:hover:not(:disabled) { filter: brightness(1.15); }
+
+    ${isCycling ? `
+    @keyframes chromawave {
+      0%   { filter: hue-rotate(0deg); }
+      100% { filter: hue-rotate(360deg); }
+    }
+    @keyframes hyperdriveBg {
+      0%   { background-color: #FF0044; }
+      16%  { background-color: #FF8800; }
+      33%  { background-color: #FFFF00; }
+      50%  { background-color: #00FF66; }
+      66%  { background-color: #0088FF; }
+      83%  { background-color: #AA00FF; }
+      100% { background-color: #FF0044; }
+    }
+    ` : ""}
+
+    ${isAero ? `
+    @keyframes aeroShimmer {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
+
+    ${isXP ? `
+    @keyframes xpGradient {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
+        ${isLavaLamp ? `
+    @keyframes lavaLamp {
+      0%   { background-position: 0% 50%; }
+      25%  { background-position: 50% 100%; }
+      50%  { background-position: 100% 50%; }
+      75%  { background-position: 50% 0%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
+
+    ${isSynthwave ? `
+    @keyframes synthwaveShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    ` : ""}
+
+    ${isBlueprint ? `
+    @keyframes blueprintPulse {
+      0%   { opacity: 0.08; }
+      50%  { opacity: 0.12; }
+      100% { opacity: 0.08; }
+    }
+    ` : ""}
+
+    ${isNewspaper ? `
+    @keyframes paperAge {
+      0%   { background-position: 0% 0%; }
+      100% { background-position: 100% 100%; }
+    }
+    ` : ""}
+  `;
+
+  return <ThemeContext.Provider value={activeTheme}>
+    <div style={{
+      display: "flex",
+      minHeight: "100vh",
+      background: activeTheme.bg,
+      fontFamily: font,
+      color: activeTheme.text,
+      ...(isCycling ? {
+        animation: `chromawave ${activeTheme._cycleSpeed} linear infinite${activeTheme._hyperdriveBg ? `, hyperdriveBg ${activeTheme._cycleSpeed} linear infinite` : ""}`,
+      } : {}),
+      ...(isAero ? {
+        background: "linear-gradient(135deg, #E8F4FD 0%, #D5F0E8 35%, #EAF0FA 70%, #F0F8FF 100%)",
+        backgroundSize: "200% 200%",
+        animation: "aeroShimmer 12s ease-in-out infinite",
+      } : {}),
+      ...(isXP ? {
+        background: "linear-gradient(180deg, #0055E5 0%, #2E8AE6 8%, #ECE9D8 8%, #ECE9D8 100%)",
+      } : {}),
+      ...(activeTheme._upsideDown ? {
+        transform: "rotate(180deg)",
+      } : {}),
+      ...(isLavaLamp ? {
+        background: "linear-gradient(-45deg, #1A0A0A, #2A0A1A, #1A1A0A, #0A1A1A, #2A0A0A)",
+        backgroundSize: "400% 400%",
+        animation: "lavaLamp 20s ease infinite",
+      } : {}),
+      ...(isSynthwave ? {
+        background: "linear-gradient(135deg, #0E0620, #1A0640, #2D0A5A, #1A0640, #0E0620)",
+        backgroundSize: "300% 300%",
+        animation: "synthwaveShift 10s ease infinite",
+      } : {}),
+      ...(isBlueprint ? {
+        backgroundImage: `
+          linear-gradient(rgba(42,96,144,0.12) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(42,96,144,0.12) 1px, transparent 1px),
+          linear-gradient(rgba(42,96,144,0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(42,96,144,0.06) 1px, transparent 1px)
+        `,
+        backgroundSize: "60px 60px, 60px 60px, 12px 12px, 12px 12px",
+        backgroundColor: "#0A2A4A",
+      } : {}),
+
+      // Newspaper: subtle paper texture via noise gradient
+      ...(isNewspaper ? {
+        backgroundImage: `
+          radial-gradient(ellipse at 20% 50%, rgba(200,180,140,0.08) 0%, transparent 50%),
+          radial-gradient(ellipse at 80% 20%, rgba(180,160,120,0.06) 0%, transparent 50%),
+          radial-gradient(ellipse at 50% 80%, rgba(190,170,130,0.05) 0%, transparent 50%)
+        `,
+        backgroundColor: "#F0E8D8",
+      } : {}),
+    }}>
+      <style>{globalStyle}</style>
+      {activeTheme._starfield && <StarfieldCanvas />}
+      {activeTheme._matrixRain && <MatrixRainCanvas />}
+      {activeTheme._aurora && <AuroraCanvas />}
+      {activeTheme._vaporwave && <VaporwaveCanvas />}
+      {activeTheme._fireflies && <FirefliesCanvas />}
+      {activeTheme._fishTank && <FishTankCanvas />}
+      {(activeTheme._hotDogs || hotDogOverlay) && <HotDogCanvas />}
+      {activeTheme._rainstorm && <RainstormCanvas />}
+      {activeTheme._starfieldTheme && <StarfieldParallaxCanvas />}
+      {activeTheme._campfire && <CampfireCanvas />}
+      {activeTheme._snowfall && <SnowfallCanvas />}
+      {activeTheme._deepSea && <DeepSeaCanvas />}
+      {activeTheme._crt && <CRTCanvas />}
+      {activeTheme._audioVisualizer && <AudioVisualizerCanvas />}
+      {activeTheme._cloudy && <CloudyCanvas />}
+      {activeTheme._thunderstorm && <ThunderstormCanvas />}
+      {activeTheme._fog && <FogCanvas />}
+      {activeTheme._sunshine && <SunshineCanvas />}
+      {activeTheme._mainlyClear && <MainlyClearCanvas />}
+      {activeTheme._whiteboard && <WhiteboardCanvas />}
+      {activeTheme._clippy && <ClippyCompanion />}
+      {!(activeTheme._starfield || activeTheme._matrixRain || activeTheme._aurora ||
+         activeTheme._vaporwave || activeTheme._fireflies || activeTheme._fishTank ||
+         activeTheme._hotDogs || hotDogOverlay || activeTheme._rainstorm ||
+         activeTheme._starfieldTheme || activeTheme._campfire || activeTheme._snowfall ||
+         activeTheme._deepSea || activeTheme._crt || activeTheme._audioVisualizer ||
+         activeTheme._cloudy || activeTheme._thunderstorm || activeTheme._fog ||
+         activeTheme._sunshine || activeTheme._mainlyClear) && <AmbientCanvas />}
+      {themeName === "weather" && <WeatherInfoCard weatherData={weatherData} />}
+      {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
+      {activeTheme._hidden && <EasterEggResetButton onReset={() => {
+        handleThemeChange(preEasterEggTheme || "midnight");
+        setPreEasterEggTheme(null);
+        setEasterEggToast("↩️ Theme restored");
+      }} />}
+      {/* Backdrop — closes sidebar when tapping outside on mobile */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 199, touchAction: "none" }}
+        />
+      )}
+
+      <Sidebar
+        active={page}
+        onNavigate={navigate}
+        collapsed={!isMobile && sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(v => !v)}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        currentTheme={themeName}
+        onThemeChange={handleThemeChange}
+        isMobile={isMobile}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {/* Mobile top bar */}
+        {isMobile && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, height: 52, zIndex: 100,
+            background: activeTheme.surface, borderBottom: `1px solid ${activeTheme.border}`,
+            display: "flex", alignItems: "center", padding: "0 16px", gap: 12,
+            fontFamily: font,
+          }}>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                color: activeTheme.textMuted, fontSize: 20, lineHeight: 1,
+                padding: "4px 8px", borderRadius: 6,
+              }}
+            >☰</button>
+            <span style={{ fontSize: 15, fontWeight: 700, color: activeTheme.textBright }}>TestForge AI</span>
+          </div>
+        )}
+
+        <main style={{
+          flex: 1,
+          padding: isMobile
+            ? (page === "traceability" ? "52px 0 0" : "68px 16px 24px")
+            : (page === "traceability" ? 0 : "28px 36px"),
+          overflowY: page === "traceability" ? "hidden" : "auto",
+          display: page === "traceability" ? "flex" : "block",
+          flexDirection: "column",
+        }}>
+        {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} currentUser={currentUser} />}
+        {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
+        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
+        {page === "traceability" && (isMobile
+          ? <MobileGate icon="◈" title="SysML Traceability" description="The traceability graph requires a larger screen to navigate. Open this link on a desktop or tablet to use it." />
+          : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
+        )}
+        {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
+        {page === "analytics" && <AnalyticsView currentUser={currentUser} />}
+        {page === "deferred" && <DeferredView />}
+        {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
+      </main>
+      </div>{/* end mobile column wrapper */}
+    </div>
+  </ThemeContext.Provider>;
 }
