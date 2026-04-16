@@ -1,11 +1,11 @@
 const express = require("express");
-const { requireAuth, requireRole } = require("../auth");
+const { requireMobileAuth } = require("../auth");
 const { getOrComputeInsight } = require("../insights");
 
 const router = express.Router();
 
-// GET /api/insights/coverage-gaps — all authenticated users
-router.get("/coverage-gaps", requireAuth, async (req, res) => {
+// GET /api/insights/coverage-gaps — all authenticated users (web + mobile)
+router.get("/coverage-gaps", requireMobileAuth, async (req, res) => {
   try {
     res.json(await getOrComputeInsight());
   } catch (err) {
@@ -15,7 +15,11 @@ router.get("/coverage-gaps", requireAuth, async (req, res) => {
 });
 
 // POST /api/insights/coverage-gaps/refresh — Admin / QA Manager only
-router.post("/coverage-gaps/refresh", requireRole("Admin", "QA Manager"), async (req, res) => {
+router.post("/coverage-gaps/refresh", requireMobileAuth, async (req, res) => {
+  const role = req.mobileUser?.role || req.session?.role;
+  if (role !== "Admin" && role !== "QA Manager") {
+    return res.status(403).json({ error: "Requires role: Admin or QA Manager" });
+  }
   try {
     res.json(await getOrComputeInsight({ force: true }));
   } catch (err) {
