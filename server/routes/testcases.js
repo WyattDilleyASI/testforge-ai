@@ -208,7 +208,7 @@ ${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT (entries matching this requirement 
     const images = JSON.parse(kb.images || "[]");
     const describedImages = images.filter(img => img.description);
     const undescribedCount = images.filter(img => !img.description).length;
-    let entry = `- (${kb.type}) ${kb.title}: ${kb.content}`;
+    let entry = `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`;
     if (describedImages.length > 0) {
       entry += `\n  UI References:\n${describedImages.map(img => `    [${img.name}]\n${img.description.split("\n").map(l => `    ${l}`).join("\n")}`).join("\n")}`;
     }
@@ -225,7 +225,7 @@ Generate test cases as a JSON array. Each test case must have:
 - setup: object with keys: preconditions (array of strings), environment (array of strings), equipment (array of strings), testData (array of strings)
 - steps: array of { step: string, expectedResult: string }
 - reqAttribute: which requirement attribute or aspect this TC validates
-${allKb.length > 0 ? "- kbReferences: array of KB entry titles that informed this test case" : ""}
+${allKb.length > 0 ? `- kbReferences: array of KB entry IDs (e.g. "KB-E001") from the KNOWLEDGE BASE CONTEXT above that directly informed this test case. Only reference IDs listed above: ${allKb.map(kb => kb.kb_id).join(", ")}` : ""}
 
 Respond ONLY with valid JSON array, no markdown, no preamble.`;
 
@@ -1399,7 +1399,7 @@ router.post("/enhance-xml-tc", requireAuth, async (req, res) => {
       kbContext = `\nKNOWLEDGE BASE CONTEXT:\n${entries.map(kb => {
         const images = JSON.parse(kb.images || "[]");
         const describedImages = images.filter(img => img.description);
-        let entry = `- (${kb.type}) ${kb.title}: ${kb.content}`;
+        let entry = `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`;
         if (describedImages.length > 0) {
           entry += `\n  UI References:\n${describedImages.map(img => `    [${img.name}]\n${img.description.split("\n").map(l => `    ${l}`).join("\n")}`).join("\n")}`;
         }
