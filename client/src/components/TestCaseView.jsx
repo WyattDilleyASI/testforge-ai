@@ -4,12 +4,12 @@ import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, JamaImportPanel, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useInlineEdit } from "../hooks";
 
-export const TestCaseView = ({ requirements, testCases, refresh }) => {
+export const TestCaseView = ({ requirements, testCases, refresh, initialReqId }) => {
   const COLORS = useTheme();
   const isMobile = useIsMobile();
 
   // Generator state
-  const [selectedReqId, setSelectedReqId] = useState("");
+  const [selectedReqId, setSelectedReqId] = useState(initialReqId || "");
   const [depth, setDepth] = useState("standard");
   const [focuses, setFocuses] = useState(new Set());
   const [generating, setGenerating] = useState(false);

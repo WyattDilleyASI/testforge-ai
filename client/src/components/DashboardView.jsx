@@ -36,6 +36,13 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
     } catch { /* silent */ } finally { setGapRefreshing(false); }
   };
 
+  const [expandedGaps, setExpandedGaps] = useState(new Set());
+  const toggleGap = (reqId) => setExpandedGaps(prev => {
+    const next = new Set(prev);
+    next.has(reqId) ? next.delete(reqId) : next.add(reqId);
+    return next;
+  });
+
   // ── Existing coverage metrics ───────────────────────────────────────────
   const covered = requirements.filter(r => testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
   const untested = requirements.filter(r => !testCases.some(tc => (tc.linked_req_ids || []).includes(r.req_id)));
@@ -181,17 +188,60 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
                 <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                   Top ready-to-test requirements
                 </div>
-                {gapInsight.gaps.map((gap, idx) => (
-                  <div key={gap.req_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: idx < gapInsight.gaps.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
-                    <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, minWidth: 18, textAlign: "right" }}>{idx + 1}.</span>
-                    <ReqIdTag id={gap.req_id} />
-                    <span style={{ fontSize: 13, color: COLORS.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gap.title}</span>
-                    <span style={{ fontSize: 10, fontFamily: mono, fontWeight: 700, color: gap.kb_match_count > 0 ? COLORS.purple : COLORS.textMuted, background: gap.kb_match_count > 0 ? COLORS.purpleDim : "transparent", padding: "2px 8px", borderRadius: 4, whiteSpace: "nowrap", border: `1px solid ${gap.kb_match_count > 0 ? "transparent" : COLORS.border}` }}>
-                      {gap.kb_match_count > 0 ? `${gap.kb_match_count} KB ${gap.kb_match_count === 1 ? "match" : "matches"}` : "no KB"}
-                    </span>
-                    <Badge color={gap.priority?.toLowerCase() === "high" || gap.priority?.toLowerCase() === "critical" ? "red" : gap.priority?.toLowerCase() === "medium" ? "amber" : "green"}>{gap.priority || "—"}</Badge>
-                  </div>
-                ))}
+                {gapInsight.gaps.map((gap, idx) => {
+                  const isExpanded = expandedGaps.has(gap.req_id);
+                  const fullReq = requirements.find(r => r.req_id === gap.req_id);
+                  const acItems = Array.isArray(fullReq?.acceptance_criteria) ? fullReq.acceptance_criteria : (() => { try { return JSON.parse(fullReq?.acceptance_criteria || "[]"); } catch { return []; } })();
+                  return (
+                    <div key={gap.req_id} style={{ borderBottom: idx < gapInsight.gaps.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+                      {/* Header row */}
+                      <div
+                        onClick={() => toggleGap(gap.req_id)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", cursor: "pointer" }}
+                      >
+                        <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, minWidth: 18, textAlign: "right" }}>{idx + 1}.</span>
+                        <span style={{ fontSize: 10, color: COLORS.textMuted, transition: "transform 0.15s", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+                        <ReqIdTag id={gap.req_id} />
+                        <span style={{ fontSize: 13, color: COLORS.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gap.title}</span>
+                        <span style={{ fontSize: 10, fontFamily: mono, fontWeight: 700, color: gap.kb_match_count > 0 ? COLORS.purple : COLORS.textMuted, background: gap.kb_match_count > 0 ? COLORS.purpleDim : "transparent", padding: "2px 8px", borderRadius: 4, whiteSpace: "nowrap", border: `1px solid ${gap.kb_match_count > 0 ? "transparent" : COLORS.border}` }}>
+                          {gap.kb_match_count > 0 ? `${gap.kb_match_count} KB ${gap.kb_match_count === 1 ? "match" : "matches"}` : "no KB"}
+                        </span>
+                        <Badge color={gap.priority?.toLowerCase() === "high" || gap.priority?.toLowerCase() === "critical" ? "red" : gap.priority?.toLowerCase() === "medium" ? "amber" : "green"}>{gap.priority || "—"}</Badge>
+                      </div>
+                      {/* Expanded details */}
+                      {isExpanded && (
+                        <div style={{ paddingLeft: 38, paddingBottom: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                          {fullReq?.description && (
+                            <div>
+                              <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Description</div>
+                              <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{fullReq.description}</div>
+                            </div>
+                          )}
+                          {acItems.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Acceptance Criteria</div>
+                              {acItems.map((ac, i) => (
+                                <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>
+                                  <span style={{ color: COLORS.accent, flexShrink: 0 }}>·</span>
+                                  <span>{ac}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {fullReq?.module && (
+                            <div style={{ fontSize: 11, fontFamily: mono, color: COLORS.textMuted }}>Module: <span style={{ color: COLORS.text }}>{fullReq.module}</span></div>
+                          )}
+                          <button
+                            onClick={e => { e.stopPropagation(); window.location.hash = `testcases/req/${encodeURIComponent(gap.req_id)}`; }}
+                            style={{ alignSelf: "flex-start", background: COLORS.accent, color: COLORS.bg, border: "none", borderRadius: 5, padding: "5px 14px", fontSize: 11, fontFamily: mono, fontWeight: 700, cursor: "pointer" }}
+                          >
+                            Generate Tests →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                 <div style={{ marginTop: 12, fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
                   {gapInsight.total_untested} untested of {gapInsight.total_requirements} total requirements
                   {gapInsight.cached_at && <span style={{ marginLeft: 12, opacity: 0.6 }}>· cached {new Date(gapInsight.cached_at).toLocaleDateString()}</span>}

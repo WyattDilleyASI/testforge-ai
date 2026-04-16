@@ -62,10 +62,11 @@ export default function App() {
   const [pendingPw, setPendingPw] = useState(null);
   const [themeName, setThemeName] = useState(() => localStorage.getItem("tf-theme") || "midnight");
 
-  // Parse page and optional family ID from the URL hash.
+  // Parse page and optional params from the URL hash.
   // Supported formats:
   //   #traceability/family/REQ-ID  → traceability page, auto-open family view for REQ-ID
   //   #traceability                → traceability page, full view
+  //   #testcases/req/REQ-ID        → test generation page, requirement pre-selected
   //   #dashboard (etc.)            → named page, full view
   const parseHash = () => {
     const hash = window.location.hash.replace(/^#/, "");
@@ -74,26 +75,32 @@ export default function App() {
     const familyId = parts[0] === "traceability" && parts[1] === "family" && parts[2]
       ? decodeURIComponent(parts[2])
       : null;
-    return { pg, familyId };
+    const initialReqId = parts[0] === "testcases" && parts[1] === "req" && parts[2]
+      ? decodeURIComponent(parts[2])
+      : null;
+    return { pg, familyId, initialReqId };
   };
 
   const [page, setPage] = useState(() => parseHash().pg);
   const [initialFamilyId, setInitialFamilyId] = useState(() => parseHash().familyId);
+  const [initialReqId, setInitialReqId] = useState(() => parseHash().initialReqId);
 
   // Wrap navigation so that clicking the sidebar also updates the URL hash.
   const navigate = useCallback((newPage) => {
     window.location.hash = newPage;
     setPage(newPage);
     setInitialFamilyId(null);
+    setInitialReqId(null);
     setSidebarOpen(false);
   }, []);
 
   // Keep React in sync if the user presses the browser Back/Forward buttons.
   useEffect(() => {
     const onHashChange = () => {
-      const { pg, familyId } = parseHash();
+      const { pg, familyId, initialReqId: reqId } = parseHash();
       setPage(pg);
       setInitialFamilyId(familyId);
+      setInitialReqId(reqId);
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
@@ -534,7 +541,7 @@ useEffect(() => {
         }}>
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} currentUser={currentUser} />}
         {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
-        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} />}
+        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} initialReqId={initialReqId} />}
         {page === "traceability" && (isMobile
           ? <MobileGate icon="◈" title="SysML Traceability" description="The traceability graph requires a larger screen to navigate. Open this link on a desktop or tablet to use it." />
           : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
