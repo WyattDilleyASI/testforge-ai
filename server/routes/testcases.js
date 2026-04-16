@@ -245,14 +245,15 @@ Respond ONLY with valid JSON array, no markdown, no preamble.`;
 }
 
 // POST /api/testcases/generate — call Claude API server-side
-router.post("/generate", requireAuth, async (req, res) => {
-  const { reqId, depth, focuses, kbEntryIds } = req.body;
+router.post("/generate", async (req, res) => {
+  const { reqId, depth, focuses, kbEntryIds, generatedBy } = req.body;
+  const caller = generatedBy || "Mobile App";
   if (!reqId) return res.status(400).json({ error: "reqId is required" });
 
   // Budget enforcement — block QA Engineers when exceeded, warn Admins/Managers
-  const budgetCheck = checkBudget(req.session);
+  const budgetCheck = checkBudget({});
   if (budgetCheck.hasBudget && !budgetCheck.canProceed) {
-    logAudit(req.session.name, "BUDGET_EXCEEDED", `Generation blocked for ${reqId} — ${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used`);
+    logAudit(caller, "BUDGET_EXCEEDED", `Generation blocked for ${reqId} — ${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used`);
     return res.status(403).json({
       error: `Token budget exceeded (${budgetCheck.used.toLocaleString()} / ${budgetCheck.budget.toLocaleString()} tokens used). Contact an Admin or QA Manager to continue generating.`,
       budget_exceeded: true,
@@ -305,7 +306,7 @@ router.post("/generate", requireAuth, async (req, res) => {
     }
 
     if (data.usage) {
-      logTokenUsage(req.session.name, reqId, data.usage.input_tokens || 0, data.usage.output_tokens || 0);
+      logTokenUsage(caller, reqId, data.usage.input_tokens || 0, data.usage.output_tokens || 0);
     }
 
     const text = data.content?.map(c => c.text || "").join("") || "";
@@ -337,7 +338,7 @@ router.post("/generate", requireAuth, async (req, res) => {
         depth: depth || "standard",
         req_attribute: tc.reqAttribute || "",
         kb_references: JSON.stringify(tc.kbReferences || []),
-        generated_by: req.session.name,
+        generated_by: caller,
       };
     });
 
@@ -350,7 +351,7 @@ router.post("/generate", requireAuth, async (req, res) => {
       for (const kbId of referencedKbIds) updateKb.run(kbId);
     }
 
-    logAudit(req.session.name, "TC_GENERATED", `Generated ${newTcs.length} draft TCs for ${reqId} (depth: ${depth || "standard"})`);
+    logAudit(caller, "TC_GENERATED", `Generated ${newTcs.length} draft TCs for ${reqId} (depth: ${depth || "standard"})`);
 
     // ── AL: Save generation snapshots + log session ──
     const snapshotStmt = db.prepare(
@@ -377,7 +378,7 @@ router.post("/generate", requireAuth, async (req, res) => {
       tcIds: newTcs,
       inputTokens: data.usage?.input_tokens || 0,
       outputTokens: data.usage?.output_tokens || 0,
-      generatedBy: req.session.name,
+      generatedBy: caller,
     });
 
     // Return the newly created TCs with budget status
