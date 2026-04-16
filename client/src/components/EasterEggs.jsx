@@ -830,7 +830,7 @@ export const HotDogCanvas = () => {
     const pileCtx = pile.getContext("2d");
 
     const falling = [];
-    const COUNT = 50;
+    const COUNT = 400;
     const COLS = 55;
     let floorLevel = [];
 
@@ -893,11 +893,11 @@ export const HotDogCanvas = () => {
           ? 110 + Math.random() * 40     // giant: 110–150px
           : roll < 0.06
             ? 62 + Math.random() * 22    // large: 62–84px
-            : 26 + Math.random() * 24;   // normal: 26–50px
+            : 32 + Math.random() * 28;   // normal: 32–60px
       return {
         x: Math.random() * canvas.width,
-        y: -60 - Math.random() * 300,
-        speed: 2 + Math.random() * 2.5,
+        y: -60 - Math.random() * 200,
+        speed: 3 + Math.random() * 4,
         size,
         rot: (Math.random() - 0.5) * Math.PI * 2,
         rotSpeed: (Math.random() - 0.5) * 0.07,
@@ -909,7 +909,7 @@ export const HotDogCanvas = () => {
 
     for (let i = 0; i < COUNT; i++) {
       const h = spawnHotdog();
-      h.y = Math.random() * canvas.height * 0.8;
+      h.y = Math.random() * canvas.height;
       falling.push(h);
     }
 
