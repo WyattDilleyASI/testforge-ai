@@ -122,7 +122,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // doesn't match "sections" or "subsections" as a :kbId parameter.
 
 // GET /api/kb/sections — full hierarchy: sections → subsections → entry counts
-router.get("/kb/sections", requireAuth, (req, res) => {
+router.get("/kb/sections", requireMobileAuth, (req, res) => {
   const db = getKbDb();
   const sections = db.prepare("SELECT * FROM kb_sections ORDER BY sort_order, rowid").all();
   const subsections = db.prepare("SELECT * FROM kb_subsections ORDER BY sort_order, rowid").all();
@@ -410,7 +410,7 @@ router.post("/kb/import", requireAuth, importUpload.single("file"), (req, res) =
 });
 
 // GET /api/kb
-router.get("/kb", requireAuth, (req, res) => {
+router.get("/kb", requireMobileAuth, (req, res) => {
   const rows = getKbDb().prepare("SELECT * FROM kb_entries ORDER BY rowid").all();
   res.json(rows.map(kb => ({
     ...kb,
