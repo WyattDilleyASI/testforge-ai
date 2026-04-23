@@ -10,6 +10,8 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
 
   // Generator state
   const [selectedReqId, setSelectedReqId] = useState(initialReqId || "");
+  const [reqSearch, setReqSearch] = useState("");
+  const [reqDropdownOpen, setReqDropdownOpen] = useState(false);
   const [depth, setDepth] = useState("standard");
   const [focuses, setFocuses] = useState(new Set());
   const [generating, setGenerating] = useState(false);
@@ -274,7 +276,72 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
           {/* Controls */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ marginBottom: 12 }}>
-              <Select label="Requirement" value={selectedReqId} onChange={setSelectedReqId} options={[{ value: "", label: "— Select —" }, ...requirements.map(r => ({ value: r.req_id, label: `${r.req_id} — ${r.title}` }))]} />
+              <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Requirement</div>
+              <div style={{ position: "relative" }}>
+                <input
+                  value={reqDropdownOpen ? reqSearch : (requirements.find(r => r.req_id === selectedReqId) ? `${selectedReqId} — ${requirements.find(r => r.req_id === selectedReqId).title}` : "")}
+                  onChange={e => setReqSearch(e.target.value)}
+                  onFocus={() => { setReqDropdownOpen(true); setReqSearch(""); }}
+                  onBlur={() => setTimeout(() => { setReqDropdownOpen(false); setReqSearch(""); }, 150)}
+                  placeholder="Search requirements..."
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    background: COLORS.surface, border: `1px solid ${COLORS.border}`,
+                    borderRadius: 4, color: COLORS.textBright, fontSize: 12,
+                    padding: "6px 28px 6px 10px", fontFamily: mono, outline: "none",
+                  }}
+                />
+                {selectedReqId && !reqDropdownOpen && (
+                  <span
+                    onMouseDown={e => { e.preventDefault(); setSelectedReqId(""); setReqSearch(""); }}
+                    style={{
+                      position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                      cursor: "pointer", color: COLORS.textMuted, fontSize: 16, lineHeight: 1,
+                      userSelect: "none",
+                    }}
+                    title="Clear selection"
+                  >×</span>
+                )}
+                {reqDropdownOpen && (
+                  <div style={{
+                    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+                    background: COLORS.surface, border: `1px solid ${COLORS.border}`,
+                    borderRadius: 4, marginTop: 2, maxHeight: 200, overflowY: "auto",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+                  }}>
+                    {(() => {
+                      const q = reqSearch.toLowerCase().trim();
+                      const filtered = requirements.filter(r =>
+                        !q || r.req_id.toLowerCase().includes(q) || (r.title || "").toLowerCase().includes(q)
+                      );
+                      if (filtered.length === 0) return (
+                        <div style={{ padding: "8px 10px", fontSize: 12, color: COLORS.textMuted, fontStyle: "italic" }}>
+                          No matches for "{reqSearch}"
+                        </div>
+                      );
+                      return filtered.map(req => {
+                        const isSelected = req.req_id === selectedReqId;
+                        return (
+                          <div
+                            key={req.req_id}
+                            onMouseDown={() => { setSelectedReqId(req.req_id); setReqDropdownOpen(false); setReqSearch(""); }}
+                            style={{
+                              padding: "7px 10px", cursor: "pointer", fontSize: 12,
+                              background: isSelected ? `${COLORS.accent}18` : "transparent",
+                              borderLeft: `3px solid ${isSelected ? COLORS.accent : "transparent"}`,
+                            }}
+                            onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = `${COLORS.accent}0a`; }}
+                            onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
+                          >
+                            <span style={{ fontFamily: mono, fontWeight: 600, color: isSelected ? COLORS.accent : COLORS.textBright }}>{req.req_id}</span>
+                            {req.title && <span style={{ color: COLORS.textMuted }}> — {req.title}</span>}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{ marginBottom: 12 }}>
               <Select label="Depth" value={depth} onChange={setDepth} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
