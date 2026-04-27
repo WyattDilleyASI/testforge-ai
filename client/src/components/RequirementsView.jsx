@@ -18,6 +18,19 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [showJamaHelp, setShowJamaHelp] = useState(false);
+  const [showPrefixConfig, setShowPrefixConfig] = useState(false);
+  const [customPrefixes, setCustomPrefixes] = useState(() => {
+    try {
+      const s = localStorage.getItem("tf_custom_prefixes");
+      const parsed = s ? JSON.parse(s) : {};
+      return {
+        prd:    parsed.prd?.length    ? parsed.prd    : [""],
+        sys:    parsed.sys?.length    ? parsed.sys    : [""],
+        subsys: parsed.subsys?.length ? parsed.subsys : [""],
+        cmp:    parsed.cmp?.length    ? parsed.cmp    : [""],
+      };
+    } catch { return { prd: [""], sys: [""], subsys: [""], cmp: [""] }; }
+  });
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { selectedIds: selectedReqIds, toggle: toggleReqSelect, toggleAll: selectAllReqs, isSelected, allSelected, selectMode: reqSelectMode, enterSelectMode, exitSelectMode } = useSelection(requirements, r => r.req_id);
@@ -43,6 +56,18 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
       refresh();
     });
     setImporting(false);
+  };
+
+  const savePrefixesAndContinue = () => {
+    const cleaned = {
+      prd:    customPrefixes.prd.filter(p => p.trim()),
+      sys:    customPrefixes.sys.filter(p => p.trim()),
+      subsys: customPrefixes.subsys.filter(p => p.trim()),
+      cmp:    customPrefixes.cmp.filter(p => p.trim()),
+    };
+    localStorage.setItem("tf_custom_prefixes", JSON.stringify(cleaned));
+    setShowPrefixConfig(false);
+    setShowJamaHelp(true);
   };
 
   const startAdd = () => {
@@ -128,7 +153,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
             <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
             <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
           </div>}
-          <Button variant="secondary" small onClick={() => setShowJamaHelp(v => !v)} disabled={importing}>
+          <Button variant="secondary" small onClick={() => { setShowJamaHelp(false); setShowPrefixConfig(v => !v); }} disabled={importing}>
             {importing ? "Importing..." : "Import JAMA Requirements"}
           </Button>
           {canDelete && requirements.length > 0 && <Button variant="secondary" small onClick={() => { enterSelectMode(); edit.cancelEdit(); }}>Select</Button>}
@@ -142,6 +167,60 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
       </div>
     </div>
     
+    {/* Prefix Configuration Panel — shown before the Jama file picker */}
+    {showPrefixConfig && (
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>Configure Requirement ID Prefixes</div>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
+          The default Jama type prefixes (<span style={{ fontFamily: mono }}>PRD_Rqmts</span>, <span style={{ fontFamily: mono }}>SYSRQ</span>, <span style={{ fontFamily: mono }}>SubSys_Rqmt</span>, <span style={{ fontFamily: mono }}>CMPRQ</span>) are always recognised.
+          Add any <strong style={{ color: COLORS.text }}>additional</strong> type prefixes your project uses below — they will be saved and applied to the SysML traceability diagram automatically.
+        </div>
+        {[
+          { key: "prd",    label: "Additional Product Requirement ID Prefixes",    defaultVal: "PRD_Rqmts" },
+          { key: "sys",    label: "Additional System Requirement ID Prefixes",     defaultVal: "SYSRQ" },
+          { key: "subsys", label: "Additional Subsystem Requirement ID Prefixes",  defaultVal: "SubSys_Rqmt" },
+          { key: "cmp",    label: "Additional Component Requirement ID Prefixes",  defaultVal: "CMPRQ" },
+        ].map(({ key, label, defaultVal }) => (
+          <div key={key} style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+              {label}
+              <span style={{ fontFamily: mono, fontWeight: 400, color: COLORS.textMuted, opacity: 0.55, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>default: {defaultVal}</span>
+            </div>
+            {customPrefixes[key].map((val, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
+                <input
+                  value={val}
+                  onChange={e => {
+                    const updated = [...customPrefixes[key]];
+                    updated[i] = e.target.value;
+                    setCustomPrefixes(p => ({ ...p, [key]: updated }));
+                  }}
+                  placeholder={`e.g. ${defaultVal}_V2`}
+                  style={{ flex: 1, fontFamily: mono, fontSize: 12, color: COLORS.textBright, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "7px 10px", outline: "none" }}
+                />
+                <button
+                  onClick={() => {
+                    const updated = customPrefixes[key].filter((_, idx) => idx !== i);
+                    setCustomPrefixes(p => ({ ...p, [key]: updated.length ? updated : [""] }));
+                  }}
+                  style={{ background: "none", border: `1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor: "pointer", borderRadius: 4, padding: "4px 10px", fontSize: 14, lineHeight: 1 }}
+                  title="Remove"
+                >×</button>
+              </div>
+            ))}
+            <button
+              onClick={() => setCustomPrefixes(p => ({ ...p, [key]: [...p[key], ""] }))}
+              style={{ fontSize: 11, color: COLORS.accent, background: "none", border: "none", cursor: "pointer", padding: "2px 0", fontFamily: mono, opacity: 0.85 }}
+            >+ Add prefix</button>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8, borderTop: `1px solid ${COLORS.border}`, paddingTop: 12 }}>
+          <Button variant="ghost" small onClick={() => setShowPrefixConfig(false)}>Cancel</Button>
+          <Button small onClick={savePrefixesAndContinue}>Continue to File Import →</Button>
+        </div>
+      </Card>
+    )}
+
     {/* Jama Import Help — shown when "Import JAMA Requirements" is clicked */}
     {showJamaHelp && (
       <JamaImportPanel

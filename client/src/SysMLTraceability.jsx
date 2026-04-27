@@ -10,22 +10,51 @@ import { api } from "./api";
 
 // ─── DATA TRANSFORMER ──────────────────────────────────────────
 
-const JAMA_PREFIX_DEPTH = {
-  "LFWM2-PRD_Rqmts-": 0, "LFWM2-SYSRQ-": 1,
-  "LFWM2-SubSys_Rqmt-": 2, "LFWM2-CMPRQ-": 3,
-};
+// Base JAMA requirement-type keyword → depth-level mapping.
+// The project-ID prefix (e.g. "LFWM2-") is intentionally omitted so TestForge
+// works across multiple projects without reconfiguration.
+const JAMA_BASE_TYPES = { "PRD_Rqmts": 0, "SYSRQ": 1, "SubSys_Rqmt": 2, "CMPRQ": 3 };
+
+// Merges base types with any user-configured extras saved by the import prefix
+// configuration panel (stored in localStorage as "tf_custom_prefixes").
+function getJamaTypeDepth() {
+  try {
+    const stored = localStorage.getItem("tf_custom_prefixes");
+    if (!stored) return JAMA_BASE_TYPES;
+    const custom = JSON.parse(stored); // { prd:[], sys:[], subsys:[], cmp:[] }
+    const merged = { ...JAMA_BASE_TYPES };
+    (custom.prd    || []).forEach(t => { if (t) merged[t] = 0; });
+    (custom.sys    || []).forEach(t => { if (t) merged[t] = 1; });
+    (custom.subsys || []).forEach(t => { if (t) merged[t] = 2; });
+    (custom.cmp    || []).forEach(t => { if (t) merged[t] = 3; });
+    return merged;
+  } catch { return JAMA_BASE_TYPES; }
+}
+
+// Returns the matched type keyword for a JAMA-style ID, or null if not recognised.
+// Matches "{optional-project-prefix-}TYPE-{digits}" regardless of what precedes the type.
+function getJamaType(id) {
+  if (!id) return null;
+  const typeDepth = getJamaTypeDepth();
+  for (const type of Object.keys(typeDepth)) {
+    const escaped = type.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`(^|-)${escaped}-\\d+$`).test(id)) return type;
+  }
+  return null;
+}
 
 function detectIdFormat(id) {
   if (!id) return "unknown";
-  for (const prefix of Object.keys(JAMA_PREFIX_DEPTH)) { if (id.startsWith(prefix)) return "jama"; }
+  if (getJamaType(id) !== null) return "jama";
   if (/^[A-Z]{2,6}-\d{2,3}(-\d{2,3})*$/.test(id)) return "fwm";
   if (/^[A-Za-z]+-\d+/.test(id)) return "fwm";
   return "unknown";
 }
 
 function getDepth(id) {
+  const type = getJamaType(id);
+  if (type !== null) return getJamaTypeDepth()[type] ?? 0;
   const format = detectIdFormat(id);
-  if (format === "jama") { for (const [prefix, depth] of Object.entries(JAMA_PREFIX_DEPTH)) { if (id.startsWith(prefix)) return depth; } return 0; }
   if (format === "fwm") { return Math.min(Math.max((id.match(/\d+/g) || []).length - 1, 0), 3); }
   return 0;
 }
