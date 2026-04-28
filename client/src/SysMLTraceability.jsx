@@ -432,6 +432,49 @@ function renderTcBox(parent, tc, pos, callbacks, theme) {
 
 
 // ═══════════════════════════════════════════════════════════════
+// LOD (LEVEL-OF-DETAIL) BOX RENDERING — used when zoom scale is below LOD_THRESHOLD
+// ═══════════════════════════════════════════════════════════════
+
+const LOD_THRESHOLD = 0.2; // below this zoom scale, swap full boxes for simplified placeholders
+
+function renderLodBox(parent, req, pos, depth, callbacks, theme) {
+  const { x, y } = pos;
+  const isTc = req._isTc === true;
+  const W = isTc ? TC_W : NODE_W;
+  const H = 26;
+  const lc = isTc ? null : getLevelCfg(depth);
+  const sc = isTc ? (TC_STATUS_COLORS[req._meta?.status] || TC_STATUS_COLORS.Draft) : null;
+  const accent = isTc ? sc.accent : lc.accent;
+  const labelColor = isTc ? sc.accent : lc.stereo;
+
+  const g = parent.append("g")
+    .attr("class", `req-box lod-box${isTc ? " tc-box" : ""}`)
+    .attr("id", `node-${req.id.replace(/[^a-zA-Z0-9]/g, "-")}`)
+    .attr("data-req-id", req.id)
+    .attr("transform", `translate(${x - W / 2},${y - H / 2})`);
+
+  g.append("rect").attr("class", "box-bg")
+    .attr("width", W).attr("height", H).attr("rx", 3)
+    .attr("fill", theme.surfaceRaised)
+    .attr("stroke", accent).attr("stroke-width", 1.5)
+    .attr("stroke-dasharray", isTc ? "5,2" : null);
+
+  const dispId = req.id.length > 24 ? req.id.slice(0, 22) + "…" : req.id;
+  g.append("text")
+    .attr("x", W / 2).attr("y", H / 2 + 4)
+    .attr("text-anchor", "middle")
+    .attr("fill", labelColor)
+    .attr("font-size", "9").attr("font-weight", "700")
+    .text(dispId);
+
+  g.on("click", (event) => { event.stopPropagation(); callbacks.onSelect(req.id); });
+  g.on("mouseenter", (event) => isTc ? callbacks.onTcTooltipShow(event, req) : callbacks.onTooltipShow(event, req, null, depth, false));
+  g.on("mousemove", (event) => callbacks.onTooltipMove(event));
+  g.on("mouseleave", () => callbacks.onTooltipHide());
+}
+
+
+// ═══════════════════════════════════════════════════════════════
 // EDGE RENDERING
 // ═══════════════════════════════════════════════════════════════
 
@@ -492,13 +535,25 @@ function renderEdges(edgesGroup, rels, positions, onCollapseToggle, theme, isTcS
 // SELECTION + COLLAPSE
 // ═══════════════════════════════════════════════════════════════
 
-function applySelection(svgSel, selectedId, relationships) {
+function applySelection(svgSel, selectedId, relationships, isTcSet = new Set()) {
   if (!selectedId) { svgSel.selectAll(".req-box").classed("selected", false).classed("dimmed", false); svgSel.selectAll(".rel-line").attr("opacity", 1); return; }
   const connected = new Set([selectedId]);
-  const upQ = [selectedId];
-  while (upQ.length) { const cur = upQ.shift(); relationships.forEach((r) => { if (r.target === cur && !connected.has(r.source)) { connected.add(r.source); upQ.push(r.source); } }); }
-  const downQ = [selectedId];
-  while (downQ.length) { const cur = downQ.shift(); relationships.forEach((r) => { if (r.source === cur && !connected.has(r.target)) { connected.add(r.target); downQ.push(r.target); } }); }
+
+  if (isTcSet.has(selectedId)) {
+    // TC clicked: highlight only the requirements it directly verifies (verify edges from this TC)
+    relationships.forEach((r) => { if (r.type === "verify" && r.source === selectedId) connected.add(r.target); });
+  } else {
+    // Requirement clicked:
+    // 1. BFS upward through containment edges — all ancestor requirements to the root
+    const upQ = [selectedId];
+    while (upQ.length) { const cur = upQ.shift(); relationships.forEach((r) => { if (r.type === "containment" && r.target === cur && !connected.has(r.source)) { connected.add(r.source); upQ.push(r.source); } }); }
+    // 2. BFS downward through containment edges — all descendant requirements to the leaves
+    const downQ = [selectedId];
+    while (downQ.length) { const cur = downQ.shift(); relationships.forEach((r) => { if (r.type === "containment" && r.source === cur && !connected.has(r.target)) { connected.add(r.target); downQ.push(r.target); } }); }
+    // 3. Only TCs with a verify edge pointing directly at the clicked requirement (not ancestors/descendants)
+    relationships.forEach((r) => { if (r.type === "verify" && r.target === selectedId) connected.add(r.source); });
+  }
+
   svgSel.selectAll(".req-box").each(function () {
     const rid = d3.select(this).attr("data-req-id");
     d3.select(this).classed("selected", rid === selectedId).classed("dimmed", rid && !connected.has(rid));
@@ -558,6 +613,17 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   const canvasRef = useRef(null);
   const zoomRef = useRef(null);
   const positionsRef = useRef({});
+  const transformRef = useRef(d3.zoomIdentity);
+  const nodesGroupRef = useRef(null);
+  const renderedNodesRef = useRef(new Set());
+  const currentLodRef = useRef(null);   // null | boolean — tracks current LOD state
+  const viewStateRef = useRef(null);    // snapshot of render data for syncVisibleNodes
+  const syncRef = useRef(null);         // ref to the latest syncVisibleNodes closure
+  const cullTimerRef = useRef(null);    // debounce timer for zoom-triggered culling
+  // Always-current value refs so syncVisibleNodes can read latest React state
+  const selectedIdRef = useRef(null);
+  const highlightedLevelRef = useRef(null);
+  const activeRelsRef = useRef([]);
 
   const [selectedId, setSelectedId] = useState(null);
   const [collapsedEdges, setCollapsedEdges] = useState(new Set());
@@ -573,6 +639,8 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   const [toast, setToast] = useState(null); // { message, isError }
   const [kbEntries, setKbEntries] = useState([]);       // KB entries matched to right-clicked req
   const [kbSelected, setKbSelected] = useState(new Set()); // checked KB entry IDs
+  const [highlightedLevel, setHighlightedLevel] = useState(null); // depth index highlighted via legend right-click
+  const [legendExpanded, setLegendExpanded] = useState(false);   // legend full-view toggle
 
   // Transform — includeTestCases controlled by toggle
   const diagramData = useMemo(
@@ -601,7 +669,13 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   // Init zoom
   useEffect(() => {
     if (!svgRef.current) return;
-    const zoom = d3.zoom().scaleExtent([0.05, 4]).on("zoom", (event) => { d3.select(canvasRef.current).attr("transform", event.transform); });
+    const zoom = d3.zoom().scaleExtent([0.05, 4]).on("zoom", (event) => {
+      d3.select(canvasRef.current).attr("transform", event.transform);
+      transformRef.current = event.transform;
+      // Debounce culling so it runs after the user pauses panning/zooming
+      if (cullTimerRef.current) clearTimeout(cullTimerRef.current);
+      cullTimerRef.current = setTimeout(() => syncRef.current?.(), 120);
+    });
     d3.select(svgRef.current).call(zoom);
     zoomRef.current = zoom;
   }, []);
@@ -609,16 +683,109 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   // Build isTcSet for edge rendering
   const isTcSet = useMemo(() => new Set(activeReqs.filter(r => r._isTc).map(r => r.id)), [activeReqs]);
 
+  // Keep always-current refs in sync with React state so syncVisibleNodes can read them
+  selectedIdRef.current = selectedId;
+  highlightedLevelRef.current = highlightedLevel;
+  activeRelsRef.current = activeRels;
+
+  // syncVisibleNodes — reads entirely from refs so it is safe to call from any effect or timer.
+  // Adds nodes that entered the viewport, removes nodes that left, and switches between full-detail
+  // and LOD rendering when the zoom scale crosses LOD_THRESHOLD.
+  const syncVisibleNodes = () => {
+    const svgEl = svgRef.current;
+    const nodesGroup = nodesGroupRef.current;
+    const positions = positionsRef.current;
+    const vs = viewStateRef.current;
+    if (!svgEl || !nodesGroup || !positions || !vs) return;
+
+    const transform = transformRef.current;
+    const { width: svgW, height: svgH } = svgEl.getBoundingClientRect();
+    if (!svgW || !svgH) return;
+
+    // Compute viewport bounds in canvas-space coordinates (with a generous buffer so nodes
+    // pop in slightly before they reach the edge of the screen)
+    const BUFFER = 400;
+    const left   = -transform.x / transform.k - BUFFER;
+    const right  = (svgW - transform.x) / transform.k + BUFFER;
+    const top    = -transform.y / transform.k - BUFFER;
+    const bottom = (svgH - transform.y) / transform.k + BUFFER;
+    const isLod  = transform.k < LOD_THRESHOLD;
+
+    // When LOD level flips, evict all currently rendered nodes so they get re-rendered
+    // at the correct detail level
+    if (currentLodRef.current !== null && currentLodRef.current !== isLod) {
+      for (const id of [...renderedNodesRef.current]) {
+        nodesGroup.select(`#node-${id.replace(/[^a-zA-Z0-9]/g, "-")}`).remove();
+      }
+      renderedNodesRef.current = new Set();
+    }
+    currentLodRef.current = isLod;
+
+    // Build the set of node IDs that should be in the DOM right now
+    const shouldRender = new Set();
+    for (const req of vs.activeReqs) {
+      const pos = positions[req.id];
+      if (pos && pos.x >= left && pos.x <= right && pos.y >= top && pos.y <= bottom) {
+        shouldRender.add(req.id);
+      }
+    }
+
+    // Remove nodes that have scrolled out of the viewport
+    for (const id of [...renderedNodesRef.current]) {
+      if (!shouldRender.has(id)) {
+        nodesGroup.select(`#node-${id.replace(/[^a-zA-Z0-9]/g, "-")}`).remove();
+        renderedNodesRef.current.delete(id);
+      }
+    }
+
+    // Add nodes that have scrolled into the viewport
+    for (const req of vs.activeReqs) {
+      if (!shouldRender.has(req.id) || renderedNodesRef.current.has(req.id)) continue;
+      const pos = positions[req.id];
+      if (!pos) continue;
+      if (isLod) {
+        renderLodBox(nodesGroup, req, pos, vs.depths[req.id] || 0, vs.callbacks, vs.themeForD3);
+      } else if (req._isTc) {
+        renderTcBox(nodesGroup, req, pos, vs.callbacks, vs.themeForD3);
+      } else {
+        renderBox(nodesGroup, req, pos, vs.depths[req.id] || 0, vs.orphans.has(req.id), vs.callbacks, vs.themeForD3);
+      }
+      renderedNodesRef.current.add(req.id);
+    }
+
+    // Re-apply active selection/highlight state so newly added nodes are styled correctly
+    const svgSel = d3.select(svgEl);
+    const curSelected = selectedIdRef.current;
+    const curLevel = highlightedLevelRef.current;
+    if (curSelected) {
+      applySelection(svgSel, curSelected, activeRelsRef.current, vs.isTcSet);
+    } else if (curLevel !== null) {
+      const highlighted = new Set(
+        vs.activeReqs.filter(r => !r._isTc && (vs.depths[r.id] || 0) === curLevel).map(r => r.id)
+      );
+      svgSel.selectAll(".req-box").each(function () {
+        const rid = d3.select(this).attr("data-req-id");
+        d3.select(this).classed("selected", false).classed("dimmed", rid && !highlighted.has(rid));
+      });
+    }
+  };
+  // Keep syncRef current on every render so the zoom handler always calls the latest closure
+  syncRef.current = syncVisibleNodes;
+
   // Render diagram
   useEffect(() => {
     if (!activeReqs.length || !svgRef.current || !canvasRef.current) return;
     const canvas = d3.select(canvasRef.current);
     canvas.selectAll("*").remove();
+    // Reset culling state for this new layout
+    renderedNodesRef.current = new Set();
+    currentLodRef.current = null;
+
     const positions = computeLayout(activeReqs, activeRels);
     positionsRef.current = positions;
 
     const callbacks = {
-      onSelect: (id) => setSelectedId((prev) => (prev === id ? null : id)),
+      onSelect: (id) => { setHighlightedLevel(null); setSelectedId((prev) => (prev === id ? null : id)); },
       onEdit: (req) => { setTooltip(null); setEditingReq(req); },
       onContextMenu: (event, req) => { setTooltip(null); setContextMenu({ x: event.clientX, y: event.clientY, req }); },
       onTooltipShow: (event, req, taco, depth, isOrphan) => setTooltip({ x: event.clientX, y: event.clientY, req, taco, depth, isOrphan, isTc: false }),
@@ -632,23 +799,42 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
       setCollapsedEdges((prev) => { const next = new Set(prev); const key = source + "|||" + target; if (next.has(key)) next.delete(key); else next.add(key); return next; });
     }, themeForD3, isTcSet);
 
-    const nodesGroup = canvas.append("g").attr("class", "nodes");
-    for (const req of activeReqs) {
-      const pos = positions[req.id];
-      if (!pos) continue;
-      if (req._isTc) {
-        renderTcBox(nodesGroup, req, pos, callbacks, themeForD3);
-      } else {
-        renderBox(nodesGroup, req, pos, diagramData.depths[req.id] || 0, diagramData.orphans.has(req.id), callbacks, themeForD3);
-      }
-    }
+    // Store all render data in viewStateRef so syncVisibleNodes can access it from any context
+    nodesGroupRef.current = canvas.append("g").attr("class", "nodes");
+    viewStateRef.current = { activeReqs, depths: diagramData.depths, orphans: diagramData.orphans, themeForD3, isTcSet, callbacks };
 
-    d3.select(svgRef.current).on("click", () => setSelectedId(null));
+    // Render only the nodes currently in the viewport (culling)
+    syncVisibleNodes();
+
+    d3.select(svgRef.current).on("click", () => { setSelectedId(null); setHighlightedLevel(null); });
     if (zoomRef.current) zoomFit(svgRef.current, zoomRef.current, positions, false);
     setCollapsedEdges(new Set());
   }, [activeReqs, activeRels, diagramData.depths, diagramData.orphans, themeForD3, isTcSet]);
 
-  useEffect(() => { if (svgRef.current) applySelection(d3.select(svgRef.current), selectedId, activeRels); }, [selectedId, activeRels]);
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+    if (selectedId) {
+      // Node selected — use the standard selection highlight
+      applySelection(svg, selectedId, activeRels, isTcSet);
+    } else if (highlightedLevel !== null) {
+      // Legend right-clicked — highlight all requirements at that depth level
+      const highlighted = new Set(
+        activeReqs.filter(r => !r._isTc && (diagramData.depths[r.id] || 0) === highlightedLevel).map(r => r.id)
+      );
+      svg.selectAll(".req-box").each(function () {
+        const rid = d3.select(this).attr("data-req-id");
+        d3.select(this).classed("selected", false).classed("dimmed", rid && !highlighted.has(rid));
+      });
+      svg.selectAll(".rel-line").attr("opacity", function () {
+        const s = this.getAttribute("data-source"), t = this.getAttribute("data-target");
+        return highlighted.has(s) && highlighted.has(t) ? 1 : 0.15;
+      });
+    } else {
+      // Nothing active — clear all highlighting
+      applySelection(svg, null, activeRels, isTcSet);
+    }
+  }, [selectedId, highlightedLevel, activeRels, isTcSet, activeReqs, diagramData.depths]);
   useEffect(() => { if (!svgRef.current) return; const hidden = applyCollapse(d3.select(svgRef.current), collapsedEdges, activeRels); if (selectedId && hidden.has(selectedId)) setSelectedId(null); }, [collapsedEdges, activeRels, selectedId]);
   useEffect(() => { const h = () => setContextMenu(null); document.addEventListener("click", h); return () => document.removeEventListener("click", h); }, []);
   useEffect(() => { const h = (e) => { if (e.key === "Escape") { setEditingReq(null); setContextMenu(null); } }; document.addEventListener("keydown", h); return () => document.removeEventListener("keydown", h); }, []);
@@ -873,7 +1059,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
 
         {/* Finder */}
         {hasData && (
-          <div style={{ position: "absolute", top: 12, right: 12, width: 210, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, display: "flex", flexDirection: "column", maxHeight: "calc(100% - 24px)", zIndex: 50, backdropFilter: "blur(8px)" }}>
+          <div style={{ position: "absolute", top: 12, right: 12, width: 210, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, display: "flex", flexDirection: "column", maxHeight: "calc(100% - 180px)", zIndex: 50, backdropFilter: "blur(8px)" }}>
             <div style={{ padding: "7px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.6px", textTransform: "uppercase" }}>Finder <span style={{ opacity: 0.6 }}>({finderReqs.length})</span></span>
               <button onClick={() => setFinderCollapsed(!finderCollapsed)} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMuted, cursor: "pointer", fontSize: 12, lineHeight: 1, padding: "1px 7px" }}>{finderCollapsed ? "+" : "−"}</button>
@@ -904,49 +1090,76 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
         {/* Legend */}
         {hasData && (
           <div style={{ position: "absolute", bottom: 12, right: 12, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", fontSize: 10, minWidth: 170, zIndex: 40, backdropFilter: "blur(8px)" }}>
-            <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginBottom: 7, fontSize: 9 }}>Relationships</div>
-            {[
-              { label: "containment", color: "#4d70d8", dash: false },
-              { label: "«deriveReqt»", color: "#40a878", dash: true },
-              { label: "«trace»", color: "#9060c8", dash: true },
-              { label: "«refine»", color: "#c07830", dash: false },
-              { label: "«verify»", color: "#40c870", dash: true },
-            ].map((l) => (
-              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
-                <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke={l.color} strokeWidth="1.5" strokeDasharray={l.dash ? "5,3" : undefined} /></svg>
-                {l.label}
+
+            {/* Header row — always visible */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+              <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", fontSize: 9 }}>
+                Requirement Levels <span style={{ fontSize: 8, fontWeight: 400 }}>(click to filter)</span>
               </div>
-            ))}
-            <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Requirement Levels <span style={{ fontSize: 8, fontWeight: 400 }}>(click to filter)</span></div>
-            {LEVEL_CONFIG.map((lc, i) => (
-              <div key={lc.abbr} onClick={() => enterLevelView(i)} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text, cursor: "pointer", padding: "3px 6px", borderRadius: 4, marginLeft: -6, marginRight: -6 }}>
-                <span style={{ display: "inline-block", padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, background: T.surface, border: `1px solid ${lc.accent}`, color: lc.stereo }}>{lc.abbr}</span>
-                {lc.label}
-              </div>
-            ))}
-            {showTcs && (
-              <>
-                <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Test Case Status</div>
-                {Object.entries(TC_STATUS_COLORS).map(([status, sc]) => (
-                  <div key={status} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
-                    <svg width="16" height="12"><rect x="0" y="0" width="16" height="12" rx="2" fill={_isLight ? sc.accent + "18" : sc.accent + "30"} stroke={sc.accent} strokeWidth="1" strokeDasharray="4,2" /></svg>
-                    {sc.label}
-                  </div>
-                ))}
-              </>
-            )}
-            <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>TACO Compliance</div>
-            {[
-              { k: "T", label: "Traceable — has a unique ID" },
-              { k: "A", label: 'Atomic — single "shall"' },
-              { k: "C", label: 'Clear — includes "shall"' },
-              { k: "O", label: "Objective — no vague terms" },
-            ].map((t) => (
-              <div key={t.k} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
-                <span style={{ display: "inline-flex", width: 16, height: 16, borderRadius: 3, fontSize: 9, fontWeight: 800, alignItems: "center", justifyContent: "center", background: _isLight ? "#e8f5e8" : "#0f2a0f", color: "#4caf50" }}>{t.k}</span>
-                {t.label}
-              </div>
-            ))}
+              <button
+                onClick={() => setLegendExpanded(v => !v)}
+                title={legendExpanded ? "Collapse legend" : "Expand legend"}
+                style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMuted, cursor: "pointer", fontSize: 10, lineHeight: 1, padding: "1px 6px", marginLeft: 8 }}
+              >{legendExpanded ? "∨" : "^"}</button>
+            </div>
+
+            {/* Requirement levels — always visible */}
+            {LEVEL_CONFIG.map((lc, i) => {
+              const isHighlighted = highlightedLevel === i;
+              return (
+                <div
+                  key={lc.abbr}
+                  onClick={() => enterLevelView(i)}
+                  onContextMenu={(e) => { e.preventDefault(); setSelectedId(null); setHighlightedLevel(prev => prev === i ? null : i); }}
+                  style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text, cursor: "pointer", padding: "3px 6px", borderRadius: 4, marginLeft: -6, marginRight: -6, background: isHighlighted ? lc.accent + "22" : "transparent", outline: isHighlighted ? `1px solid ${lc.accent}66` : "none" }}
+                >
+                  <span style={{ display: "inline-block", padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, background: isHighlighted ? lc.accent + "44" : T.surface, border: `1px solid ${lc.accent}`, color: lc.stereo }}>{lc.abbr}</span>
+                  {lc.label}
+                  {isHighlighted && <span style={{ marginLeft: "auto", fontSize: 8, color: lc.stereo, fontWeight: 700, opacity: 0.8 }}>●</span>}
+                </div>
+              );
+            })}
+
+            {/* Expanded sections */}
+            {legendExpanded && (<>
+              <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Relationships</div>
+              {[
+                { label: "containment", color: "#4d70d8", dash: false },
+                { label: "«deriveReqt»", color: "#40a878", dash: true },
+                { label: "«trace»", color: "#9060c8", dash: true },
+                { label: "«refine»", color: "#c07830", dash: false },
+                { label: "«verify»", color: "#40c870", dash: true },
+              ].map((l) => (
+                <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
+                  <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke={l.color} strokeWidth="1.5" strokeDasharray={l.dash ? "5,3" : undefined} /></svg>
+                  {l.label}
+                </div>
+              ))}
+              {showTcs && (
+                <>
+                  <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Test Case Status</div>
+                  {Object.entries(TC_STATUS_COLORS).map(([status, sc]) => (
+                    <div key={status} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
+                      <svg width="16" height="12"><rect x="0" y="0" width="16" height="12" rx="2" fill={_isLight ? sc.accent + "18" : sc.accent + "30"} stroke={sc.accent} strokeWidth="1" strokeDasharray="4,2" /></svg>
+                      {sc.label}
+                    </div>
+                  ))}
+                </>
+              )}
+              <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>TACO Compliance</div>
+              {[
+                { k: "T", label: "Traceable — has a unique ID" },
+                { k: "A", label: 'Atomic — single "shall"' },
+                { k: "C", label: 'Clear — includes "shall"' },
+                { k: "O", label: "Objective — no vague terms" },
+              ].map((t) => (
+                <div key={t.k} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
+                  <span style={{ display: "inline-flex", width: 16, height: 16, borderRadius: 3, fontSize: 9, fontWeight: 800, alignItems: "center", justifyContent: "center", background: _isLight ? "#e8f5e8" : "#0f2a0f", color: "#4caf50" }}>{t.k}</span>
+                  {t.label}
+                </div>
+              ))}
+            </>)}
+
           </div>
         )}
 
