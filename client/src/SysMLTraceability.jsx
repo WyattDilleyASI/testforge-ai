@@ -492,13 +492,25 @@ function renderEdges(edgesGroup, rels, positions, onCollapseToggle, theme, isTcS
 // SELECTION + COLLAPSE
 // ═══════════════════════════════════════════════════════════════
 
-function applySelection(svgSel, selectedId, relationships) {
+function applySelection(svgSel, selectedId, relationships, isTcSet = new Set()) {
   if (!selectedId) { svgSel.selectAll(".req-box").classed("selected", false).classed("dimmed", false); svgSel.selectAll(".rel-line").attr("opacity", 1); return; }
   const connected = new Set([selectedId]);
-  const upQ = [selectedId];
-  while (upQ.length) { const cur = upQ.shift(); relationships.forEach((r) => { if (r.target === cur && !connected.has(r.source)) { connected.add(r.source); upQ.push(r.source); } }); }
-  const downQ = [selectedId];
-  while (downQ.length) { const cur = downQ.shift(); relationships.forEach((r) => { if (r.source === cur && !connected.has(r.target)) { connected.add(r.target); downQ.push(r.target); } }); }
+
+  if (isTcSet.has(selectedId)) {
+    // TC clicked: highlight only the requirements it directly verifies (verify edges from this TC)
+    relationships.forEach((r) => { if (r.type === "verify" && r.source === selectedId) connected.add(r.target); });
+  } else {
+    // Requirement clicked:
+    // 1. BFS upward through containment edges — all ancestor requirements to the root
+    const upQ = [selectedId];
+    while (upQ.length) { const cur = upQ.shift(); relationships.forEach((r) => { if (r.type === "containment" && r.target === cur && !connected.has(r.source)) { connected.add(r.source); upQ.push(r.source); } }); }
+    // 2. BFS downward through containment edges — all descendant requirements to the leaves
+    const downQ = [selectedId];
+    while (downQ.length) { const cur = downQ.shift(); relationships.forEach((r) => { if (r.type === "containment" && r.source === cur && !connected.has(r.target)) { connected.add(r.target); downQ.push(r.target); } }); }
+    // 3. Only TCs with a verify edge pointing directly at the clicked requirement (not ancestors/descendants)
+    relationships.forEach((r) => { if (r.type === "verify" && r.target === selectedId) connected.add(r.source); });
+  }
+
   svgSel.selectAll(".req-box").each(function () {
     const rid = d3.select(this).attr("data-req-id");
     d3.select(this).classed("selected", rid === selectedId).classed("dimmed", rid && !connected.has(rid));
@@ -573,6 +585,8 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   const [toast, setToast] = useState(null); // { message, isError }
   const [kbEntries, setKbEntries] = useState([]);       // KB entries matched to right-clicked req
   const [kbSelected, setKbSelected] = useState(new Set()); // checked KB entry IDs
+  const [highlightedLevel, setHighlightedLevel] = useState(null); // depth index highlighted via legend right-click
+  const [legendExpanded, setLegendExpanded] = useState(false);   // legend full-view toggle
 
   // Transform — includeTestCases controlled by toggle
   const diagramData = useMemo(
@@ -618,7 +632,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
     positionsRef.current = positions;
 
     const callbacks = {
-      onSelect: (id) => setSelectedId((prev) => (prev === id ? null : id)),
+      onSelect: (id) => { setHighlightedLevel(null); setSelectedId((prev) => (prev === id ? null : id)); },
       onEdit: (req) => { setTooltip(null); setEditingReq(req); },
       onContextMenu: (event, req) => { setTooltip(null); setContextMenu({ x: event.clientX, y: event.clientY, req }); },
       onTooltipShow: (event, req, taco, depth, isOrphan) => setTooltip({ x: event.clientX, y: event.clientY, req, taco, depth, isOrphan, isTc: false }),
@@ -643,12 +657,35 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
       }
     }
 
-    d3.select(svgRef.current).on("click", () => setSelectedId(null));
+    d3.select(svgRef.current).on("click", () => { setSelectedId(null); setHighlightedLevel(null); });
     if (zoomRef.current) zoomFit(svgRef.current, zoomRef.current, positions, false);
     setCollapsedEdges(new Set());
   }, [activeReqs, activeRels, diagramData.depths, diagramData.orphans, themeForD3, isTcSet]);
 
-  useEffect(() => { if (svgRef.current) applySelection(d3.select(svgRef.current), selectedId, activeRels); }, [selectedId, activeRels]);
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+    if (selectedId) {
+      // Node selected — use the standard selection highlight
+      applySelection(svg, selectedId, activeRels, isTcSet);
+    } else if (highlightedLevel !== null) {
+      // Legend right-clicked — highlight all requirements at that depth level
+      const highlighted = new Set(
+        activeReqs.filter(r => !r._isTc && (diagramData.depths[r.id] || 0) === highlightedLevel).map(r => r.id)
+      );
+      svg.selectAll(".req-box").each(function () {
+        const rid = d3.select(this).attr("data-req-id");
+        d3.select(this).classed("selected", false).classed("dimmed", rid && !highlighted.has(rid));
+      });
+      svg.selectAll(".rel-line").attr("opacity", function () {
+        const s = this.getAttribute("data-source"), t = this.getAttribute("data-target");
+        return highlighted.has(s) && highlighted.has(t) ? 1 : 0.15;
+      });
+    } else {
+      // Nothing active — clear all highlighting
+      applySelection(svg, null, activeRels, isTcSet);
+    }
+  }, [selectedId, highlightedLevel, activeRels, isTcSet, activeReqs, diagramData.depths]);
   useEffect(() => { if (!svgRef.current) return; const hidden = applyCollapse(d3.select(svgRef.current), collapsedEdges, activeRels); if (selectedId && hidden.has(selectedId)) setSelectedId(null); }, [collapsedEdges, activeRels, selectedId]);
   useEffect(() => { const h = () => setContextMenu(null); document.addEventListener("click", h); return () => document.removeEventListener("click", h); }, []);
   useEffect(() => { const h = (e) => { if (e.key === "Escape") { setEditingReq(null); setContextMenu(null); } }; document.addEventListener("keydown", h); return () => document.removeEventListener("keydown", h); }, []);
@@ -873,7 +910,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
 
         {/* Finder */}
         {hasData && (
-          <div style={{ position: "absolute", top: 12, right: 12, width: 210, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, display: "flex", flexDirection: "column", maxHeight: "calc(100% - 24px)", zIndex: 50, backdropFilter: "blur(8px)" }}>
+          <div style={{ position: "absolute", top: 12, right: 12, width: 210, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, display: "flex", flexDirection: "column", maxHeight: "calc(100% - 180px)", zIndex: 50, backdropFilter: "blur(8px)" }}>
             <div style={{ padding: "7px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.6px", textTransform: "uppercase" }}>Finder <span style={{ opacity: 0.6 }}>({finderReqs.length})</span></span>
               <button onClick={() => setFinderCollapsed(!finderCollapsed)} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMuted, cursor: "pointer", fontSize: 12, lineHeight: 1, padding: "1px 7px" }}>{finderCollapsed ? "+" : "−"}</button>
@@ -904,49 +941,76 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
         {/* Legend */}
         {hasData && (
           <div style={{ position: "absolute", bottom: 12, right: 12, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", fontSize: 10, minWidth: 170, zIndex: 40, backdropFilter: "blur(8px)" }}>
-            <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginBottom: 7, fontSize: 9 }}>Relationships</div>
-            {[
-              { label: "containment", color: "#4d70d8", dash: false },
-              { label: "«deriveReqt»", color: "#40a878", dash: true },
-              { label: "«trace»", color: "#9060c8", dash: true },
-              { label: "«refine»", color: "#c07830", dash: false },
-              { label: "«verify»", color: "#40c870", dash: true },
-            ].map((l) => (
-              <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
-                <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke={l.color} strokeWidth="1.5" strokeDasharray={l.dash ? "5,3" : undefined} /></svg>
-                {l.label}
+
+            {/* Header row — always visible */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+              <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", fontSize: 9 }}>
+                Requirement Levels <span style={{ fontSize: 8, fontWeight: 400 }}>(click to filter)</span>
               </div>
-            ))}
-            <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Requirement Levels <span style={{ fontSize: 8, fontWeight: 400 }}>(click to filter)</span></div>
-            {LEVEL_CONFIG.map((lc, i) => (
-              <div key={lc.abbr} onClick={() => enterLevelView(i)} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text, cursor: "pointer", padding: "3px 6px", borderRadius: 4, marginLeft: -6, marginRight: -6 }}>
-                <span style={{ display: "inline-block", padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, background: T.surface, border: `1px solid ${lc.accent}`, color: lc.stereo }}>{lc.abbr}</span>
-                {lc.label}
-              </div>
-            ))}
-            {showTcs && (
-              <>
-                <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Test Case Status</div>
-                {Object.entries(TC_STATUS_COLORS).map(([status, sc]) => (
-                  <div key={status} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
-                    <svg width="16" height="12"><rect x="0" y="0" width="16" height="12" rx="2" fill={_isLight ? sc.accent + "18" : sc.accent + "30"} stroke={sc.accent} strokeWidth="1" strokeDasharray="4,2" /></svg>
-                    {sc.label}
-                  </div>
-                ))}
-              </>
-            )}
-            <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>TACO Compliance</div>
-            {[
-              { k: "T", label: "Traceable — has a unique ID" },
-              { k: "A", label: 'Atomic — single "shall"' },
-              { k: "C", label: 'Clear — includes "shall"' },
-              { k: "O", label: "Objective — no vague terms" },
-            ].map((t) => (
-              <div key={t.k} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
-                <span style={{ display: "inline-flex", width: 16, height: 16, borderRadius: 3, fontSize: 9, fontWeight: 800, alignItems: "center", justifyContent: "center", background: _isLight ? "#e8f5e8" : "#0f2a0f", color: "#4caf50" }}>{t.k}</span>
-                {t.label}
-              </div>
-            ))}
+              <button
+                onClick={() => setLegendExpanded(v => !v)}
+                title={legendExpanded ? "Collapse legend" : "Expand legend"}
+                style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMuted, cursor: "pointer", fontSize: 10, lineHeight: 1, padding: "1px 6px", marginLeft: 8 }}
+              >{legendExpanded ? "∨" : "^"}</button>
+            </div>
+
+            {/* Requirement levels — always visible */}
+            {LEVEL_CONFIG.map((lc, i) => {
+              const isHighlighted = highlightedLevel === i;
+              return (
+                <div
+                  key={lc.abbr}
+                  onClick={() => enterLevelView(i)}
+                  onContextMenu={(e) => { e.preventDefault(); setSelectedId(null); setHighlightedLevel(prev => prev === i ? null : i); }}
+                  style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text, cursor: "pointer", padding: "3px 6px", borderRadius: 4, marginLeft: -6, marginRight: -6, background: isHighlighted ? lc.accent + "22" : "transparent", outline: isHighlighted ? `1px solid ${lc.accent}66` : "none" }}
+                >
+                  <span style={{ display: "inline-block", padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, background: isHighlighted ? lc.accent + "44" : T.surface, border: `1px solid ${lc.accent}`, color: lc.stereo }}>{lc.abbr}</span>
+                  {lc.label}
+                  {isHighlighted && <span style={{ marginLeft: "auto", fontSize: 8, color: lc.stereo, fontWeight: 700, opacity: 0.8 }}>●</span>}
+                </div>
+              );
+            })}
+
+            {/* Expanded sections */}
+            {legendExpanded && (<>
+              <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Relationships</div>
+              {[
+                { label: "containment", color: "#4d70d8", dash: false },
+                { label: "«deriveReqt»", color: "#40a878", dash: true },
+                { label: "«trace»", color: "#9060c8", dash: true },
+                { label: "«refine»", color: "#c07830", dash: false },
+                { label: "«verify»", color: "#40c870", dash: true },
+              ].map((l) => (
+                <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
+                  <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke={l.color} strokeWidth="1.5" strokeDasharray={l.dash ? "5,3" : undefined} /></svg>
+                  {l.label}
+                </div>
+              ))}
+              {showTcs && (
+                <>
+                  <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Test Case Status</div>
+                  {Object.entries(TC_STATUS_COLORS).map(([status, sc]) => (
+                    <div key={status} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
+                      <svg width="16" height="12"><rect x="0" y="0" width="16" height="12" rx="2" fill={_isLight ? sc.accent + "18" : sc.accent + "30"} stroke={sc.accent} strokeWidth="1" strokeDasharray="4,2" /></svg>
+                      {sc.label}
+                    </div>
+                  ))}
+                </>
+              )}
+              <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>TACO Compliance</div>
+              {[
+                { k: "T", label: "Traceable — has a unique ID" },
+                { k: "A", label: 'Atomic — single "shall"' },
+                { k: "C", label: 'Clear — includes "shall"' },
+                { k: "O", label: "Objective — no vague terms" },
+              ].map((t) => (
+                <div key={t.k} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
+                  <span style={{ display: "inline-flex", width: 16, height: 16, borderRadius: 3, fontSize: 9, fontWeight: 800, alignItems: "center", justifyContent: "center", background: _isLight ? "#e8f5e8" : "#0f2a0f", color: "#4caf50" }}>{t.k}</span>
+                  {t.label}
+                </div>
+              ))}
+            </>)}
+
           </div>
         )}
 
