@@ -72,9 +72,10 @@ function resolveParent(req, allReqIds) {
 
 function mapJamaRelationshipType(rel, reqDepth) {
   const relDepth = getDepth(rel.id);
+  // Direct parent relationship is already captured via resolveParent/containment edges — skip it here
   if (rel.direction === "Upstream" && relDepth === reqDepth - 1) return null;
-  if (rel.direction === "Upstream") return "deriveReqt";
-  return "trace";
+  // All other req-to-req relationships (cross-level derives, traces, etc.) render as containment
+  return "containment";
 }
 
 function transformForDiagram(apiRequirements, apiTestCases = [], options = {}) {
@@ -197,10 +198,7 @@ const TC_STATUS_COLORS = {
 
 const REL_CONFIG = {
   containment: { stroke: "#4d70d8", dash: "", markerEnd: "mk-open", markerStart: "mk-diamond" },
-  deriveReqt: { stroke: "#40a878", dash: "4,3", markerEnd: "mk-derive" },
-  trace: { stroke: "#9060c8", dash: "5,4", markerEnd: "mk-trace" },
-  refine: { stroke: "#c07830", dash: "", markerEnd: "mk-refine" },
-  verify: { stroke: "#40c870", dash: "7,4", markerEnd: "mk-verify" },
+  verify:      { stroke: "#40c870", dash: "7,4", markerEnd: "mk-verify" },
 };
 
 function getLevelCfg(depth) { return LEVEL_CONFIG[Math.min(Math.max(depth, 0), LEVEL_CONFIG.length - 1)]; }
@@ -239,16 +237,13 @@ function computeLayout(reqs, rels) {
   const hasParent = new Set();
   reqs.forEach((r) => { children[r.id] = []; });
 
-  // Containment edges for requirements
-  rels.filter((r) => r.type === "containment").forEach((r) => {
-    if (children[r.source]) { children[r.source].push(r.target); hasParent.add(r.target); }
-  });
-
-  // TC nodes: use their `parent` field (primary linked req) for layout
-  reqs.filter((r) => r._isTc && r.parent).forEach((tc) => {
-    if (children[tc.parent]) {
-      children[tc.parent].push(tc.id);
-      hasParent.add(tc.id);
+  // Build the layout tree exclusively from each node's `parent` field so that
+  // cross-ref containment edges (req-to-req links that aren't direct parent-child)
+  // don't create duplicate children or cycles in the tree.
+  reqs.forEach((r) => {
+    if (r.parent && children[r.parent]) {
+      children[r.parent].push(r.id);
+      hasParent.add(r.id);
     }
   });
 
@@ -507,10 +502,9 @@ function renderEdges(edgesGroup, rels, positions, onCollapseToggle, theme, isTcS
     if (cfg.markerEnd) path.attr("marker-end", `url(#${cfg.markerEnd})`);
     if (cfg.markerStart) path.attr("marker-start", `url(#${cfg.markerStart})`);
 
-    if (rel.type !== "containment") {
-      const label = rel.type === "deriveReqt" ? "«deriveReqt»" : `«${rel.type}»`;
+    if (rel.type === "verify") {
       eg.append("text").attr("x", (from.x + to.x) / 2).attr("y", (from.y + to.y) / 2 - 5)
-        .attr("text-anchor", "middle").attr("fill", cfg.stroke).attr("font-size", "9").attr("font-style", "italic").attr("opacity", "0.85").text(label);
+        .attr("text-anchor", "middle").attr("fill", cfg.stroke).attr("font-size", "9").attr("font-style", "italic").attr("opacity", "0.85").text("«verify»");
     }
   }
 
@@ -1125,10 +1119,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
               <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginTop: 9, marginBottom: 7, fontSize: 9 }}>Relationships</div>
               {[
                 { label: "containment", color: "#4d70d8", dash: false },
-                { label: "«deriveReqt»", color: "#40a878", dash: true },
-                { label: "«trace»", color: "#9060c8", dash: true },
-                { label: "«refine»", color: "#c07830", dash: false },
-                { label: "«verify»", color: "#40c870", dash: true },
+                { label: "«verify»",    color: "#40c870", dash: true },
               ].map((l) => (
                 <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text }}>
                   <svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke={l.color} strokeWidth="1.5" strokeDasharray={l.dash ? "5,3" : undefined} /></svg>
