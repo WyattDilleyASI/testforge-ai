@@ -56,6 +56,7 @@ app.use("/api/mcp", require("./routes/mcp"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/whiteboard", require("./routes/whiteboard"));
 app.use("/api/insights", require("./routes/insights"));
+app.use("/api/moonlight", require("./routes/moonlight"));
 const { mountMcpRoutes } = require("./mcp");
 mountMcpRoutes(app);
 

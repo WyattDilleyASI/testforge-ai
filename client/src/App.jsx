@@ -11,6 +11,7 @@ import { TestCasesWrapper } from "./components/TestCasesWrapper";
 import { KbView } from "./components/KbView";
 import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
+import { MoonlightView } from "./components/MoonlightView";
 import { AnalyticsView } from "./components/AnalyticsView";
 import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas, RainstormCanvas,
   StarfieldParallaxCanvas,
@@ -260,6 +261,12 @@ useEffect(() => {
       buffer = "";
       return;
     }
+    if (buffer.toLowerCase().endsWith("moonlight")) {
+      navigate("moonlight");
+      setEasterEggToast("🌙 Moonlight unlocked");
+      buffer = "";
+      return;
+    }
     for (const [trigger, config] of Object.entries(TRIGGERS)) {
       if (buffer.toLowerCase().endsWith(trigger)) {
         if (!activeTheme._hidden) setPreEasterEggTheme(themeName);
@@ -274,7 +281,7 @@ useEffect(() => {
 
   window.addEventListener("keydown", handleKey);
   return () => window.removeEventListener("keydown", handleKey);
-}, [preEasterEggTheme, themeName, activeTheme._hidden, hotDogOverlay]);
+}, [preEasterEggTheme, themeName, activeTheme._hidden, hotDogOverlay, navigate]);
 
   const loadData = useCallback(async () => {
     try { setRequirements(await api.getRequirements()); }
@@ -547,6 +554,7 @@ useEffect(() => {
           : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
         )}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
+        {page === "moonlight" && <MoonlightView currentUser={currentUser} />}
         {page === "analytics" && <AnalyticsView currentUser={currentUser} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
