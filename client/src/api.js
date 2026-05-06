@@ -202,4 +202,7 @@ export const api = {
   // Insights
   getCoverageGapInsight: () => request("/insights/coverage-gaps"),
   refreshCoverageGapInsight: () => request("/insights/coverage-gaps/refresh", { method: "POST" }),
+
+  // Moonlight (hidden feature)
+  runMoonlightGame: (config) => request("/moonlight/run", { method: "POST", body: config }),
 };
