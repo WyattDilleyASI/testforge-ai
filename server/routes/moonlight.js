@@ -5,10 +5,11 @@
 //   app.use("/api/moonlight", require("./routes/moonlight"));
 //
 // Endpoints:
-//   POST /api/moonlight/run     — Synchronous, fake client. Pass-1 demo.
-//   GET  /api/moonlight/stream  — SSE, real Claude. Pass-A demo.
-//   GET  /api/moonlight/health  — Liveness check.
-//   GET  /api/moonlight/budget  — Today's spend / daily cap.
+//   POST /api/moonlight/run      — Synchronous, fake client. Pass-1 demo.
+//   GET  /api/moonlight/stream   — SSE, real Claude (or Real+human player).
+//   POST /api/moonlight/respond  — Human player's response to a pending input.
+//   GET  /api/moonlight/health   — Liveness check.
+//   GET  /api/moonlight/budget   — Today's spend / daily cap.
 //
 // SSE endpoint protocol
 // ---------------------
@@ -16,10 +17,17 @@
 // Client just listens with EventSource and routes by event type.
 // First message is always "game_start". Last is "game_over" or "error",
 // followed by "done" so the client can cleanly close.
+//
+// When human=true on /stream:
+//   - The first config event includes a sessionId.
+//   - Right after game_start, a "you_are" event tells the human their role.
+//   - Whenever the orchestrator hits the human's turn, a "human_input_needed"
+//     event is emitted. The orchestrator pauses; the client POSTs to /respond.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const express = require("express");
 const path = require("path");
+const crypto = require("crypto");
 
 const moonlightDir = path.join(__dirname, "..", "moonlight");
 const { GameState, SeededRng } = require(path.join(moonlightDir, "game_state"));
@@ -29,6 +37,8 @@ const { FakeClaudeClient } = require(path.join(moonlightDir, "fake_claude"));
 const { RealClaudeClient } = require(path.join(moonlightDir, "claude_client"));
 const { CostTracker, BudgetExceeded, todayKey } = require(path.join(moonlightDir, "cost_tracker"));
 const { pickPersona } = require(path.join(moonlightDir, "prompts"));
+const { HumanWaiter } = require(path.join(moonlightDir, "human_waiter"));
+const { HybridClient } = require(path.join(moonlightDir, "hybrid_client"));
 
 let requireAuth;
 try {
@@ -43,11 +53,38 @@ const NAME_POOL = ["Alice", "Bob", "Carol", "Diana", "Eli", "Frank", "Grace", "H
 const VALID_PLAYER_COUNTS = [7, 8, 9];
 const MAX_ROUNDS = 5;
 const MIN_ROUNDS = 1;
+const MAX_HUMAN_NAME_LEN = 20;
+
+// Active human-play sessions. One entry per game with a human player; deleted
+// when the SSE connection closes or the game finishes.
+const humanSessions = new Map();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-function buildState(seed, players, rng) {
+// Sanitize a human's display name for use as a player slot. Strips anything
+// outside [A-Za-z0-9 ], trims, caps length, falls back to "You" if empty.
+function sanitizeHumanName(raw) {
+  const cleaned = String(raw || "")
+    .replace(/[^A-Za-z0-9 ]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, MAX_HUMAN_NAME_LEN);
+  return cleaned || "You";
+}
+
+function buildState(seed, players, rng, options = {}) {
   const names = NAME_POOL.slice(0, players);
+
+  // If a human is playing, slot them in at a (seeded-)random seat. If their
+  // name collides with a fixed pool name, suffix with "*" until unique —
+  // collisions only happen if the user happens to be named Alice/Bob/etc.
+  let humanSeat = null;
+  if (options.humanName) {
+    humanSeat = options.humanName;
+    while (names.includes(humanSeat)) humanSeat = humanSeat + "*";
+    const idx = Math.floor(rng.random() * names.length);
+    names[idx] = humanSeat;
+  }
 
   const personas = {};
   const taken = new Set();
@@ -62,6 +99,7 @@ function buildState(seed, players, rng) {
     playerNames: names,
     rng: new SeededRng(seed),
     personalities: personas,
+    humanSeat,
   });
 }
 
@@ -124,6 +162,11 @@ router.get("/stream", requireAuth, async (req, res) => {
   const cfg = validateConfig(body);
   if (cfg.error) return res.status(400).json({ error: cfg.error });
 
+  // Human-play params. When human=true, we'll randomly assign one seat to
+  // the user and pause the orchestrator on their turns.
+  const isHuman = req.query.human === "true";
+  const humanName = isHuman ? sanitizeHumanName(req.query.playerName) : null;
+
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -133,7 +176,24 @@ router.get("/stream", requireAuth, async (req, res) => {
   if (res.flushHeaders) res.flushHeaders();
 
   let connectionOpen = true;
-  req.on("close", () => { connectionOpen = false; });
+  let sessionId = null;
+  let waiter = null;
+
+  // Cleanup helper — idempotent; safe to call from req.close, finally, etc.
+  function cleanupSession(reason) {
+    if (waiter) {
+      try { waiter.cancel(reason); } catch {}
+    }
+    if (sessionId) {
+      humanSessions.delete(sessionId);
+      sessionId = null;
+    }
+  }
+
+  req.on("close", () => {
+    connectionOpen = false;
+    cleanupSession("Client disconnected");
+  });
 
   function sendEvent(name, data) {
     if (!connectionOpen) return;
@@ -152,11 +212,32 @@ router.get("/stream", requireAuth, async (req, res) => {
 
   let state;
   try {
-    state = buildState(cfg.seed, cfg.players, new SeededRng(cfg.seed));
+    state = buildState(
+      cfg.seed,
+      cfg.players,
+      new SeededRng(cfg.seed),
+      { humanName },
+    );
   } catch (err) {
     sendEvent("error", { kind: "setup", message: err.message });
     sendEvent("done", {});
     return res.end();
+  }
+
+  // If the user is playing, set up the waiter and session registry entry.
+  // Note: we look up the human player from state.players (not by humanName),
+  // because buildState may have suffixed the name to avoid collisions.
+  const humanPlayer = isHuman ? state.players.find(p => p.isHuman) : null;
+  if (isHuman && !humanPlayer) {
+    sendEvent("error", { kind: "setup", message: "Human seat assignment failed" });
+    sendEvent("done", {});
+    return res.end();
+  }
+
+  if (isHuman) {
+    sessionId = crypto.randomUUID();
+    waiter = new HumanWaiter(sessionId);
+    humanSessions.set(sessionId, waiter);
   }
 
   sendEvent("config", {
@@ -165,10 +246,15 @@ router.get("/stream", requireAuth, async (req, res) => {
     players: cfg.players,
     rounds: cfg.rounds,
     model: process.env.MOONLIGHT_MODEL || "claude-sonnet-4-5",
+    sessionId,                                // null in spectator mode
+    playingAs: humanPlayer ? humanPlayer.name : null,
   });
   sendEvent("budget", costTracker.summary());
 
-  const client = new RealClaudeClient({
+  // Build the client. In human mode, the HybridClient wraps the real client
+  // and routes calls based on player.isHuman: AI players go through real
+  // Claude, the human goes through the waiter.
+  const aiClient = new RealClaudeClient({
     apiKey,
     costTracker,
     model: process.env.MOONLIGHT_MODEL,
@@ -178,10 +264,21 @@ router.get("/stream", requireAuth, async (req, res) => {
       }
     },
   });
+  const client = isHuman ? new HybridClient({ aiClient, waiter }) : aiClient;
 
   try {
     await runGameStreaming(state, client, { discussionRounds: cfg.rounds }, (ev) => {
       sendEvent(ev.kind, ev);
+
+      // Right after game_start, tell the human their role. The SSE stream is
+      // per-connection, so this stays private to them.
+      if (ev.kind === "game_start" && humanPlayer) {
+        sendEvent("you_are", {
+          name: humanPlayer.name,
+          role: humanPlayer.role.name,
+        });
+      }
+
       if (ev.kind === "speech" || ev.kind === "vote_resolution" || ev.kind === "night_resolution") {
         sendEvent("budget", costTracker.summary());
       }
@@ -198,7 +295,47 @@ router.get("/stream", requireAuth, async (req, res) => {
     sendEvent("budget", costTracker.summary());
     sendEvent("done", {});
   } finally {
+    cleanupSession("Game ended");
     res.end();
+  }
+});
+
+// ─── POST /api/moonlight/respond ──────────────────────────────────────────
+//
+// The human player POSTs their response here. Body: { sessionId, response }.
+// Response shape depends on the task — same shape an AI client would return:
+//   speak:           { speech: "..." }
+//   vote:            { vote: "PlayerName", reasoning: "..." }
+//   wolf_propose,    { target: "PlayerName", reasoning: "..." }
+//   wolf_consensus,
+//   investigate,
+//   protect:
+//
+// The orchestrator's _normalize and _validateTarget handle bad targets, so
+// validation here is just basic shape checking.
+
+router.post("/respond", requireAuth, (req, res) => {
+  const { sessionId, response } = req.body || {};
+  if (!sessionId || typeof sessionId !== "string") {
+    return res.status(400).json({ error: "sessionId is required" });
+  }
+  if (!response || typeof response !== "object") {
+    return res.status(400).json({ error: "response object is required" });
+  }
+
+  const waiter = humanSessions.get(sessionId);
+  if (!waiter) {
+    return res.status(404).json({ error: "Session not found or already completed" });
+  }
+  if (!waiter.isWaiting()) {
+    return res.status(409).json({ error: "No pending input request for this session" });
+  }
+
+  try {
+    waiter.resolve(response);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 });
 
@@ -218,8 +355,9 @@ router.get("/health", (req, res) => {
   res.json({
     ok: true,
     feature: "moonlight",
-    version: "0.2.0",
+    version: "0.3.0",
     realClaudeAvailable: !!process.env.ANTHROPIC_API_KEY,
+    activeHumanSessions: humanSessions.size,
   });
 });
 
