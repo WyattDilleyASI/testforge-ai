@@ -1,13 +1,31 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// MoonlightView.jsx — Multi-Agent Simulation Run (Pass A)
+// MoonlightView.jsx — Multi-Agent Simulation Run (Pass B: human play)
 //
-// Two modes:
-//   - "fake"  Uses /api/moonlight/run, then reveals events on a timer.
-//             ~50ms server time; client-side delay paces the reveal.
-//             Free, instant, deterministic.
-//   - "real"  Uses /api/moonlight/stream (SSE) with real Claude API.
-//             Events arrive when Claude generates them; cost is real.
-//             ~30-90s wall clock; transcript reads live.
+// Three modes of play:
+//   - "fake"  — /api/moonlight/run, replayed with delays. AI-only.
+//   - "real" spectate — /api/moonlight/stream, AI-only, watch real Claude play.
+//   - "real" + "I'm playing" — /api/moonlight/stream with human=true. Server
+//     randomly assigns the human a seat. The orchestrator pauses on that
+//     player's turns, emitting human_input_needed events; the UI renders
+//     the appropriate input widget; the human's response goes back via
+//     POST /api/moonlight/respond.
+//
+// Speech protocol (real mode)
+//   speech_start  { speaker }
+//   speech_chunk  { speaker, delta }
+//   speech        { speaker, text }
+//
+// Human-only events (real + playing)
+//   you_are            { name, role }     — once after game_start
+//   human_input_needed { task, ... }      — every time the human must act
+//
+// Visibility (lazy, client-side)
+//   When humanRole is set, the renderer skips/redacts events that the
+//   human's role wouldn't have access to in a real game (other players'
+//   night_actions, wolves_decided for non-wolves, the seer-result fields
+//   on night_resolution for non-seers). A dev-tools peeker can see the
+//   raw events in the network tab; this is documented and intentional
+//   for v1.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -34,10 +52,55 @@ const MODE_OPTIONS = [
   { value: "real", label: "Real Claude (live, costs API tokens)" },
 ];
 
+const ROLE_LABELS = {
+  villager:  { name: "VILLAGER",  team: "village", desc: "No special powers. Your voice and your vote." },
+  werewolf:  { name: "WEREWOLF",  team: "wolves",  desc: "Each night, agree on one player to kill." },
+  seer:      { name: "SEER",      team: "village", desc: "Each night, learn one player's team." },
+  bodyguard: { name: "BODYGUARD", team: "village", desc: "Each night, protect one player from the wolves." },
+};
+
+const TASK_LABELS = {
+  speak:           "Your turn to speak",
+  vote:            "Time to vote",
+  wolf_propose:    "Propose tonight's kill",
+  wolf_consensus:  "Confirm tonight's kill",
+  investigate:     "Investigate a player",
+  protect:         "Protect a player",
+};
+
 function delayFor(kind, delays) {
   if (kind === "speech") return delays.speech;
   if (kind === "death" || kind === "game_over") return delays.death;
   return delays.beat;
+}
+
+// Decide whether to render an event in the human's transcript view, and
+// whether to redact any private fields. Returns null to skip, or a
+// (possibly redacted) event to render.
+function filterEventForHuman(ev, humanRole, humanName) {
+  if (!humanRole) return ev;  // spectator mode
+
+  switch (ev.kind) {
+    case "wolves_decided":
+      return humanRole === "werewolf" ? ev : null;
+
+    case "night_action":
+      // The human only sees their OWN night action.
+      return ev.data?.actor === humanName ? ev : null;
+
+    case "validator_correction":
+      return ev.data?.actor === humanName ? ev : null;
+
+    case "night_resolution":
+      // Strip seer-private fields if the human isn't the seer.
+      if (humanRole !== "seer" && (ev.data?.seerTarget || ev.data?.seerResult)) {
+        return { ...ev, data: { ...ev.data, seerTarget: null, seerResult: null } };
+      }
+      return ev;
+
+    default:
+      return ev;
+  }
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────
@@ -49,6 +112,7 @@ export const MoonlightView = ({ currentUser }) => {
   const [presetKey, setPresetKey] = useState("standard");
   const [speed, setSpeed] = useState("normal");
   const [seed, setSeed] = useState("");
+  const [playAsHuman, setPlayAsHuman] = useState(false);
 
   const [phase, setPhase] = useState("configure");
   const [error, setError] = useState("");
@@ -57,6 +121,20 @@ export const MoonlightView = ({ currentUser }) => {
   const [runMeta, setRunMeta] = useState(null);
   const [paused, setPaused] = useState(false);
   const [budget, setBudget] = useState(null);
+
+  // Streaming speech buffer. { speaker, text } | null.
+  const [streamingSpeech, setStreamingSpeech] = useState(null);
+
+  // Human play state. Set when you_are event arrives.
+  const [humanRole, setHumanRole] = useState(null);
+  const [humanName, setHumanName] = useState(null);
+  // Refs let SSE event closures read the latest values without going stale.
+  const humanRoleRef = useRef(null);
+  const humanNameRef = useRef(null);
+  const sessionIdRef = useRef(null);
+
+  // Pending input request. The human_input_needed payload, or null.
+  const [pendingInput, setPendingInput] = useState(null);
 
   const streamTimerRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -67,7 +145,7 @@ export const MoonlightView = ({ currentUser }) => {
     if (transcriptRef.current) {
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
     }
-  }, [shownEvents]);
+  }, [shownEvents, streamingSpeech, pendingInput]);
 
   useEffect(() => () => {
     cancelledRef.current = true;
@@ -112,6 +190,16 @@ export const MoonlightView = ({ currentUser }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused, mode]);
 
+  // Reset all human-play state. Called on begin/cancel/run-again.
+  const resetHumanState = () => {
+    setHumanRole(null);
+    setHumanName(null);
+    setPendingInput(null);
+    humanRoleRef.current = null;
+    humanNameRef.current = null;
+    sessionIdRef.current = null;
+  };
+
   const handleBeginFake = async () => {
     const preset = PRESETS.find(p => p.key === presetKey) || PRESETS[1];
     const body = { players: preset.players, rounds: preset.rounds };
@@ -123,6 +211,8 @@ export const MoonlightView = ({ currentUser }) => {
     setShownEvents([]);
     setRunMeta(null);
     setPaused(false);
+    setStreamingSpeech(null);
+    resetHumanState();
     setPhase("running");
 
     try {
@@ -148,11 +238,22 @@ export const MoonlightView = ({ currentUser }) => {
     const seedNum = parseInt(seed, 10);
     if (!Number.isNaN(seedNum)) params.set("seed", String(seedNum));
 
+    if (playAsHuman) {
+      params.set("human", "true");
+      const playerName = (currentUser?.display_name || currentUser?.name || "You")
+        .replace(/[^A-Za-z0-9 ]/g, "")
+        .trim()
+        .slice(0, 20) || "You";
+      params.set("playerName", playerName);
+    }
+
     setError("");
     setAllEvents([]);
     setShownEvents([]);
     setRunMeta(null);
     setPaused(false);
+    setStreamingSpeech(null);
+    resetHumanState();
     setPhase("running");
     cancelledRef.current = false;
 
@@ -166,7 +267,9 @@ export const MoonlightView = ({ currentUser }) => {
         setRunMeta({
           seed: d.seed, players: d.players, rounds: d.rounds,
           model: d.model, mode: "real",
+          playingAs: d.playingAs || null,
         });
+        if (d.sessionId) sessionIdRef.current = d.sessionId;
       } catch {}
     });
 
@@ -174,25 +277,78 @@ export const MoonlightView = ({ currentUser }) => {
       try { setBudget(JSON.parse(e.data)); } catch {}
     });
 
+    // The human's role assignment. Sent once, just after game_start.
+    es.addEventListener("you_are", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        humanRoleRef.current = d.role;
+        humanNameRef.current = d.name;
+        setHumanRole(d.role);
+        setHumanName(d.name);
+      } catch {}
+    });
+
+    // Human input request. Renders the input card.
+    es.addEventListener("human_input_needed", (e) => {
+      try {
+        const ev = JSON.parse(e.data);
+        setPendingInput(ev.data);
+      } catch {}
+    });
+
+    // Game event router. Most events go straight into the transcript.
+    // The three speech-stream events are special:
+    //   speech_start: open an in-progress bubble (NOT added to events)
+    //   speech_chunk: append delta to the bubble (NOT added to events)
+    //   speech:       clear the bubble, record the canonical event
+    const handleGameEvent = (ev, kind) => {
+      if (kind === "speech_start") {
+        setStreamingSpeech({ speaker: ev.data?.speaker || "", text: "" });
+        return;
+      }
+      if (kind === "speech_chunk") {
+        const speaker = ev.data?.speaker || "";
+        const delta = ev.data?.delta || "";
+        setStreamingSpeech(prev =>
+          prev && prev.speaker === speaker
+            ? { ...prev, text: prev.text + delta }
+            : { speaker, text: delta }
+        );
+        return;
+      }
+      if (kind === "speech") {
+        setStreamingSpeech(null);
+      }
+
+      // Apply human-role visibility filter (if playing).
+      const filtered = filterEventForHuman(ev, humanRoleRef.current, humanNameRef.current);
+      if (!filtered) return;
+
+      setAllEvents(prev => [...prev, filtered]);
+      setShownEvents(prev => [...prev, filtered]);
+
+      if (kind === "game_over") {
+        setRunMeta(prev => prev ? {
+          ...prev,
+          winner: ev.data?.winner,
+          finalDay: ev.data?.finalDay,
+        } : prev);
+      }
+    };
+
     const gameEventKinds = [
       "game_start", "night_begins", "discussion_round", "wolves_decided",
       "night_action", "validator_correction", "night_resolution", "death",
-      "no_death", "speech", "role_claim", "vote_cast", "vote_resolution",
+      "no_death",
+      "speech_start", "speech_chunk", "speech",
+      "role_claim", "vote_cast", "vote_resolution",
       "max_days_hit", "game_over",
     ];
     for (const kind of gameEventKinds) {
       es.addEventListener(kind, (e) => {
         try {
           const ev = JSON.parse(e.data);
-          setAllEvents(prev => [...prev, ev]);
-          setShownEvents(prev => [...prev, ev]);
-          if (kind === "game_over") {
-            setRunMeta(prev => prev ? {
-              ...prev,
-              winner: ev.data?.winner,
-              finalDay: ev.data?.finalDay,
-            } : prev);
-          }
+          handleGameEvent(ev, kind);
         } catch {}
       });
     }
@@ -210,11 +366,37 @@ export const MoonlightView = ({ currentUser }) => {
     es.addEventListener("done", () => {
       es.close();
       eventSourceRef.current = null;
+      setStreamingSpeech(null);
+      setPendingInput(null);
       setPhase("done");
     });
   };
 
   const handleBegin = () => (mode === "real" ? handleBeginReal() : handleBeginFake());
+
+  // POST the human's response to /respond. Clears pendingInput on success.
+  const handleHumanSubmit = async (response) => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) {
+      setError("No active session. Try starting a new game.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/moonlight/respond", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId, response }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "<no body>");
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      setPendingInput(null);
+    } catch (err) {
+      setError(`Failed to submit input: ${err.message}`);
+    }
+  };
 
   const handleCancel = () => {
     cancelledRef.current = true;
@@ -227,6 +409,8 @@ export const MoonlightView = ({ currentUser }) => {
     setShownEvents([]);
     setAllEvents([]);
     setRunMeta(null);
+    setStreamingSpeech(null);
+    resetHumanState();
   };
 
   const handleRunAgain = () => {
@@ -234,6 +418,8 @@ export const MoonlightView = ({ currentUser }) => {
     setShownEvents([]);
     setAllEvents([]);
     setRunMeta(null);
+    setStreamingSpeech(null);
+    resetHumanState();
     setError("");
   };
 
@@ -245,7 +431,7 @@ export const MoonlightView = ({ currentUser }) => {
             Multi-Agent Simulation Run
           </h2>
           <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
-            Internal · v0.2
+            Internal · v0.3
           </p>
         </div>
         {budget && <BudgetStrip COLORS={COLORS} budget={budget} />}
@@ -264,8 +450,13 @@ export const MoonlightView = ({ currentUser }) => {
           presetKey={presetKey} setPresetKey={setPresetKey}
           speed={speed} setSpeed={setSpeed}
           seed={seed} setSeed={setSeed}
+          playAsHuman={playAsHuman} setPlayAsHuman={setPlayAsHuman}
           onBegin={phase === "done" ? handleRunAgain : handleBegin}
-          beginLabel={phase === "done" ? "Run again" : (mode === "real" ? "Begin run (real Claude)" : "Begin run")}
+          beginLabel={
+            phase === "done" ? "Run again" :
+            mode === "real" ? (playAsHuman ? "Begin run (you're playing)" : "Begin run (real Claude)") :
+            "Begin run"
+          }
         />
       )}
 
@@ -280,7 +471,19 @@ export const MoonlightView = ({ currentUser }) => {
       )}
 
       {phase === "done" && runMeta && (
-        <SummaryCard COLORS={COLORS} meta={runMeta} eventCount={allEvents.length} />
+        <SummaryCard COLORS={COLORS} meta={runMeta} eventCount={allEvents.length} humanRole={humanRole} />
+      )}
+
+      {humanRole && phase !== "configure" && (
+        <RoleBadge COLORS={COLORS} role={humanRole} name={humanName} />
+      )}
+
+      {pendingInput && (
+        <HumanInputCard
+          COLORS={COLORS}
+          pendingInput={pendingInput}
+          onSubmit={handleHumanSubmit}
+        />
       )}
 
       {(phase === "running" || phase === "done") && (
@@ -299,7 +502,14 @@ export const MoonlightView = ({ currentUser }) => {
             {shownEvents.map((ev, i) => (
               <TranscriptLine key={i} event={ev} COLORS={COLORS} />
             ))}
-            {phase === "running" && (
+            {streamingSpeech && streamingSpeech.text.length > 0 && (
+              <StreamingSpeechLine
+                speaker={streamingSpeech.speaker}
+                text={streamingSpeech.text}
+                COLORS={COLORS}
+              />
+            )}
+            {phase === "running" && !streamingSpeech && !pendingInput && (
               <div style={{ padding: "6px 12px", fontSize: 11, color: COLORS.textMuted, fontFamily: mono, fontStyle: "italic" }}>
                 {paused ? "paused" : (mode === "real" ? "waiting for Claude..." : "...")}
               </div>
@@ -347,7 +557,8 @@ function BudgetStrip({ COLORS, budget }) {
   );
 }
 
-function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, setSpeed, seed, setSeed, onBegin, beginLabel }) {
+function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, setSpeed, seed, setSeed, playAsHuman, setPlayAsHuman, onBegin, beginLabel }) {
+  const humanPlayAvailable = mode === "real";
   return (
     <Card style={{ marginBottom: 14 }}>
       <div style={{
@@ -377,6 +588,37 @@ function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, set
             </button>
           );
         })}
+      </div>
+
+      {/* I'm playing — only for real mode */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "10px 12px", borderRadius: 7,
+          border: `1px solid ${playAsHuman && humanPlayAvailable ? COLORS.accent : COLORS.border}`,
+          background: playAsHuman && humanPlayAvailable ? COLORS.accentDim : COLORS.surface,
+          cursor: humanPlayAvailable ? "pointer" : "not-allowed",
+          opacity: humanPlayAvailable ? 1 : 0.5,
+          fontFamily: font,
+        }}>
+          <input
+            type="checkbox"
+            checked={playAsHuman && humanPlayAvailable}
+            disabled={!humanPlayAvailable}
+            onChange={e => setPlayAsHuman(e.target.checked)}
+            style={{ accentColor: COLORS.accent }}
+          />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>
+              I'll play in this seat
+            </div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+              {humanPlayAvailable
+                ? "Random role. The other seats are real Claude agents."
+                : "Available in Real Claude mode only."}
+            </div>
+          </div>
+        </label>
       </div>
 
       <div style={{
@@ -465,6 +707,7 @@ function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, set
           fontSize: 11, color: COLORS.amber, fontFamily: mono, lineHeight: 1.5,
         }}>
           ⚠ Real Claude mode uses your ANTHROPIC_API_KEY. A typical Standard game costs $0.30-$1.50 in tokens. The server enforces a $3 per-game and $20 daily cap.
+          {playAsHuman && " · You're playing as one of the seats. Take your time on each turn — there's no timer."}
         </div>
       )}
 
@@ -509,18 +752,25 @@ function RunControlsCard({ COLORS, mode, paused, setPaused, onCancel, progress, 
   );
 }
 
-function SummaryCard({ COLORS, meta, eventCount }) {
+function SummaryCard({ COLORS, meta, eventCount, humanRole }) {
   const winnerColor = meta.winner === "village" ? COLORS.green : meta.winner === "wolves" ? COLORS.red : COLORS.amber;
   const winnerLabel = meta.winner ? meta.winner.toUpperCase() : "INCONCLUSIVE";
+  const youWon = humanRole && meta.winner === ROLE_LABELS[humanRole]?.team;
   return (
     <Card style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>
             Run complete · {meta.mode === "real" ? "real Claude" : "demo"}
+            {humanRole && ` · you played as ${humanRole}`}
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, color: winnerColor }}>
             {winnerLabel} {meta.winner ? "wins" : ""}
+            {humanRole && (
+              <span style={{ marginLeft: 12, fontSize: 13, color: youWon ? COLORS.green : COLORS.red }}>
+                ({youWon ? "you won" : "you lost"})
+              </span>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
@@ -547,6 +797,272 @@ function Stat({ label, value, COLORS, useMono }) {
       }}>{value}</div>
     </div>
   );
+}
+
+function RoleBadge({ COLORS, role, name }) {
+  const info = ROLE_LABELS[role] || { name: role.toUpperCase(), team: "?", desc: "" };
+  const color = info.team === "wolves" ? COLORS.red : info.team === "village" ? COLORS.green : COLORS.accent;
+  return (
+    <Card style={{
+      marginBottom: 14,
+      borderColor: color,
+      background: color + "10",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            You are {name && `· ${name}`}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2 }}>
+            {info.name}
+          </div>
+        </div>
+        <div style={{ flex: 1, fontSize: 12, color: COLORS.text, lineHeight: 1.5, minWidth: 200 }}>
+          {info.desc}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function HumanInputCard({ COLORS, pendingInput, onSubmit }) {
+  const { task, validTargets, privateContext, livingPlayers } = pendingInput;
+  const [draft, setDraft] = useState({ speech: "", target: "", reasoning: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  // Reset draft when a new input request arrives.
+  useEffect(() => {
+    setDraft({ speech: "", target: "", reasoning: "" });
+    setSubmitting(false);
+  }, [task, pendingInput?.day, pendingInput?.phase]);
+
+  const taskLabel = TASK_LABELS[task] || `Action: ${task}`;
+  const isSpeech = task === "speak";
+  const isWolfChat = task === "wolf_propose" || task === "wolf_consensus";
+  const isTarget = !isSpeech;
+
+  let canSubmit = false;
+  let response = null;
+  if (isSpeech) {
+    canSubmit = draft.speech.trim().length > 0;
+    response = { speech: draft.speech.trim() };
+  } else if (task === "vote") {
+    canSubmit = !!draft.target;
+    response = { vote: draft.target, reasoning: draft.reasoning || "" };
+  } else {
+    canSubmit = !!draft.target;
+    response = { target: draft.target, reasoning: draft.reasoning || "" };
+  }
+
+  const submit = async () => {
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    await onSubmit(response);
+  };
+
+  return (
+    <Card style={{ marginBottom: 14, borderColor: COLORS.accent }}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          Your turn · day {pendingInput.day} · {pendingInput.phase}
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.accent, marginTop: 2 }}>
+          {taskLabel}
+        </div>
+      </div>
+
+      {/* Private context display */}
+      {privateContext && Object.keys(privateContext).length > 0 && (
+        <PrivateContext COLORS={COLORS} task={task} context={privateContext} />
+      )}
+
+      {/* Input fields */}
+      {isSpeech && (
+        <textarea
+          value={draft.speech}
+          onChange={e => setDraft({ ...draft, speech: e.target.value })}
+          placeholder="What do you say to the village? (1–2 sentences)"
+          rows={3}
+          autoFocus
+          style={{
+            width: "100%", boxSizing: "border-box",
+            background: COLORS.surface,
+            border: `1px solid ${COLORS.border}`, borderRadius: 6,
+            color: COLORS.textBright, fontSize: 13, padding: "10px 12px",
+            fontFamily: font, outline: "none", resize: "vertical",
+            marginBottom: 10,
+          }}
+          onKeyDown={e => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+      )}
+
+      {isTarget && (
+        <TargetPicker
+          COLORS={COLORS}
+          targets={validTargets || []}
+          selected={draft.target}
+          onPick={t => setDraft({ ...draft, target: t })}
+        />
+      )}
+
+      {isWolfChat && (
+        <textarea
+          value={draft.reasoning}
+          onChange={e => setDraft({ ...draft, reasoning: e.target.value })}
+          placeholder="Why? (Visible only to your fellow wolf)"
+          rows={2}
+          style={{
+            width: "100%", boxSizing: "border-box",
+            background: COLORS.surface,
+            border: `1px solid ${COLORS.border}`, borderRadius: 6,
+            color: COLORS.textBright, fontSize: 13, padding: "10px 12px",
+            fontFamily: font, outline: "none", resize: "vertical",
+            marginTop: 10, marginBottom: 10,
+          }}
+        />
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+        <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+          {isSpeech ? "Ctrl+Enter to submit" : ""}
+        </div>
+        <Button onClick={submit} disabled={!canSubmit || submitting}>
+          {submitting ? "Sending..." : "Submit"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function TargetPicker({ COLORS, targets, selected, onPick }) {
+  if (!targets || targets.length === 0) {
+    return (
+      <div style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: "italic" }}>
+        No valid targets.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8, marginBottom: 10 }}>
+      {targets.map(name => {
+        const active = selected === name;
+        return (
+          <button
+            key={name}
+            onClick={() => onPick(name)}
+            style={{
+              padding: "10px 12px", borderRadius: 6,
+              border: `1px solid ${active ? COLORS.accent : COLORS.border}`,
+              background: active ? COLORS.accentDim : COLORS.surface,
+              color: active ? COLORS.accent : COLORS.textBright,
+              cursor: "pointer", textAlign: "center",
+              fontFamily: font, fontSize: 13,
+              fontWeight: active ? 700 : 500,
+            }}
+          >
+            {name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PrivateContext({ COLORS, task, context }) {
+  // Wolves chat history
+  if ((task === "wolf_propose" || task === "wolf_consensus") && context.wolvesChat) {
+    if (context.wolvesChat.length === 0) {
+      return (
+        <div style={{
+          padding: "10px 12px", marginBottom: 12,
+          background: COLORS.red + "10", border: `1px solid ${COLORS.red}40`,
+          borderRadius: 6, fontSize: 11, color: COLORS.textMuted, fontFamily: mono,
+          fontStyle: "italic",
+        }}>
+          Wolves chat is empty so far.
+        </div>
+      );
+    }
+    return (
+      <div style={{
+        padding: "10px 12px", marginBottom: 12,
+        background: COLORS.red + "10", border: `1px solid ${COLORS.red}40`,
+        borderRadius: 6,
+      }}>
+        <div style={{
+          fontSize: 10, color: COLORS.red, fontFamily: mono,
+          textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6,
+        }}>
+          Wolves' private chat
+        </div>
+        {context.wolvesChat.map((entry, i) => (
+          <div key={i} style={{ fontSize: 12, color: COLORS.text, marginBottom: 4 }}>
+            <span style={{ fontWeight: 700, marginRight: 6 }}>{entry.speaker}:</span>
+            {entry.text}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Seer notebook
+  if (task === "investigate" && context.notebook) {
+    if (context.notebook.length === 0) {
+      return (
+        <div style={{
+          padding: "10px 12px", marginBottom: 12,
+          background: COLORS.purple ? COLORS.purple + "10" : COLORS.accent + "10",
+          border: `1px solid ${(COLORS.purple || COLORS.accent) + "40"}`,
+          borderRadius: 6, fontSize: 11, color: COLORS.textMuted, fontFamily: mono,
+          fontStyle: "italic",
+        }}>
+          Notebook is empty — first investigation.
+        </div>
+      );
+    }
+    const purple = COLORS.purple || COLORS.accent;
+    return (
+      <div style={{
+        padding: "10px 12px", marginBottom: 12,
+        background: purple + "10", border: `1px solid ${purple}40`,
+        borderRadius: 6,
+      }}>
+        <div style={{
+          fontSize: 10, color: purple, fontFamily: mono,
+          textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6,
+        }}>
+          Your notebook
+        </div>
+        {context.notebook.map((line, i) => (
+          <div key={i} style={{ fontSize: 12, color: COLORS.text, marginBottom: 2, fontFamily: mono }}>
+            {line}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Bodyguard last_protected
+  if (task === "protect") {
+    return (
+      <div style={{
+        padding: "8px 12px", marginBottom: 12,
+        background: COLORS.green + "10", border: `1px solid ${COLORS.green}40`,
+        borderRadius: 6, fontSize: 12, color: COLORS.text,
+      }}>
+        {context.lastProtected
+          ? <>Last night you protected <strong>{context.lastProtected}</strong>. You can't protect them again tonight.</>
+          : <>This is your first night — you can protect anyone.</>}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function TranscriptLine({ event, COLORS }) {
@@ -692,6 +1208,20 @@ function TranscriptLine({ event, COLORS }) {
     );
   }
   return null;
+}
+
+function StreamingSpeechLine({ speaker, text, COLORS }) {
+  return (
+    <div style={{ padding: "4px 14px", fontSize: 13, lineHeight: 1.5 }}>
+      <span style={{ fontWeight: 700, color: COLORS.textBright, marginRight: 8 }}>{speaker}</span>
+      <span style={{ color: COLORS.textMuted, marginRight: 6 }}>»</span>
+      <span style={{ color: COLORS.text }}>{text}</span>
+      <span style={{
+        color: COLORS.accent, marginLeft: 1,
+        opacity: 0.7, fontFamily: mono,
+      }}>▋</span>
+    </div>
+  );
 }
 
 function PhaseHeader({ text, color, COLORS }) {
