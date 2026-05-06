@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, Input, Select, ErrorBanner, AutoResizeTextarea } from "./shared";
@@ -544,7 +545,22 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
                   <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, flex: 1 }}>{e.title}</div>
                   {!dragMode && <span onClick={() => startEdit(e)} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>Edit</span>}
                 </div>
-                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 }}>{e.content}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.6 }}>
+                  <ReactMarkdown components={{
+                    h1: ({ children }) => <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textBright, margin: "10px 0 4px 0" }}>{children}</div>,
+                    h2: ({ children }) => <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textBright, margin: "8px 0 4px 0" }}>{children}</div>,
+                    h3: ({ children }) => <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.text, margin: "6px 0 3px 0" }}>{children}</div>,
+                    p: ({ children }) => <div style={{ margin: "4px 0" }}>{children}</div>,
+                    ul: ({ children }) => <ul style={{ margin: "4px 0", paddingLeft: 18 }}>{children}</ul>,
+                    ol: ({ children }) => <ol style={{ margin: "4px 0", paddingLeft: 18 }}>{children}</ol>,
+                    li: ({ children }) => <li style={{ margin: "2px 0" }}>{children}</li>,
+                    strong: ({ children }) => <strong style={{ color: COLORS.textBright, fontWeight: 600 }}>{children}</strong>,
+                    code: ({ children }) => <code style={{ fontFamily: mono, fontSize: 11, background: COLORS.surface, padding: "1px 4px", borderRadius: 3, color: COLORS.accent }}>{children}</code>,
+                    hr: () => <hr style={{ border: "none", borderTop: `1px solid ${COLORS.border}`, margin: "8px 0" }} />,
+                  }}>
+                    {e.content}
+                  </ReactMarkdown>
+                </div>
               </div>}
 
               {(e.images || []).length > 0 && <div style={{ marginTop: 10 }}>
