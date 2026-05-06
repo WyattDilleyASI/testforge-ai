@@ -5,16 +5,23 @@
 //   - Async (the client is async)
 //   - Emits each transcript event via an onEvent callback as it happens
 //   - Awaits each Claude call so latency is visible to the SSE consumer
+//   - Streams speech text chunk-by-chunk as Claude generates it
+//   - Pauses when player.isHuman, awaiting input via HybridClient + HumanWaiter
 //
-// The fake-client orchestrator (orchestrator.js) is kept untouched for
-// fast batch testing. This file is for real-Claude games served over SSE.
+// Event protocol
+// --------------
+// For each speech, three flavors of event:
+//   speech_start  { speaker }           — once, signals start of a turn
+//   speech_chunk  { speaker, delta }    — many times, text deltas
+//   speech        { speaker, text }     — once, canonical/persistent record
 //
-// Field-name adapter
-// ------------------
-// The fake client returned camelCase fields (privateReasoning, claimRole).
-// The real-Claude tool schemas use snake_case (private_reasoning, claim_role)
-// because LLMs handle snake_case more reliably. _normalize() bridges the gap
-// so the orchestrator code reads cleanly with one field naming convention.
+// When a HybridClient is in use and it's a human's turn, the client emits
+// `human_input_needed { speaker, role, task, ... }` through the same emit
+// function. The route module's /respond endpoint feeds the response back
+// to the waiter, which resolves the awaited promise.
+//
+// Tool-use tasks (vote, wolf_propose, wolf_consensus, investigate, protect)
+// don't emit chunks — they're structured and don't have prose worth streaming.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const { Phase } = require("./game_state");
@@ -30,12 +37,6 @@ const DEFAULT_CONFIG = Object.freeze({
 });
 
 // ─── Field name adapter ──────────────────────────────────────────────────
-//
-// Real Claude returns: { speech, private_reasoning, claim_role }
-// Fake Claude returns: { speech, privateReasoning, claimRole }
-// Orchestrator reads:  speech / privateReasoning / claimRole / target / vote / reasoning
-//
-// This wrapper accepts either, returns canonical camelCase.
 
 function _normalize(response) {
   if (!response || typeof response !== "object") return {};
@@ -44,8 +45,6 @@ function _normalize(response) {
     vote: response.vote,
     speech: response.speech,
     reasoning: response.reasoning,
-    privateReasoning: response.private_reasoning ?? response.privateReasoning,
-    claimRole: response.claim_role ?? response.claimRole,
   };
 }
 
@@ -66,9 +65,15 @@ async function runGameStreaming(state, client, configOverride = {}, onEvent = ()
     try {
       onEvent(ev);
     } catch (err) {
-      // Don't let a buggy listener crash the game.
       console.error("[streaming] onEvent listener threw:", err.message);
     }
+  }
+
+  // Wire emit into the client if it supports it (HybridClient does, the
+  // bare RealClaudeClient does not). This lets the human waiter announce
+  // input requests through the same transcript stream as game events.
+  if (typeof client.setEmit === "function") {
+    client.setEmit(emit);
   }
 
   emit("game_start", {
@@ -225,13 +230,10 @@ function _validateTarget(target, state) {
   if (typeof target !== "string") {
     throw new Error(`Target must be a string, got ${typeof target}`);
   }
-  // Try exact match first.
   let player;
   try {
     player = state.getPlayer(target);
   } catch {
-    // Loose match: case-insensitive, trim whitespace. LLMs sometimes
-    // produce "alice" or " Alice ".
     const normalized = target.trim().toLowerCase();
     player = state.players.find(p => p.name.toLowerCase() === normalized);
     if (!player) {
@@ -241,7 +243,7 @@ function _validateTarget(target, state) {
   if (!player.alive) {
     throw new Error(`Target ${JSON.stringify(target)} is dead — cannot be selected`);
   }
-  return player.name;  // canonical capitalization
+  return player.name;
 }
 
 // ─── Day phase helpers ────────────────────────────────────────────────────
@@ -261,25 +263,18 @@ function _announceDay(state, emit, nightResult) {
 }
 
 async function _doSpeech(player, state, client, emit) {
-  const response = _normalize(await client.call(player, state, "speak"));
+  emit("speech_start", { speaker: player.name });
+
+  const response = _normalize(await client.call(player, state, "speak", {
+    onChunk: (delta) => emit("speech_chunk", { speaker: player.name, delta }),
+  }));
+
   const speech = response.speech || "";
-  const claim = response.claimRole;
-
   state.appendToChannel(Channel.TOWN_SQUARE, player.name, speech);
-
-  if (claim !== null && claim !== undefined) {
-    player.claimedRole = claim;
-    emit("role_claim", {
-      speaker: player.name,
-      claimed: claim,
-      actual: player.role.name,
-    });
-  }
 
   emit("speech", {
     speaker: player.name,
     text: speech,
-    privateReasoning: response.privateReasoning || "",
   });
 }
 
