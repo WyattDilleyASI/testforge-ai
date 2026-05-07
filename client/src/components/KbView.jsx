@@ -543,6 +543,21 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
               </div> : <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, flex: 1 }}>{e.title}</div>
+                  {e.pinned ? (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, color: COLORS.accent, fontFamily: mono,
+                      background: `${COLORS.accent}18`, border: `1px solid ${COLORS.accent}44`,
+                      padding: "1px 5px", borderRadius: 3, flexShrink: 0,
+                      textTransform: "uppercase", letterSpacing: "0.05em",
+                    }}>Pinned</span>
+                  ) : null}
+                  {!dragMode && (
+                    <span
+                      onClick={async () => { try { await api.pinKbEntry(e.kb_id); refresh(); } catch {} }}
+                      title={e.pinned ? "Pinned — included in every generation. Click to unpin." : "Pin to include in every generation"}
+                      style={{ fontSize: 10, color: e.pinned ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontWeight: 600, flexShrink: 0 }}
+                    >{e.pinned ? "Unpin" : "Pin"}</span>
+                  )}
                   {!dragMode && <span onClick={() => startEdit(e)} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>Edit</span>}
                 </div>
                 <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.6 }}>

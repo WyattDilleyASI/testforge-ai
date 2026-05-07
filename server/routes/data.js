@@ -640,6 +640,17 @@ router.put("/kb/:kbId", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// PUT /api/kb/:kbId/pin — toggle pinned status
+router.put("/kb/:kbId/pin", requireAuth, (req, res) => {
+  const db = getKbDb();
+  const entry = db.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(req.params.kbId);
+  if (!entry) return res.status(404).json({ error: "KB entry not found" });
+  const newPinned = entry.pinned ? 0 : 1;
+  db.prepare("UPDATE kb_entries SET pinned = ? WHERE kb_id = ?").run(newPinned, req.params.kbId);
+  logAudit(req.session.name, "KB_UPDATED", `${newPinned ? "Pinned" : "Unpinned"} ${req.params.kbId}`);
+  res.json({ ok: true, pinned: newPinned });
+});
+
 // DELETE /api/kb — delete selected KB entries
 router.delete("/kb", requireAuth, (req, res) => {
   const { kbIds } = req.body;

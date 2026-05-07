@@ -125,15 +125,19 @@ function buildPrompt(reqId, depth, focuses = [], kbEntryIds = null) {
   const reqContext = JSON.parse(requirement.requirement_context || "[]");
   const tags = JSON.parse(requirement.tags || "[]");
 
-  // If explicit KB entry IDs provided, use those; otherwise fall back to tag-matching
+  // Pinned entries always included; merge with tag-matched or explicit entries (deduped)
   const allKbRows = getKbDb().prepare("SELECT * FROM kb_entries").all();
-  const allKb = kbEntryIds && kbEntryIds.length > 0
+  const pinnedKb = allKbRows.filter(kb => kb.pinned);
+  const matchedKb = kbEntryIds && kbEntryIds.length > 0
     ? allKbRows.filter(kb => kbEntryIds.includes(kb.kb_id))
     : allKbRows.filter(kb => {
         const kbTags = JSON.parse(kb.tags || "[]");
         const kbRelReqs = JSON.parse(kb.related_reqs || "[]");
         return kbTags.some(t => tags.includes(t)) || kbRelReqs.includes(reqId);
       });
+  const pinnedIds = new Set(pinnedKb.map(kb => kb.kb_id));
+  const contextKb = matchedKb.filter(kb => !pinnedIds.has(kb.kb_id));
+  const allKb = [...pinnedKb, ...contextKb];
 
   // Build requirement context string
   let contextStr = "";
@@ -204,17 +208,23 @@ ${focusSections ? `\n${focusSections}` : ""}${exampleSection}${adaptiveRules ? `
 - Tags: ${tags.length > 0 ? tags.join(", ") : "N/A"}
 ${contextStr ? `- Requirement Context:\n${contextStr}` : ""}
 
-${allKb.length > 0 ? `KNOWLEDGE BASE CONTEXT (entries matching this requirement by tag or direct relation):\n${allKb.map(kb => {
-    const images = JSON.parse(kb.images || "[]");
-    const describedImages = images.filter(img => img.description);
-    const undescribedCount = images.filter(img => !img.description).length;
-    let entry = `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`;
-    if (describedImages.length > 0) {
-      entry += `\n  UI References:\n${describedImages.map(img => `    [${img.name}]\n${img.description.split("\n").map(l => `    ${l}`).join("\n")}`).join("\n")}`;
-    }
-    if (undescribedCount > 0) entry += `\n  [${undescribedCount} additional image(s) attached below]`;
-    return entry;
-  }).join("\n")}` : ""}
+${(() => {
+    const formatKb = (kb) => {
+      const images = JSON.parse(kb.images || "[]");
+      const describedImages = images.filter(img => img.description);
+      const undescribedCount = images.filter(img => !img.description).length;
+      let entry = `- [${kb.kb_id}] (${kb.type}) ${kb.title}: ${kb.content}`;
+      if (describedImages.length > 0) {
+        entry += `\n  UI References:\n${describedImages.map(img => `    [${img.name}]\n${img.description.split("\n").map(l => `    ${l}`).join("\n")}`).join("\n")}`;
+      }
+      if (undescribedCount > 0) entry += `\n  [${undescribedCount} additional image(s) attached below]`;
+      return entry;
+    };
+    const parts = [];
+    if (pinnedKb.length > 0) parts.push(`STANDING GUIDELINES (always applied — follow these for every test case):\n${pinnedKb.map(formatKb).join("\n")}`);
+    if (contextKb.length > 0) parts.push(`KNOWLEDGE BASE CONTEXT (entries matching this requirement by tag or direct relation):\n${contextKb.map(formatKb).join("\n")}`);
+    return parts.join("\n\n");
+  })()}
 
 GENERATION DEPTH: ${{ basic: "basic — generate 2-3 test cases covering happy path and one negative case", standard: "standard — generate 4-6 test cases covering happy path, negative, boundary conditions", comprehensive: "comprehensive — generate 6-10 test cases covering happy path, negative, boundary, edge cases, error recovery" }[depth || "standard"]}
 

@@ -273,6 +273,7 @@ function initialize() {
   const kbCols = kbDb.prepare("PRAGMA table_info(kb_entries)").all().map(c => c.name);
   if (!kbCols.includes("images")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN images TEXT DEFAULT '[]'");
   if (!kbCols.includes("related_reqs")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN related_reqs TEXT DEFAULT '[]'");
+  if (!kbCols.includes("pinned")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
 
   // ┌──────────────────────────────────────────────────────────────────────┐
   // │  NEW: KB Sections & Subsections                                      │

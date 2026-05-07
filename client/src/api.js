@@ -131,6 +131,7 @@ export const api = {
   regenerateImageDescription: (kbId, index) => request(`/kb/${kbId}/images/${index}/describe`, { method: "POST" }),
   regenerateAllImageDescriptions: (kbId) => request(`/kb/${kbId}/images/describe-all`, { method: "POST" }),
   updateKbEntry: (kbId, data) => request(`/kb/${kbId}`, { method: "PUT", body: data }),
+  pinKbEntry: (kbId) => request(`/kb/${kbId}/pin`, { method: "PUT" }),
   deleteKbEntries: (kbIds) => request("/kb", { method: "DELETE", body: { kbIds } }),
 
   // Product Context
