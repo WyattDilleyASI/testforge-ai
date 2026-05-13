@@ -94,6 +94,10 @@ module.exports = {
   // ── KB Review (Phase 1+2) ──────────────────────────────────────────
   KB_TRACKED_FIELDS:        kbReview.KB_TRACKED_FIELDS,
   KB_REVIEW_THRESHOLD:      kbReview.THRESHOLD,
+  KB_VIRTUAL_THRESHOLD:     kbReview.VIRTUAL_THRESHOLD,
+  KB_VIRTUAL_KBS:           kbReview.VIRTUAL_KBS,
+  KB_PRODUCT_CONTEXT_ID:    kbReview.PRODUCT_CONTEXT_ID,
+  KB_KEY_TERMS_ID:          kbReview.KEY_TERMS_ID,
   recordEditAgainstKbs:     kbReview.recordEditAgainstKbs,
   resetCountersForKb:       kbReview.resetCountersForKb,
   invalidateStaleCounters:  kbReview.invalidateStaleCounters,

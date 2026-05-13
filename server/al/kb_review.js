@@ -26,17 +26,36 @@
 // Not tracked: "title", "description" — too often shaped by requirement
 // framing rather than KB content.
 
-const { getTcDb, getKbDb } = require("../db");
+const { getTcDb, getKbDb, getSetting, setSetting } = require("../db");
 
 // ─── Constants ──────────────────────────────────────────────────────
 
 const KB_TRACKED_FIELDS = ["steps", "preconditions"];
-const THRESHOLD = 3;             // Edits per (kb_id, field) before synthesis
+const THRESHOLD = 3;             // Edits per (kb_id, field) before synthesis for normal KBs
 const MAX_EVIDENCE_TCS = 3;      // Max sample TCs stored on a counter
 // Claude max_tokens for synthesis. Must be large enough to contain a fully
 // rewritten KB entry's content (some are several thousand tokens). Setting
 // too low truncates the JSON response mid-stream and parsing fails.
 const MAX_TOKENS = 8000;
+
+// ─── Virtual KBs ────────────────────────────────────────────────────
+// Product Context and Key Terms aren't rows in kb_entries — they're settings
+// in core.db that get injected into every TC generation prompt. To track
+// edits against them with the same counter/synthesis machinery, we reserve
+// two synthetic "kb_id" values and route reads/writes through getSetting/
+// setSetting instead of kb_entries.
+//
+// Universal application means a higher signal threshold (5+ vs 3) — every
+// generation reads them, so attribution per single edit is weaker.
+const PRODUCT_CONTEXT_ID = "__PRODUCT_CONTEXT__";
+const KEY_TERMS_ID       = "__KEY_TERMS__";
+const VIRTUAL_THRESHOLD  = 5;
+const VIRTUAL_KBS = {
+  [PRODUCT_CONTEXT_ID]: { label: "Product Context", settingKey: "product_context" },
+  [KEY_TERMS_ID]:       { label: "Key Terms",       settingKey: "key_terms" },
+};
+const isVirtualKb = (id) => Object.prototype.hasOwnProperty.call(VIRTUAL_KBS, id);
+const thresholdFor = (id) => isVirtualKb(id) ? VIRTUAL_THRESHOLD : THRESHOLD;
 
 // ─── Counter Bumping (called from feedback hook) ────────────────────
 
@@ -55,15 +74,30 @@ const MAX_TOKENS = 8000;
  * @param {string[]} params.fieldsChanged - diff.fields_changed array
  */
 function recordEditAgainstKbs({ tcId, kbIds, fieldsChanged }) {
-  if (!tcId || !Array.isArray(kbIds) || kbIds.length === 0) return;
+  if (!tcId) return;
   if (!Array.isArray(fieldsChanged) || fieldsChanged.length === 0) return;
 
   const trackedFields = fieldsChanged.filter(f => KB_TRACKED_FIELDS.includes(f));
   if (trackedFields.length === 0) return;
 
+  // Append virtual KBs (Product Context, Key Terms) — these apply to every
+  // generation, so every KB-related edit gives some signal. Higher threshold
+  // (5+) keeps noise bounded. Only included if the corresponding setting is
+  // actually populated.
+  const universal = [];
+  if ((getSetting(VIRTUAL_KBS[PRODUCT_CONTEXT_ID].settingKey) || "").trim()) {
+    universal.push(PRODUCT_CONTEXT_ID);
+  }
+  if ((getSetting(VIRTUAL_KBS[KEY_TERMS_ID].settingKey) || "").trim()) {
+    universal.push(KEY_TERMS_ID);
+  }
+
+  const allKbs = [...(Array.isArray(kbIds) ? kbIds : []), ...universal];
+  if (allKbs.length === 0) return;
+
   const db = getTcDb();
   const txn = db.transaction(() => {
-    for (const kbId of kbIds) {
+    for (const kbId of allKbs) {
       for (const field of trackedFields) {
         bumpCounter(db, kbId, field, tcId);
       }
@@ -98,7 +132,7 @@ function bumpCounter(db, kbId, field, tcId) {
   }
 
   const newCount = existing.count + 1;
-  const shouldFlip = newCount >= THRESHOLD && existing.status === "accumulating";
+  const shouldFlip = newCount >= thresholdFor(kbId) && existing.status === "accumulating";
 
   db.prepare(`
     UPDATE kb_edit_counters
@@ -199,11 +233,32 @@ async function synthesizeSuggestion(counter) {
   const kbDb = getKbDb();
   const tcDb = getTcDb();
 
-  // Fetch current KB entry. If it's been deleted, skip.
-  const kb = kbDb.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(counter.kb_id);
-  if (!kb) {
-    tcDb.prepare("DELETE FROM kb_edit_counters WHERE id = ?").run(counter.id);
-    return null;
+  // Resolve the "current entry" — either a kb_entries row or a virtual KB
+  // backed by core.db settings. Virtual KBs (Product Context, Key Terms) get
+  // a synthetic kb-shaped object so the rest of the pipeline doesn't branch.
+  let kb;
+  if (isVirtualKb(counter.kb_id)) {
+    const virt = VIRTUAL_KBS[counter.kb_id];
+    const content = getSetting(virt.settingKey) || "";
+    if (!content.trim()) {
+      // Setting was cleared — counter is stale.
+      tcDb.prepare("DELETE FROM kb_edit_counters WHERE id = ?").run(counter.id);
+      return null;
+    }
+    kb = {
+      kb_id: counter.kb_id,
+      title: virt.label,
+      type: virt.label,
+      content,
+      images: "[]",
+      _virtual: true,
+    };
+  } else {
+    kb = kbDb.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(counter.kb_id);
+    if (!kb) {
+      tcDb.prepare("DELETE FROM kb_edit_counters WHERE id = ?").run(counter.id);
+      return null;
+    }
   }
 
   // Fetch sample TCs (with their snapshots) for evidence.
@@ -315,12 +370,17 @@ function approveSuggestion(id, userName, note) {
   if (!sug) throw new Error(`Suggestion ${id} not found`);
   if (sug.status !== "pending") throw new Error(`Suggestion ${id} is already ${sug.status}`);
 
-  const kb = kbDb.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(sug.kb_id);
-  if (!kb) throw new Error(`KB entry ${sug.kb_id} no longer exists`);
-
-  // Apply the proposed content + bump updated_at to invalidate stale counters.
-  kbDb.prepare("UPDATE kb_entries SET content = ?, updated_at = datetime('now') WHERE kb_id = ?")
-    .run(sug.proposed_content, sug.kb_id);
+  // Apply to the right backing store: kb_entries.content for normal KBs,
+  // core.db settings for virtual KBs (Product Context, Key Terms).
+  if (isVirtualKb(sug.kb_id)) {
+    const virt = VIRTUAL_KBS[sug.kb_id];
+    setSetting(virt.settingKey, sug.proposed_content);
+  } else {
+    const kb = kbDb.prepare("SELECT * FROM kb_entries WHERE kb_id = ?").get(sug.kb_id);
+    if (!kb) throw new Error(`KB entry ${sug.kb_id} no longer exists`);
+    kbDb.prepare("UPDATE kb_entries SET content = ?, updated_at = datetime('now') WHERE kb_id = ?")
+      .run(sug.proposed_content, sug.kb_id);
+  }
 
   tcDb.prepare(`
     UPDATE kb_suggestions
@@ -407,6 +467,41 @@ ${before}
 AFTER (human-edited ${fieldLabel}):
 ${after}`;
   }).join("\n\n");
+
+  // Frame the prompt differently for virtual KBs (Product Context, Key Terms).
+  // They aren't typical KB entries — they're settings injected into every
+  // generation, so the prompt acknowledges their universal scope and the
+  // tradeoff of being more conservative when revising them.
+  if (kb._virtual) {
+    const sourceLabel = kb.title;
+    const description = kb.kb_id === PRODUCT_CONTEXT_ID
+      ? "general descriptive context about the product (terminology, structure, key concepts)"
+      : "a glossary of key terms used across the product";
+
+    return `You are reviewing the **${sourceLabel}** that is injected into every test case generation prompt. It contains ${description}. The same content has been a contributing context for ${sampleTcs.length} test cases that were subsequently edited by human reviewers — specifically in their ${fieldLabel}. This suggests the ${sourceLabel} may be missing information, ambiguous, or out-of-date with how testers actually describe the system.
+
+Below is the current ${sourceLabel} followed by the test-case edits that flagged it.
+
+# Current ${sourceLabel}
+${kb.content}
+
+# Evidence: Edits Made to Test Cases Generated With This Context
+${tcBlocks}
+
+# Your Task
+Identify what knowledge appears to be missing, ambiguous, or wrong in the current ${sourceLabel} based on these edits. Propose a specific revision that, if applied, would have led the AI to generate test cases closer to the human-edited versions on the first try.
+
+Constraints on your proposed revision:
+- The ${sourceLabel} applies to EVERY generation across the whole product, not just the requirements shown here. Revisions must be broadly useful — do not encode requirement-specific details.
+- Keep what's working; add or clarify only what the edits demonstrate is missing.
+- If the issue looks like AI hallucination (correct terminology already exists but was ignored), say so in the rationale and consider adding "AVOID:" callouts in the proposed content to suppress the wrong term.
+
+Respond in this JSON format ONLY (no surrounding prose, no markdown fences):
+{
+  "rationale": "Brief explanation (2-3 sentences) of what was missing/unclear and how the proposed revision addresses it.",
+  "proposed_content": "The full revised ${sourceLabel}. Plain text matching the style of the existing content."
+}`;
+  }
 
   return `You are reviewing a knowledge base entry that is used as context when generating test cases. The same KB entry has been referenced by ${sampleTcs.length} test cases that were subsequently edited by human reviewers — specifically in their ${fieldLabel}. This suggests the KB entry is missing information, is ambiguous, or has details that conflict with what testers actually need.
 
@@ -505,6 +600,10 @@ module.exports = {
   // Constants
   KB_TRACKED_FIELDS,
   THRESHOLD,
+  VIRTUAL_THRESHOLD,
+  VIRTUAL_KBS,
+  PRODUCT_CONTEXT_ID,
+  KEY_TERMS_ID,
   // Counter management
   recordEditAgainstKbs,
   resetCountersForKb,

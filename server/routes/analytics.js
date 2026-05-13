@@ -398,6 +398,8 @@ router.get("/kb-review/counters", requireAuth, (req, res) => {
       ready: al.getReadyCounters(),
       stats: al.getCounterStats(),
       threshold: al.KB_REVIEW_THRESHOLD,
+      virtual_threshold: al.KB_VIRTUAL_THRESHOLD,
+      virtual_kbs: al.KB_VIRTUAL_KBS,
       tracked_fields: al.KB_TRACKED_FIELDS,
     });
   } catch (err) {
