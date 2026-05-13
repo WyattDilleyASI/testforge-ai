@@ -9,7 +9,6 @@ import { DashboardView } from "./components/DashboardView";
 import { RequirementsView } from "./components/RequirementsView";
 import { TestCasesWrapper } from "./components/TestCasesWrapper";
 import { KbView } from "./components/KbView";
-import { SeedingView } from "./views/SeedingView";
 import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
 import { MoonlightView } from "./components/MoonlightView";
@@ -554,8 +553,7 @@ useEffect(() => {
           ? <MobileGate icon="◈" title="SysML Traceability" description="The traceability graph requires a larger screen to navigate. Open this link on a desktop or tablet to use it." />
           : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
         )}
-        {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
-        {page === "kb-seeding" && <SeedingView currentUser={currentUser} />}
+        {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} currentUser={currentUser} />}
         {page === "moonlight" && <MoonlightView currentUser={currentUser} />}
         {page === "analytics" && <AnalyticsView currentUser={currentUser} />}
         {page === "deferred" && <DeferredView />}
