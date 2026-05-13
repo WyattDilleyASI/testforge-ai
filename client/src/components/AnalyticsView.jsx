@@ -971,7 +971,6 @@ export const AnalyticsView = ({ currentUser }) => {
       )}
       <div style={{ marginBottom: 24 }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Adaptive Learning Engine</h2>
-        <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>AL-002 · AL-003 · AL-004</p>
       </div>
 
       <TabBar tabs={tabs} active={tab} onChange={setTab} COLORS={COLORS} />

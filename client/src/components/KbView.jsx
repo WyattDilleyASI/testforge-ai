@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, ErrorBanner, AutoResizeTextarea } from "./shared";
+import { Card, Badge, Button, Input, Select, ErrorBanner, AutoResizeTextarea, InlineConfirm } from "./shared";
 import { SeedingView } from "../views/SeedingView";
 
 // ─── localStorage helpers for collapse state ────────────────────────────────
@@ -537,11 +537,13 @@ export const KbView = ({ kbEntries, requirements, refresh, currentUser }) => {
                   <Button small onClick={saveEdit} disabled={!editForm.title.trim() || !editForm.content.trim()}>Save</Button>
                   <Button small variant="ghost" onClick={cancelEdit}>Cancel</Button>
                   <div style={{ flex: 1 }} />
-                  {confirmDeleteEntry === e.kb_id ? <>
-                    <span style={{ fontSize: 11, color: COLORS.textMuted }}>Delete this entry?</span>
-                    <Button small onClick={() => deleteEntry(e.kb_id)} style={{ background: COLORS.red || "#ef4444", color: "#fff" }}>Confirm</Button>
-                    <Button small variant="ghost" onClick={() => setConfirmDeleteEntry(null)}>Cancel</Button>
-                  </> : (
+                  {confirmDeleteEntry === e.kb_id ? (
+                    <InlineConfirm
+                      prompt="Delete this entry?"
+                      onConfirm={() => deleteEntry(e.kb_id)}
+                      onCancel={() => setConfirmDeleteEntry(null)}
+                    />
+                  ) : (
                     <span onClick={() => setConfirmDeleteEntry(e.kb_id)} style={{ fontSize: 11, color: COLORS.red || "#ef4444", cursor: "pointer", fontWeight: 600 }}>Delete</span>
                   )}
                 </div>
@@ -707,7 +709,12 @@ export const KbView = ({ kbEntries, requirements, refresh, currentUser }) => {
               {!dragMode && <span onClick={ev => { ev.stopPropagation(); setRenamingSub(sub.subsection_id); setRenameSubName(sub.name); }} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", marginLeft: "auto" }}>Rename</span>}
               {!dragMode && entries.length === 0 && (
                 confirmDeleteSub === sub.subsection_id
-                  ? <><span onClick={ev => { ev.stopPropagation(); deleteSubsection(sub.subsection_id); setConfirmDeleteSub(null); }} style={{ fontSize: 10, color: COLORS.red || "#ef4444", cursor: "pointer", fontWeight: 600 }}>Confirm</span><span onClick={ev => { ev.stopPropagation(); setConfirmDeleteSub(null); }} style={{ fontSize: 10, color: COLORS.textMuted, cursor: "pointer", marginLeft: 4 }}>Cancel</span></>
+                  ? <InlineConfirm
+                      prompt="Delete?"
+                      onConfirm={() => { deleteSubsection(sub.subsection_id); setConfirmDeleteSub(null); }}
+                      onCancel={() => setConfirmDeleteSub(null)}
+                      stopPropagation
+                    />
                   : <span onClick={ev => { ev.stopPropagation(); setConfirmDeleteSub(sub.subsection_id); }} style={{ fontSize: 10, color: COLORS.red || "#ef4444", cursor: "pointer" }}>Delete</span>
               )}
             </>
@@ -782,7 +789,12 @@ export const KbView = ({ kbEntries, requirements, refresh, currentUser }) => {
               {!dragMode && !isDefault && <span onClick={ev => { ev.stopPropagation(); setRenamingSec(sec.section_id); setRenameSecName(sec.name); }} style={{ fontSize: 10, color: COLORS.accent, cursor: "pointer", marginLeft: "auto" }}>Rename</span>}
               {!dragMode && !isDefault && totalEntries === 0 && (sec.subsections || []).length === 0 && (
                 confirmDeleteSec === sec.section_id
-                  ? <><span onClick={ev => { ev.stopPropagation(); deleteSection(sec.section_id); setConfirmDeleteSec(null); }} style={{ fontSize: 10, color: COLORS.red || "#ef4444", cursor: "pointer", fontWeight: 600 }}>Confirm</span><span onClick={ev => { ev.stopPropagation(); setConfirmDeleteSec(null); }} style={{ fontSize: 10, color: COLORS.textMuted, cursor: "pointer", marginLeft: 4 }}>Cancel</span></>
+                  ? <InlineConfirm
+                      prompt="Delete?"
+                      onConfirm={() => { deleteSection(sec.section_id); setConfirmDeleteSec(null); }}
+                      onCancel={() => setConfirmDeleteSec(null)}
+                      stopPropagation
+                    />
                   : <span onClick={ev => { ev.stopPropagation(); setConfirmDeleteSec(sec.section_id); }} style={{ fontSize: 10, color: COLORS.red || "#ef4444", cursor: "pointer" }}>Delete</span>
               )}
             </>

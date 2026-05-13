@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, TestCaseEditForm, useIsMobile } from "./shared";
+import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, TestCaseEditForm, InlineConfirm, OverflowMenu, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useExpandCollapse, useInlineEdit } from "../hooks";
 
 export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) => {
@@ -163,73 +163,79 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Test Case Library</h2>
           <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
-            {testCases.length} test case{testCases.length !== 1 ? "s" : ""} total
-            {tcSelectMode && selectedTcIds.size > 0 ? ` · ${selectedTcIds.size} selected` : ""}
+            {tcSelectMode && selectedTcIds.size === 0
+              ? "Select test cases to export, delete, or purge"
+              : <>{testCases.length} test case{testCases.length !== 1 ? "s" : ""} total{tcSelectMode && selectedTcIds.size > 0 ? ` · ${selectedTcIds.size} selected` : ""}</>
+            }
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {!tcSelectMode && <>
-            {rejectedCount > 0 && !clearRejectedConfirm && (
-              <Button variant="danger" small onClick={() => setClearRejectedConfirm(true)}>Clear Rejected ({rejectedCount})</Button>
+          {!tcSelectMode && !clearRejectedConfirm && !clearAllConfirm && <>
+            {testCases.length > 0 && (
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search by ID, title, type, or requirement..."
+                style={{
+                  width: isMobile ? "100%" : 280, boxSizing: "border-box",
+                  background: COLORS.surface, border: `1px solid ${COLORS.border}`,
+                  borderRadius: 6, color: COLORS.textBright, fontSize: 12,
+                  padding: "6px 12px", fontFamily: mono, outline: "none",
+                }}
+              />
             )}
-            {clearRejectedConfirm && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11, color: COLORS.red }}>Delete {rejectedCount} rejected test case{rejectedCount !== 1 ? "s" : ""}?</span>
-                <Button variant="danger" small onClick={clearRejected}>Confirm</Button>
-                <Button variant="ghost" small onClick={() => setClearRejectedConfirm(false)}>Cancel</Button>
-              </div>
-            )}
-            {!clearAllConfirm && (
-              <Button variant="danger" small onClick={() => setClearAllConfirm(true)} disabled={testCases.length === 0}>Clear All</Button>
-            )}
-            {clearAllConfirm && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {testCases.length} test case{testCases.length !== 1 ? "s" : ""}?</span>
-                <Button variant="danger" small onClick={clearAll} disabled={clearing}>{clearing ? "Deleting..." : "Confirm"}</Button>
-                <Button variant="ghost" small onClick={() => setClearAllConfirm(false)} disabled={clearing}>Cancel</Button>
-              </div>
-            )}
-            {testCases.length > 0 && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>}
             {testCases.length > 0 && <Button variant="secondary" small onClick={enterSelectMode}>Select</Button>}
+            <OverflowMenu
+              items={[
+                { label: "Export XLSX", onClick: () => api.exportTestCasesXlsx(), disabled: testCases.length === 0 },
+                { label: `Clear Rejected (${rejectedCount})`, onClick: () => setClearRejectedConfirm(true), severity: "danger", hidden: rejectedCount === 0 },
+                { label: "Clear All", onClick: () => setClearAllConfirm(true), severity: "danger", disabled: testCases.length === 0 },
+              ]}
+            />
           </>}
+          {!tcSelectMode && clearRejectedConfirm && (
+            <InlineConfirm
+              prompt={`Delete ${rejectedCount} rejected test case${rejectedCount !== 1 ? "s" : ""}?`}
+              onConfirm={clearRejected}
+              onCancel={() => setClearRejectedConfirm(false)}
+            />
+          )}
+          {!tcSelectMode && clearAllConfirm && (
+            <InlineConfirm
+              prompt={`Delete all ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}?`}
+              onConfirm={clearAll}
+              onCancel={() => setClearAllConfirm(false)}
+            />
+          )}
           {tcSelectMode && (bulkConfirm === "purge" ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12, color: COLORS.amber, fontWeight: 600 }}>
-                ⚠ Purge {selectedTcIds.size} test case{selectedTcIds.size !== 1 ? "s" : ""}? Their feedback will also be erased from the learning engine.
-              </span>
-              <Button variant="warning" small onClick={purgeSelected} disabled={asyncLoading}>
-                {asyncLoading ? "Purging..." : "Confirm"}
-              </Button>
-              <Button variant="ghost" small onClick={() => setBulkConfirm(null)} disabled={asyncLoading}>
-                Cancel
-              </Button>
-            </div>
+            <InlineConfirm
+              prompt={`⚠ Purge ${selectedTcIds.size} test case${selectedTcIds.size !== 1 ? "s" : ""}? Their feedback will also be erased from the learning engine.`}
+              severity="warning"
+              onConfirm={purgeSelected}
+              onCancel={() => setBulkConfirm(null)}
+            />
           ) : bulkConfirm === "delete" ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12, color: COLORS.red, fontWeight: 600 }}>
-                Delete {selectedTcIds.size} selected test case{selectedTcIds.size !== 1 ? "s" : ""}?
-              </span>
-              <Button variant="danger" small onClick={deleteSelected} disabled={asyncLoading}>
-                {asyncLoading ? "Deleting..." : "Confirm"}
-              </Button>
-              <Button variant="ghost" small onClick={() => setBulkConfirm(null)} disabled={asyncLoading}>
-                Cancel
-              </Button>
-            </div>
+            <InlineConfirm
+              prompt={`Delete ${selectedTcIds.size} selected test case${selectedTcIds.size !== 1 ? "s" : ""}?`}
+              onConfirm={deleteSelected}
+              onCancel={() => setBulkConfirm(null)}
+            />
           ) : (
             <>
               <Button variant="secondary" small onClick={selectAllTcs}>{allSelected ? "Deselect All" : "Select All"}</Button>
-              <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
-              <Button variant="danger" small onClick={() => setBulkConfirm("delete")} disabled={selectedTcIds.size === 0 || asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
-              <Button variant="warning" small onClick={() => setBulkConfirm("purge")} disabled={selectedTcIds.size === 0 || asyncLoading}>Purge Selected ({selectedTcIds.size})</Button>
+              {selectedTcIds.size > 0 && <>
+                <Button variant="primary" small onClick={exportSelected}>Export Selected ({selectedTcIds.size})</Button>
+                <Button variant="danger" small onClick={() => setBulkConfirm("delete")} disabled={asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
+                <Button variant="warning" small onClick={() => setBulkConfirm("purge")} disabled={asyncLoading}>Purge Selected ({selectedTcIds.size})</Button>
+              </>}
               <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
             </>
           ))}
         </div>
       </div>
 
-      {/* Filter tabs + search */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+      {/* Filter tabs */}
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", gap: 4 }}>
           {[["all", "All"], ["draft", "Draft"], ["reviewed", "Reviewed"], ["rejected", "Rejected"]].map(([key, label]) => (
             <button key={key} onClick={() => setFilter(key)} style={{
@@ -241,19 +247,6 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
               {label} <span style={{ opacity: 0.6 }}>({counts[key]})</span>
             </button>
           ))}
-        </div>
-        <div style={{ flex: "1 1 180px", maxWidth: 320, minWidth: 140 }}>
-          <input
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by ID, title, type, or requirement..."
-            style={{
-              width: "100%", boxSizing: "border-box", background: COLORS.surface,
-              border: `1px solid ${COLORS.border}`, borderRadius: 6,
-              color: COLORS.textBright, fontSize: 12, padding: "6px 12px",
-              fontFamily: mono, outline: "none",
-            }}
-          />
         </div>
       </div>
 
@@ -278,19 +271,30 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
                       {tc.title}
                       {tc.status === "Draft" && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 6px", borderRadius: 3, fontWeight: 700, textTransform: "uppercase" }}>Draft</span>}
                     </div>
-                    <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-                      {tc.project_id && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Project ID: <span style={{ color: COLORS.accent }}>{tc.project_id}</span></span>}
-                      {tc.upstream_relationship?.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Upstream: {tc.upstream_relationship.map(u => <span key={u.id} style={{ color: COLORS.purple, marginRight: 4 }}>{u.id}</span>)}</span>}
-                      {(tc.linked_req_ids || []).length > 0 && <><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</>}
-                      <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
-                    </div>
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
-                    {expanded && <Button small variant="secondary" onClick={e => { e.stopPropagation(); edit.isEditing(tc.tc_id) ? edit.cancelEdit() : edit.startEdit(tc.tc_id, parseEditForm(tc)); }}>{edit.isEditing(tc.tc_id) ? "Cancel" : "Edit"}</Button>}
-                    <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
-                    <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}> &#10007;</Button>
-                    <Button small variant="warning" onClick={e => { e.stopPropagation(); setPurgingTcId(purgingTcId === tc.tc_id ? null : tc.tc_id); }} title="Purge — removes the TC and erases its feedback from the learning engine">⚠ Purge</Button>
-                    <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
+                    {(tc.project_id || tc.upstream_relationship?.length > 0 || (tc.linked_req_ids || []).length > 0) && (
+                      <div style={{ display: "flex", gap: 12, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        {tc.project_id && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Project ID: <span style={{ color: COLORS.accent }}>{tc.project_id}</span></span>}
+                        {tc.upstream_relationship?.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Upstream: {tc.upstream_relationship.map(u => <span key={u.id} style={{ color: COLORS.purple, marginRight: 4 }}>{u.id}</span>)}</span>}
+                        {(tc.linked_req_ids || []).length > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</span>}
+                      </div>
+                    )}
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+                    <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>
+                      {tc.status === "Reviewed" ? "✓ Approved" : "Approve"}
+                    </Button>
+                    <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}>
+                      ✗ Reject
+                    </Button>
+                    {expanded && <>
+                      <span style={{ width: 1, height: 20, background: COLORS.border, marginLeft: 4, marginRight: 4 }} />
+                      <Button small variant="secondary" onClick={e => { e.stopPropagation(); edit.isEditing(tc.tc_id) ? edit.cancelEdit() : edit.startEdit(tc.tc_id, parseEditForm(tc)); }}>{edit.isEditing(tc.tc_id) ? "Cancel" : "Edit"}</Button>
+                      <Button small variant="warning" onClick={e => { e.stopPropagation(); setPurgingTcId(purgingTcId === tc.tc_id ? null : tc.tc_id); }} title="Purge — removes the TC and erases its feedback from the learning engine">⚠ Purge</Button>
+                    </>}
                   </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
+                  <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
+                  <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"}>{tc.status}</Badge>
                 </div>
 
                 {/* Rejection reason picker — full-width below header */}

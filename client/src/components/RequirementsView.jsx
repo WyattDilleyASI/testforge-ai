@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, JamaImportPanel, useIsMobile } from "./shared";
+import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, JamaImportPanel, InlineConfirm, OverflowMenu, useIsMobile } from "./shared";
 import { useAsyncAction, useExpandCollapse, useInlineEdit, useSelection } from "../hooks";
 
 export const RequirementsView = ({ requirements, refresh, currentUser }) => {
@@ -15,6 +15,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [showJamaHelp, setShowJamaHelp] = useState(false);
@@ -118,10 +119,9 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   };
 
   const deleteSelected = async () => {
-    const count = selectedReqIds.size;
-    if (!window.confirm(`Delete ${count} selected requirement${count !== 1 ? "s" : ""}? Linked test cases will be orphaned.`)) return;
     await runAsync(async () => {
       await Promise.all([...selectedReqIds].map(id => api.deleteRequirement(id)));
+      setBulkDeleteConfirm(false);
       exitSelectMode();
       refresh();
     });
@@ -144,26 +144,50 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
 
   return <div>
     <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 0, marginBottom: 24 }}>
-      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>RS-001 – RS-006</p></div>
+      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2></div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        {!reqSelectMode && <>
-          {canDelete && !clearAllConfirm && requirements.length > 0 && <Button variant="danger" small onClick={() => setClearAllConfirm(true)}>Clear All</Button>}
-          {clearAllConfirm && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {requirements.length} requirements?</span>
-            <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
-            <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
-          </div>}
-          <Button variant="secondary" small onClick={() => { setShowJamaHelp(false); setShowPrefixConfig(v => !v); }} disabled={importing}>
-            {importing ? "Importing..." : "Import JAMA Requirements"}
-          </Button>
+        {!reqSelectMode && !clearAllConfirm && <>
+          {requirements.length > 0 && (
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by ID, title, description, priority, or status..."
+              style={{
+                width: isMobile ? "100%" : 280, boxSizing: "border-box",
+                background: COLORS.surface, border: `1px solid ${COLORS.border}`,
+                borderRadius: 6, color: COLORS.textBright, fontSize: 12,
+                padding: "6px 12px", fontFamily: mono, outline: "none",
+              }}
+            />
+          )}
           {canDelete && requirements.length > 0 && <Button variant="secondary" small onClick={() => { enterSelectMode(); edit.cancelEdit(); }}>Select</Button>}
-          <Button onClick={startAdd}>+ Add Requirement</Button>
+          <OverflowMenu
+            items={[
+              { label: importing ? "Importing..." : "Import JAMA Requirements", onClick: () => { setShowJamaHelp(false); setShowPrefixConfig(v => !v); }, disabled: importing },
+              { label: "Clear All", onClick: () => setClearAllConfirm(true), severity: "danger", hidden: !canDelete || requirements.length === 0 },
+            ]}
+          />
         </>}
-        {reqSelectMode && <>
+        {!reqSelectMode && clearAllConfirm && (
+          <InlineConfirm
+            prompt={`Delete all ${requirements.length} requirements?`}
+            onConfirm={handleClearAll}
+            onCancel={() => setClearAllConfirm(false)}
+          />
+        )}
+        {reqSelectMode && (bulkDeleteConfirm ? (
+          <InlineConfirm
+            prompt={`Delete ${selectedReqIds.size} selected requirement${selectedReqIds.size !== 1 ? "s" : ""}? Linked test cases will be orphaned.`}
+            onConfirm={deleteSelected}
+            onCancel={() => setBulkDeleteConfirm(false)}
+          />
+        ) : <>
           <Button variant="secondary" small onClick={selectAllReqs}>{allSelected ? "Deselect All" : "Select All"}</Button>
-          <Button variant="danger" small onClick={deleteSelected} disabled={selectedReqIds.size === 0}>Delete Selected ({selectedReqIds.size})</Button>
+          {selectedReqIds.size > 0 && (
+            <Button variant="danger" small onClick={() => setBulkDeleteConfirm(true)}>Delete Selected ({selectedReqIds.size})</Button>
+          )}
           <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
-        </>}
+        </>)}
       </div>
     </div>
     
@@ -239,21 +263,6 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
       />
     )}
 
-    {/* Search */}
-    <div style={{ marginBottom: 16, maxWidth: 420 }}>
-      <input
-        value={searchQuery}
-        onChange={e => setSearchQuery(e.target.value)}
-        placeholder="Search by ID, title, description, priority, or status..."
-        style={{
-          width: "100%", boxSizing: "border-box", background: COLORS.surface,
-          border: `1px solid ${COLORS.border}`, borderRadius: 6,
-          color: COLORS.textBright, fontSize: 12, padding: "6px 12px",
-          fontFamily: mono, outline: "none",
-        }}
-      />
-    </div>
-
     {importMsg && <div style={{ marginBottom: 16, padding: "8px 12px", background: COLORS.greenDim, borderRadius: 6, border: `1px solid ${COLORS.green}33`, fontSize: 12, color: COLORS.green }}>{importMsg}</div>}
 
     {showAdd && <Card glow style={{ marginBottom: 20 }}>
@@ -264,6 +273,34 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
         <Button onClick={saveAdd} disabled={!addForm.req_id || !addForm.title}>Save</Button>
       </div>
     </Card>}
+
+    {/* + Add Requirement placeholder — clickable card at top of list */}
+    {!showAdd && !reqSelectMode && (
+      <div
+        onClick={startAdd}
+        style={{
+          marginBottom: 10, padding: "14px 18px", borderRadius: 10,
+          border: `1.5px dashed ${COLORS.border}`,
+          background: "transparent",
+          display: "flex", alignItems: "center", gap: 10,
+          color: COLORS.textMuted, cursor: "pointer",
+          transition: "border-color 0.15s ease, color 0.15s ease, background 0.15s ease",
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = COLORS.accent;
+          e.currentTarget.style.color = COLORS.accent;
+          e.currentTarget.style.background = COLORS.accentDim;
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = COLORS.border;
+          e.currentTarget.style.color = COLORS.textMuted;
+          e.currentTarget.style.background = "transparent";
+        }}
+      >
+        <span style={{ fontSize: 16, lineHeight: 1, fontWeight: 600 }}>+</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Add Requirement</span>
+      </div>
+    )}
 
     {(() => {
       const q = searchQuery.toLowerCase().trim();
@@ -282,7 +319,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
       const expanded = isExpanded(r.req_id);
       const isEditing = edit.isEditing(r.req_id);
       const isJama = r.source === "JAMA Import";
-      const SectionLabel = ({ children }) => <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 12, marginBottom: 4 }}>{children}</div>;
+      const SectionLabel = ({ children, first }) => <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: first ? 0 : 20, marginBottom: 6 }}>{children}</div>;
       const rels = r.relationships || [];
       const tcRels = rels.filter(rel => rel.group === "Verification Test Case" || rel.direction === "Downstream");
       const reqRels = rels.filter(rel => rel.group !== "Verification Test Case" && rel.direction !== "Downstream");
@@ -291,14 +328,24 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
           {reqSelectMode && <input type="checkbox" checked={isSelected(r.req_id)} onChange={() => toggleReqSelect(r.req_id)} onClick={e => e.stopPropagation()} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
           <ReqIdTag id={r.req_id} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>{r.title}</div>
-            {!isEditing && !expanded && <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6 }}>{r.description}</div>}
-            {!isEditing && !expanded && (r.acceptance_criteria || []).length > 0 && <div style={{ marginTop: 8 }}><span style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Acceptance Criteria:</span>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 13, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}`, lineHeight: 1.6 }}>• {ac}</div>)}</div>}
-            {!isEditing && !expanded && rels.length > 0 && <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {tcRels.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.green }}>TC: {tcRels.map(r => r.id).join(", ")}</span>}
-              {reqRels.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.purple, marginLeft: tcRels.length ? 8 : 0 }}>REQ: {reqRels.map(r => r.id).join(", ")}</span>}
-            </div>}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: COLORS.textBright, marginBottom: 4, lineHeight: 1.35 }}>{r.title}</div>
+            {!isEditing && !expanded && r.description && (
+              <div style={{
+                fontSize: 13, color: COLORS.textMuted, lineHeight: 1.6,
+                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                overflow: "hidden", textOverflow: "ellipsis",
+              }}>{r.description}</div>
+            )}
+            {!isEditing && !expanded && (
+              <div style={{ marginTop: 6, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", fontSize: 11, fontFamily: mono, color: COLORS.textMuted }}>
+                {(r.acceptance_criteria || []).length > 0 && (
+                  <span>{r.acceptance_criteria.length} AC criteri{r.acceptance_criteria.length === 1 ? "on" : "a"}</span>
+                )}
+                {tcRels.length > 0 && <span style={{ color: COLORS.green }}>{tcRels.length} TC link{tcRels.length !== 1 ? "s" : ""}</span>}
+                {reqRels.length > 0 && <span style={{ color: COLORS.purple }}>{reqRels.length} REQ link{reqRels.length !== 1 ? "s" : ""}</span>}
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
             {isJama && <Badge color="purple">JAMA</Badge>}
@@ -309,30 +356,51 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
         </div>
 
         {expanded && !isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
-          {r.description && <><SectionLabel>Requirement (EARS)</SectionLabel><div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6 }}>{r.description}</div></>}
-          {r.rationale && <><SectionLabel>Rationale</SectionLabel><div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6 }}>{r.rationale}</div></>}
-          {(r.acceptance_criteria || []).length > 0 && <><SectionLabel>Acceptance Criteria</SectionLabel>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 13, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}`, lineHeight: 1.6 }}>• {ac}</div>)}</>}
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
-            {r.requirement_type && <div><SectionLabel>Type</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.requirement_type}</div></div>}
-            {r.verification_method && <div><SectionLabel>Verification</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.verification_method}</div></div>}
-            {r.safety_level && <div><SectionLabel>Safety Level</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.safety_level}</div></div>}
-            {r.scheduled_release && <div><SectionLabel>Release</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.scheduled_release}</div></div>}
-            {r.global_id && <div><SectionLabel>Global ID</SectionLabel><div style={{ fontSize: 12, fontFamily: mono, color: COLORS.textMuted }}>{r.global_id}</div></div>}
-            {r.source && <div><SectionLabel>Source</SectionLabel><div style={{ fontSize: 12, color: COLORS.text }}>{r.source}</div></div>}
-          </div>
-          {(r.requirement_context || []).length > 0 && <><SectionLabel>Requirement Context</SectionLabel>{r.requirement_context.map((ctx, i) => <div key={i} style={{ marginTop: 6 }}><div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>{ctx.field}</div>{ctx.items.map((item, j) => <div key={j} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 2, borderLeft: `2px solid ${COLORS.border}` }}>• {item}</div>)}</div>)}</>}
-          {(r.tags || []).length > 0 && <><SectionLabel>Tags</SectionLabel><div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>{r.tags.map((tag, i) => <span key={i} style={{ fontSize: 10, fontFamily: mono, padding: "2px 8px", borderRadius: 4, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}22` }}>{tag}</span>)}</div></>}
-          {rels.length > 0 && <><SectionLabel>Relationships</SectionLabel>
-            <div style={{ marginTop: 4 }}>
-              {rels.map((rel, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: i < rels.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+          {r.description && <><SectionLabel first>Requirement (EARS)</SectionLabel><div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{r.description}</div></>}
+          {r.rationale && <><SectionLabel>Rationale</SectionLabel><div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{r.rationale}</div></>}
+          {(r.acceptance_criteria || []).length > 0 && <><SectionLabel>Acceptance Criteria</SectionLabel>{r.acceptance_criteria.map((ac, i) => <div key={i} style={{ fontSize: 13, color: COLORS.text, paddingLeft: 12, marginTop: i === 0 ? 0 : 4, borderLeft: `2px solid ${COLORS.border}`, lineHeight: 1.6 }}>• {ac}</div>)}</>}
+
+          {/* Metadata — visually grouped to separate from content */}
+          {(r.requirement_type || r.verification_method || r.safety_level || r.scheduled_release || r.global_id || r.source) && (
+            <div style={{ marginTop: 20, padding: "12px 14px", borderRadius: 6, background: COLORS.surface, border: `1px solid ${COLORS.border}` }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: 12 }}>
+                {r.requirement_type && <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Type</div><div style={{ fontSize: 13, color: COLORS.text }}>{r.requirement_type}</div></div>}
+                {r.verification_method && <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Verification</div><div style={{ fontSize: 13, color: COLORS.text }}>{r.verification_method}</div></div>}
+                {r.safety_level && <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Safety Level</div><div style={{ fontSize: 13, color: COLORS.text }}>{r.safety_level}</div></div>}
+                {r.scheduled_release && <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Release</div><div style={{ fontSize: 13, color: COLORS.text }}>{r.scheduled_release}</div></div>}
+                {r.global_id && <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Global ID</div><div style={{ fontSize: 12, fontFamily: mono, color: COLORS.textMuted }}>{r.global_id}</div></div>}
+                {r.source && <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Source</div><div style={{ fontSize: 13, color: COLORS.text }}>{r.source}</div></div>}
+              </div>
+            </div>
+          )}
+
+          {(r.requirement_context || []).length > 0 && <><SectionLabel>Requirement Context</SectionLabel>{r.requirement_context.map((ctx, i) => <div key={i} style={{ marginTop: i === 0 ? 0 : 8 }}><div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted }}>{ctx.field}</div>{ctx.items.map((item, j) => <div key={j} style={{ fontSize: 13, color: COLORS.text, paddingLeft: 12, marginTop: 3, borderLeft: `2px solid ${COLORS.border}`, lineHeight: 1.6 }}>• {item}</div>)}</div>)}</>}
+
+          {(r.tags || []).length > 0 && <><SectionLabel>Tags</SectionLabel><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{r.tags.map((tag, i) => <span key={i} style={{ fontSize: 10, fontFamily: mono, padding: "2px 8px", borderRadius: 4, background: COLORS.accentDim, color: COLORS.accent, border: `1px solid ${COLORS.accent}22` }}>{tag}</span>)}</div></>}
+
+          {/* Relationships — grouped by direction */}
+          {rels.length > 0 && (() => {
+            const renderRel = (rel, i, list) => (
+              <div key={`${rel.id}-${i}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: i < list.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
                 <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color: rel.direction === "Downstream" ? COLORS.green : COLORS.purple }}>{rel.id}</span>
                 <span style={{ fontSize: 11, color: COLORS.textMuted }}>—</span>
-                <span style={{ fontSize: 12, color: COLORS.text, flex: 1 }}>{rel.name}</span>
-                <Badge color={rel.direction === "Downstream" ? "green" : "purple"}>{rel.direction}</Badge>
+                <span style={{ fontSize: 13, color: COLORS.text, flex: 1 }}>{rel.name}</span>
                 <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>{rel.group}</span>
-              </div>)}
-            </div>
-          </>}
+              </div>
+            );
+            const downstream = rels.filter(rel => rel.direction === "Downstream");
+            const upstream = rels.filter(rel => rel.direction !== "Downstream");
+            return <>
+              {downstream.length > 0 && <>
+                <SectionLabel>Downstream ({downstream.length})</SectionLabel>
+                <div>{downstream.map((rel, i) => renderRel(rel, i, downstream))}</div>
+              </>}
+              {upstream.length > 0 && <>
+                <SectionLabel>Upstream ({upstream.length})</SectionLabel>
+                <div>{upstream.map((rel, i) => renderRel(rel, i, upstream))}</div>
+              </>}
+            </>;
+          })()}
         </div>}
 
         {isEditing && <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }} onClick={e => e.stopPropagation()}>
@@ -343,10 +411,13 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
               <Button variant="danger" small onClick={() => setDeleteConfirm(edit.editingId)} style={{ marginRight: "auto" }}>Delete</Button>
             )}
             {canDelete && deleteConfirm === edit.editingId && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "auto" }}>
-                <span style={{ fontSize: 11, color: COLORS.red }}>Delete? Linked TCs will be orphaned.</span>
-                <Button variant="danger" small onClick={() => doDelete(edit.editingId)}>Confirm</Button>
-                <Button variant="ghost" small onClick={() => setDeleteConfirm(null)}>No</Button>
+              <div style={{ marginRight: "auto" }}>
+                <InlineConfirm
+                  prompt="Delete? Linked TCs will be orphaned."
+                  cancelLabel="No"
+                  onConfirm={() => doDelete(edit.editingId)}
+                  onCancel={() => setDeleteConfirm(null)}
+                />
               </div>
             )}
             <Button variant="secondary" onClick={() => edit.cancelEdit()}>Cancel</Button>
