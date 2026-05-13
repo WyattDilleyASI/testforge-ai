@@ -64,6 +64,43 @@ class HybridClient {
     return await this.aiClient.call(player, state, task, options);
   }
 
+  // Take over a human-controlled seat with the AI client. Used when a
+  // human disconnects mid-game. The seat keeps its role, history, and
+  // place in the game — only its decision-maker changes.
+  //
+  // If the seat is currently waiting on a turn, the waiter's pending
+  // promise is resolved with a freshly-generated AI response so the
+  // orchestrator's awaited call() returns cleanly without stalling the
+  // game.
+  //
+  // Idempotent: calling demoteToAi on a non-human player (never was, or
+  // already demoted) is a silent no-op. This matters because disconnect
+  // handlers can race with other state changes — better to absorb
+  // double-calls than to throw.
+  async demoteToAi(player) {
+    if (!player.isHuman) return;
+
+    player.isHuman = false;
+    const waiter = this.waiters.get(player.name);
+    if (!waiter) return;
+
+    this.waiters.delete(player.name);
+
+    if (waiter.isWaiting()) {
+      const task = waiter.pendingTask();
+      const pendingPlayer = waiter.pendingPlayer();
+      const pendingState = waiter.pendingState();
+      try {
+        const aiResponse = await this.aiClient.call(pendingPlayer, pendingState, task);
+        waiter.resolve(aiResponse);
+      } catch (err) {
+        // AI takeover itself failed — fall back to cancellation so the
+        // orchestrator's await unstalls (with an error rather than hanging).
+        waiter.cancel(`AI takeover failed: ${err.message}`);
+      }
+    }
+  }
+
   // Cancel every registered waiter at once. Used in the route's cleanup
   // path when the SSE connection drops mid-game; saves the caller from
   // looping themselves.
