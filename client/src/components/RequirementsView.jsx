@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, JamaImportPanel, useIsMobile } from "./shared";
+import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, JamaImportPanel, InlineConfirm, useIsMobile } from "./shared";
 import { useAsyncAction, useExpandCollapse, useInlineEdit, useSelection } from "../hooks";
 
 export const RequirementsView = ({ requirements, refresh, currentUser }) => {
@@ -15,6 +15,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [showJamaHelp, setShowJamaHelp] = useState(false);
@@ -118,10 +119,9 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   };
 
   const deleteSelected = async () => {
-    const count = selectedReqIds.size;
-    if (!window.confirm(`Delete ${count} selected requirement${count !== 1 ? "s" : ""}? Linked test cases will be orphaned.`)) return;
     await runAsync(async () => {
       await Promise.all([...selectedReqIds].map(id => api.deleteRequirement(id)));
+      setBulkDeleteConfirm(false);
       exitSelectMode();
       refresh();
     });
@@ -144,26 +144,36 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
 
   return <div>
     <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 0, marginBottom: 24 }}>
-      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>RS-001 – RS-006</p></div>
+      <div><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements</h2></div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {!reqSelectMode && <>
           {canDelete && !clearAllConfirm && requirements.length > 0 && <Button variant="danger" small onClick={() => setClearAllConfirm(true)}>Clear All</Button>}
-          {clearAllConfirm && <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {requirements.length} requirements?</span>
-            <Button variant="danger" small onClick={handleClearAll}>Confirm</Button>
-            <Button variant="ghost" small onClick={() => setClearAllConfirm(false)}>Cancel</Button>
-          </div>}
+          {clearAllConfirm && (
+            <InlineConfirm
+              prompt={`Delete all ${requirements.length} requirements?`}
+              onConfirm={handleClearAll}
+              onCancel={() => setClearAllConfirm(false)}
+            />
+          )}
           <Button variant="secondary" small onClick={() => { setShowJamaHelp(false); setShowPrefixConfig(v => !v); }} disabled={importing}>
             {importing ? "Importing..." : "Import JAMA Requirements"}
           </Button>
           {canDelete && requirements.length > 0 && <Button variant="secondary" small onClick={() => { enterSelectMode(); edit.cancelEdit(); }}>Select</Button>}
           <Button onClick={startAdd}>+ Add Requirement</Button>
         </>}
-        {reqSelectMode && <>
+        {reqSelectMode && (bulkDeleteConfirm ? (
+          <InlineConfirm
+            prompt={`Delete ${selectedReqIds.size} selected requirement${selectedReqIds.size !== 1 ? "s" : ""}? Linked test cases will be orphaned.`}
+            onConfirm={deleteSelected}
+            onCancel={() => setBulkDeleteConfirm(false)}
+          />
+        ) : <>
           <Button variant="secondary" small onClick={selectAllReqs}>{allSelected ? "Deselect All" : "Select All"}</Button>
-          <Button variant="danger" small onClick={deleteSelected} disabled={selectedReqIds.size === 0}>Delete Selected ({selectedReqIds.size})</Button>
+          {selectedReqIds.size > 0 && (
+            <Button variant="danger" small onClick={() => setBulkDeleteConfirm(true)}>Delete Selected ({selectedReqIds.size})</Button>
+          )}
           <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
-        </>}
+        </>)}
       </div>
     </div>
     
@@ -343,10 +353,13 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
               <Button variant="danger" small onClick={() => setDeleteConfirm(edit.editingId)} style={{ marginRight: "auto" }}>Delete</Button>
             )}
             {canDelete && deleteConfirm === edit.editingId && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "auto" }}>
-                <span style={{ fontSize: 11, color: COLORS.red }}>Delete? Linked TCs will be orphaned.</span>
-                <Button variant="danger" small onClick={() => doDelete(edit.editingId)}>Confirm</Button>
-                <Button variant="ghost" small onClick={() => setDeleteConfirm(null)}>No</Button>
+              <div style={{ marginRight: "auto" }}>
+                <InlineConfirm
+                  prompt="Delete? Linked TCs will be orphaned."
+                  cancelLabel="No"
+                  onConfirm={() => doDelete(edit.editingId)}
+                  onCancel={() => setDeleteConfirm(null)}
+                />
               </div>
             )}
             <Button variant="secondary" onClick={() => edit.cancelEdit()}>Cancel</Button>

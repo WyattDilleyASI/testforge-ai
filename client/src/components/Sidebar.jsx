@@ -1,14 +1,14 @@
 import { useTheme, font, mono } from "../theme";
 
 export const NAV_ITEMS = [
-  { key: "dashboard",     label: "Coverage Dashboard",   icon: "◫", reqs: "RS-007" },
-  { key: "requirements",  label: "Requirements",         icon: "◧", reqs: "RS-001 – RS-006" },
-  { key: "testcases",     label: "Test Cases",           icon: "◨", reqs: "TC-001 – TC-009" },
-  { key: "traceability",  label: "SysML Traceability",   icon: "◈", reqs: "TC-007" },
-  { key: "kb",            label: "Knowledge Base",       icon: "◪", reqs: "KB-001 – KB-006" },
-  { key: "analytics",     label: "Learning Engine",      icon: "◉", reqs: "AL-002 – AL-004" },
-  { key: "settings",      label: "Settings",             icon: "⚙", reqs: "UM · JM · MCP" },
-  { key: "deferred",      label: "Deferred to v2",       icon: "◬", reqs: "AL-xxx · KB-007" },
+  { key: "dashboard",     label: "Coverage Dashboard",   icon: "◫" },
+  { key: "requirements",  label: "Requirements",         icon: "◧" },
+  { key: "testcases",     label: "Test Cases",           icon: "◨" },
+  { key: "traceability",  label: "SysML Traceability",   icon: "◈" },
+  { key: "kb",            label: "Knowledge Base",       icon: "◪" },
+  { key: "analytics",     label: "Learning Engine",      icon: "◉" },
+  { key: "settings",      label: "Settings",             icon: "⚙" },
+  { key: "deferred",      label: "Deferred to v2",       icon: "◬" },
 ];
 
 export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentTheme, onThemeChange, isMobile = false, isOpen = false, onClose, collapsed = false, onToggleCollapse }) => {
@@ -107,12 +107,7 @@ export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentThem
               }}
             >
               <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
-              {!collapsed && (
-                <div>
-                  <div>{item.label}</div>
-                  <div style={{ fontSize: 9, fontFamily: mono, color: T.textMuted, opacity: 0.7, marginTop: 1 }}>{item.reqs}</div>
-                </div>
-              )}
+              {!collapsed && <div>{item.label}</div>}
             </button>
           );
         })}

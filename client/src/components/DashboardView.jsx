@@ -66,7 +66,7 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
   );
 
   return <div>
-    <div style={{ marginBottom: 28 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements Coverage Dashboard</h2><p style={{ fontSize: 12, color: COLORS.textMuted, margin: "6px 0 0", fontFamily: mono }}>REQ RS-007</p></div>
+    <div style={{ marginBottom: 28 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>Requirements Coverage Dashboard</h2></div>
 
     {/* Top-level stats */}
     <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 import { useTheme, font, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, EmptyState, ErrorBanner } from "./shared";
+import { Card, Badge, Button, Input, Select, EmptyState, ErrorBanner, InlineConfirm } from "./shared";
 import { useAsyncAction, useInlineEdit } from "../hooks";
 
 export const McpServerConfigView = ({ currentUser }) => {
@@ -238,10 +238,13 @@ export const McpServerConfigView = ({ currentUser }) => {
                     <Button variant="danger" small onClick={() => setDeleteConfirm(s.id)}
                       style={{ marginRight: "auto" }}>Delete</Button>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "auto" }}>
-                      <span style={{ fontSize: 11, color: COLORS.red }}>Remove this server?</span>
-                      <Button variant="danger" small onClick={() => doDelete(s.id)}>Confirm</Button>
-                      <Button variant="ghost" small onClick={() => setDeleteConfirm(null)}>No</Button>
+                    <div style={{ marginRight: "auto" }}>
+                      <InlineConfirm
+                        prompt="Remove this server?"
+                        cancelLabel="No"
+                        onConfirm={() => doDelete(s.id)}
+                        onCancel={() => setDeleteConfirm(null)}
+                      />
                     </div>
                   )}
                   <Button variant="secondary" onClick={() => edit.cancelEdit()}>Cancel</Button>

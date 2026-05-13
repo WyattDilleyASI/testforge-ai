@@ -431,6 +431,202 @@ export const RejectionPicker = ({ onReject, onCancel }) => {
   );
 };
 
+// ── OVERFLOW MENU ─────────────────────────────────────────────────────────────
+// Small dropdown button that hides secondary actions behind a single trigger.
+// Use to declutter toolbars when several rarely-used buttons crowd primary ones.
+//
+// Props:
+//   items       — array of { label, onClick, severity?, disabled?, hidden? }.
+//                 severity = "danger" | "warning" | undefined. Hidden items
+//                 are filtered out (useful for permission-gated entries).
+//   triggerLabel — button text/glyph. Defaults to "⋯".
+//   align        — "left" | "right" (default). Aligns dropdown panel relative
+//                  to the trigger button.
+export const OverflowMenu = ({ items, triggerLabel = "⋯", align = "right" }) => {
+  const T = useTheme();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const visible = (items || []).filter(it => !it.hidden);
+  if (visible.length === 0) return null;
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <Button variant="secondary" small onClick={() => setOpen(o => !o)}>
+        {triggerLabel}
+      </Button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%",
+          [align]: 0,
+          marginTop: 4,
+          background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.3)", zIndex: 50, minWidth: 180,
+          padding: 4,
+        }}>
+          {visible.map((item, i) => {
+            const color = item.severity === "danger" ? T.red
+              : item.severity === "warning" ? T.amber
+              : T.text;
+            return (
+              <button
+                key={i}
+                onClick={() => { setOpen(false); item.onClick?.(); }}
+                disabled={item.disabled}
+                style={{
+                  display: "block", width: "100%", textAlign: "left",
+                  padding: "7px 10px", borderRadius: 4, border: "none",
+                  background: "transparent",
+                  cursor: item.disabled ? "not-allowed" : "pointer",
+                  fontSize: 12, fontFamily: font,
+                  fontWeight: 500,
+                  color,
+                  opacity: item.disabled ? 0.4 : 1,
+                }}
+                onMouseEnter={e => { if (!item.disabled) e.currentTarget.style.background = T.surfaceRaised; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── CONFIRMATIONS ─────────────────────────────────────────────────────────────
+// InlineConfirm is a single-row replacement for a button: shows a prompt plus
+// Confirm/Cancel buttons. Used when an action button transforms into its own
+// confirmation in place (toolbar buttons, inline list-item delete).
+//
+// Props:
+//   prompt        — short question, e.g. "Delete 3 items?"
+//   onConfirm     — sync or async; if it returns a promise the panel disables
+//                   the buttons while pending and surfaces thrown errors.
+//   onCancel      — called when user dismisses.
+//   severity      — "danger" (default) or "warning". Tints the prompt color
+//                   and chooses the Confirm button variant.
+//   confirmLabel  — defaults to "Confirm".
+//   cancelLabel   — defaults to "Cancel".
+//   stopPropagation — wrap click handlers in stopPropagation (for clickable
+//                     parent rows).
+export const InlineConfirm = ({
+  prompt,
+  onConfirm,
+  onCancel,
+  severity = "danger",
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  stopPropagation = false,
+}) => {
+  const T = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const color = severity === "warning" ? T.amber : T.red;
+
+  const handle = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await onConfirm();
+    } catch (err) {
+      setError(err.message || "Failed");
+      setBusy(false);
+    }
+  };
+
+  const swallow = (handler) => stopPropagation
+    ? (e) => { e?.stopPropagation?.(); handler?.(e); }
+    : handler;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 11, color, fontWeight: 600 }}>{prompt}</span>
+      <Button
+        variant={severity === "warning" ? "warning" : "danger"}
+        small
+        onClick={swallow(handle)}
+        disabled={busy}
+      >
+        {busy ? "…" : confirmLabel}
+      </Button>
+      <Button variant="ghost" small onClick={swallow(onCancel)} disabled={busy}>
+        {cancelLabel}
+      </Button>
+      {error && <span style={{ fontSize: 11, color: T.red, fontFamily: mono }}>{error}</span>}
+    </div>
+  );
+};
+
+// ConfirmPanel is a block-level confirmation panel — heavier visual weight,
+// suitable for page-level destructive actions (clear-all, bulk-delete). Use
+// InlineConfirm for in-toolbar or in-list-item confirmations.
+//
+// Props:
+//   title         — bolded heading next to the warning icon
+//   body          — optional supporting text (string or ReactNode)
+//   onConfirm     — sync or async
+//   onCancel      — called when user dismisses
+//   severity      — "danger" (default) or "warning"
+//   confirmLabel  — defaults to "Confirm"
+//   cancelLabel   — defaults to "Cancel"
+export const ConfirmPanel = ({
+  title,
+  body,
+  onConfirm,
+  onCancel,
+  severity = "danger",
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+}) => {
+  const T = useTheme();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const color = severity === "warning" ? T.amber : T.red;
+  const dim = severity === "warning" ? T.amberDim : T.redDim;
+
+  const handle = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await onConfirm();
+    } catch (err) {
+      setError(err.message || "Failed");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 12, background: dim, border: `1px solid ${color}66`, borderRadius: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: body ? 8 : 10 }}>
+        <span style={{ color, fontSize: 14 }}>⚠</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color }}>{title}</span>
+      </div>
+      {body && (
+        <div style={{ fontSize: 12, color: T.text, marginBottom: 10, lineHeight: 1.5 }}>{body}</div>
+      )}
+      {error && <div style={{ fontSize: 11, color: T.red, marginBottom: 8, fontFamily: mono }}>{error}</div>}
+      <div style={{ display: "flex", gap: 6 }}>
+        <Button variant={severity === "warning" ? "warning" : "danger"} small onClick={handle} disabled={busy}>
+          {busy ? "…" : confirmLabel}
+        </Button>
+        <Button variant="ghost" small onClick={onCancel} disabled={busy}>{cancelLabel}</Button>
+      </div>
+    </div>
+  );
+};
+
 // ── TEST CASE EDIT FORM ───────────────────────────────────────────────────────
 // Shared edit form used by the TC generation page and the TC library. Renders
 // Title/Type, optional Traced Requirements selector, Description, Setup, and

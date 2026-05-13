@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, JamaImportPanel, TestCaseEditForm, useIsMobile } from "./shared";
+import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, JamaImportPanel, TestCaseEditForm, InlineConfirm, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useInlineEdit } from "../hooks";
 
 export const TestCaseView = ({ requirements, testCases, refresh, initialReqId }) => {
@@ -634,11 +634,11 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                 <Button variant="danger" small onClick={() => setClearRejectedConfirm(true)}>Clear Rejected ({sessionRejectedCount})</Button>
               )}
               {clearRejectedConfirm && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 11, color: COLORS.red }}>Delete {sessionRejectedCount} rejected test case{sessionRejectedCount !== 1 ? "s" : ""}?</span>
-                  <Button variant="danger" small onClick={clearRejected}>Confirm</Button>
-                  <Button variant="ghost" small onClick={() => setClearRejectedConfirm(false)}>Cancel</Button>
-                </div>
+                <InlineConfirm
+                  prompt={`Delete ${sessionRejectedCount} rejected test case${sessionRejectedCount !== 1 ? "s" : ""}?`}
+                  onConfirm={clearRejected}
+                  onCancel={() => setClearRejectedConfirm(false)}
+                />
               )}
             </div>
           </div>
