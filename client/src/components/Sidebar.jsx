@@ -20,6 +20,7 @@ export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentThem
   // so there's no layout shift when the user grazes in/out. A small leave-delay
   // prevents accidental edge-cross collapses. Disabled on mobile (uses slide-in).
   const [isHovering, setIsHovering] = useState(false);
+  const [hoveredKey, setHoveredKey] = useState(null);
   const leaveTimerRef = useRef(null);
   const collapsed = collapsedProp && !isHovering;
   const w = collapsed ? 56 : 250;
@@ -127,10 +128,13 @@ export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentThem
         .map(item => {
           const d = item.key === "deferred";
           const isActive = active === item.key;
+          const isHovered = hoveredKey === item.key;
           return (
             <button
               key={item.key}
               onClick={() => onNavigate(item.key)}
+              onMouseEnter={() => setHoveredKey(item.key)}
+              onMouseLeave={() => setHoveredKey(null)}
               title={collapsed ? item.label : undefined}
               style={{
                 display: "flex", alignItems: "center",
@@ -140,11 +144,12 @@ export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentThem
                 cursor: "pointer", textAlign: "left", fontFamily: font,
                 fontSize: 13,
                 fontWeight: isActive ? 600 : 400,
-                color: isActive ? T.textBright : d ? T.textMuted + "88" : T.textMuted,
-                background: isActive ? T.accentDim : "transparent",
+                color: isActive ? T.textBright : isHovered ? T.text : d ? T.textMuted + "88" : T.textMuted,
+                background: isActive ? T.accentDim : isHovered ? `${T.accent}11` : "transparent",
                 borderLeft: isActive ? `2px solid ${T.accent}` : "2px solid transparent",
                 fontStyle: d ? "italic" : "normal",
                 width: "100%",
+                transition: "background 0.15s ease, color 0.15s ease",
               }}
             >
               <span style={{ fontSize: 15, opacity: d ? 0.3 : 0.7, width: 20, textAlign: "center", flexShrink: 0 }}>{item.icon}</span>
