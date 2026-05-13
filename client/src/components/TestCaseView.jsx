@@ -29,6 +29,9 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
   // KB panel collapse (mobile: collapsed by default)
   const [kbPanelOpen, setKbPanelOpen] = useState(!isMobile);
 
+  // Selected requirement preview panel
+  const [reqPreviewOpen, setReqPreviewOpen] = useState(true);
+
   // Manual import / copy state
   const [copyState, setCopyState] = useState("idle");
   const [showImport, setShowImport] = useState(false);
@@ -343,6 +346,64 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                 )}
               </div>
             </div>
+            {selectedReqId && (() => {
+              const req = requirements.find(r => r.req_id === selectedReqId);
+              if (!req) return null;
+              const acList = Array.isArray(req.acceptance_criteria) ? req.acceptance_criteria : [];
+              const priorityColor = req.priority === "High" ? "red" : req.priority === "Medium" ? "amber" : "green";
+              const statusColor = req.status === "Approved" ? "green" : req.status === "Rejected" ? "red" : "amber";
+              return (
+                <div style={{
+                  marginBottom: 12, padding: "8px 12px", borderRadius: 6,
+                  background: COLORS.surface, border: `1px solid ${COLORS.border}`,
+                }}>
+                  <div
+                    onClick={() => setReqPreviewOpen(o => !o)}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      cursor: "pointer", userSelect: "none",
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, color: COLORS.textMuted,
+                      fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em",
+                    }}>
+                      Requirement Details
+                    </span>
+                    <span style={{ fontSize: 12, color: COLORS.textMuted }}>{reqPreviewOpen ? "▴" : "▾"}</span>
+                  </div>
+                  {reqPreviewOpen && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: mono, fontWeight: 600, color: COLORS.accent }}>{req.req_id}</span>
+                        {req.title && <span style={{ color: COLORS.textBright, fontWeight: 500, fontSize: 12 }}>{req.title}</span>}
+                        {req.priority && <Badge color={priorityColor} style={{ fontSize: 9 }}>{req.priority}</Badge>}
+                        {req.status && <Badge color={statusColor} style={{ fontSize: 9 }}>{req.status}</Badge>}
+                      </div>
+                      {req.description && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: COLORS.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                          {req.description}
+                        </div>
+                      )}
+                      {req.rationale && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Rationale</div>
+                          <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{req.rationale}</div>
+                        </div>
+                      )}
+                      {acList.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Acceptance Criteria</div>
+                          {acList.map((ac, i) => (
+                            <div key={i} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 2, borderLeft: `2px solid ${COLORS.border}` }}>• {ac}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={{ marginBottom: 12 }}>
               <Select label="Depth" value={depth} onChange={setDepth} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
             </div>
