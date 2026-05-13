@@ -74,16 +74,25 @@ function sanitizeHumanName(raw) {
 
 function buildState(seed, players, rng, options = {}) {
   const names = NAME_POOL.slice(0, players);
+  const humanNames = options.humanNames || [];
 
-  // If a human is playing, slot them in at a (seeded-)random seat. If their
-  // name collides with a fixed pool name, suffix with "*" until unique —
-  // collisions only happen if the user happens to be named Alice/Bob/etc.
-  let humanSeat = null;
-  if (options.humanName) {
-    humanSeat = options.humanName;
-    while (names.includes(humanSeat)) humanSeat = humanSeat + "*";
-    const idx = Math.floor(rng.random() * names.length);
-    names[idx] = humanSeat;
+  // Slot each human into a distinct random seat. Name collisions with the
+  // fixed pool are resolved by appending "*" — only happens when a user's
+  // display name matches one of the AI persona names (Alice, Bob, etc).
+  const slottedSeats = [];
+  for (const rawName of humanNames) {
+    let finalName = rawName;
+    while (names.includes(finalName)) finalName = finalName + "*";
+
+    // Skip seats already taken by previously slotted humans this call.
+    const takenIdx = new Set(slottedSeats.map(s => names.indexOf(s)));
+    const candidates = [];
+    for (let i = 0; i < names.length; i++) {
+      if (!takenIdx.has(i)) candidates.push(i);
+    }
+    const idx = candidates[Math.floor(rng.random() * candidates.length)];
+    names[idx] = finalName;
+    slottedSeats.push(finalName);
   }
 
   const personas = {};
@@ -99,7 +108,7 @@ function buildState(seed, players, rng, options = {}) {
     playerNames: names,
     rng: new SeededRng(seed),
     personalities: personas,
-    humanSeat,
+    humanSeats: slottedSeats,
   });
 }
 
@@ -162,10 +171,12 @@ router.get("/stream", requireAuth, async (req, res) => {
   const cfg = validateConfig(body);
   if (cfg.error) return res.status(400).json({ error: cfg.error });
 
-  // Human-play params. When human=true, we'll randomly assign one seat to
-  // the user and pause the orchestrator on their turns.
+  // Human-play params. When human=true, the user is slotted into one random
+  // seat and the orchestrator pauses on that seat's turns. Phase A still
+  // accepts only one playerName from the query — humanNames is an array now
+  // but the route surface stays single-human until the Phase B lobby lands.
   const isHuman = req.query.human === "true";
-  const humanName = isHuman ? sanitizeHumanName(req.query.playerName) : null;
+  const humanNames = isHuman ? [sanitizeHumanName(req.query.playerName)] : [];
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -177,16 +188,17 @@ router.get("/stream", requireAuth, async (req, res) => {
 
   let connectionOpen = true;
   let sessionId = null;
-  let waiter = null;
+  let sessionEntry = null;
 
   // Cleanup helper — idempotent; safe to call from req.close, finally, etc.
   function cleanupSession(reason) {
-    if (waiter) {
-      try { waiter.cancel(reason); } catch {}
+    if (sessionEntry?.hybridClient) {
+      try { sessionEntry.hybridClient.cancelAll(reason); } catch {}
     }
     if (sessionId) {
       humanSessions.delete(sessionId);
       sessionId = null;
+      sessionEntry = null;
     }
   }
 
@@ -216,7 +228,7 @@ router.get("/stream", requireAuth, async (req, res) => {
       cfg.seed,
       cfg.players,
       new SeededRng(cfg.seed),
-      { humanName },
+      { humanNames },
     );
   } catch (err) {
     sendEvent("error", { kind: "setup", message: err.message });
@@ -224,36 +236,17 @@ router.get("/stream", requireAuth, async (req, res) => {
     return res.end();
   }
 
-  // If the user is playing, set up the waiter and session registry entry.
-  // Note: we look up the human player from state.players (not by humanName),
-  // because buildState may have suffixed the name to avoid collisions.
-  const humanPlayer = isHuman ? state.players.find(p => p.isHuman) : null;
-  if (isHuman && !humanPlayer) {
+  // Find every human seat the engine assigned. In Phase A this list has
+  // 0 or 1 entries (the route still accepts only one playerName from the
+  // query). Phase B's lobby will populate it with N.
+  const humanPlayers = state.players.filter(p => p.isHuman);
+  if (humanNames.length > 0 && humanPlayers.length === 0) {
     sendEvent("error", { kind: "setup", message: "Human seat assignment failed" });
     sendEvent("done", {});
     return res.end();
   }
 
-  if (isHuman) {
-    sessionId = crypto.randomUUID();
-    waiter = new HumanWaiter(sessionId);
-    humanSessions.set(sessionId, waiter);
-  }
-
-  sendEvent("config", {
-    mode: "real",
-    seed: cfg.seed,
-    players: cfg.players,
-    rounds: cfg.rounds,
-    model: process.env.MOONLIGHT_MODEL || "claude-sonnet-4-5",
-    sessionId,                                // null in spectator mode
-    playingAs: humanPlayer ? humanPlayer.name : null,
-  });
-  sendEvent("budget", costTracker.summary());
-
-  // Build the client. In human mode, the HybridClient wraps the real client
-  // and routes calls based on player.isHuman: AI players go through real
-  // Claude, the human goes through the waiter.
+  // Build the AI client. Every seat that isn't human routes through this.
   const aiClient = new RealClaudeClient({
     apiKey,
     costTracker,
@@ -264,19 +257,50 @@ router.get("/stream", requireAuth, async (req, res) => {
       }
     },
   });
-  const client = isHuman ? new HybridClient({ aiClient, waiter }) : aiClient;
+
+  // If any humans were seated, wrap the AI client in a HybridClient and
+  // register one waiter per human seat. Both the route (via sessionEntry)
+  // and the HybridClient (via its internal map) hold references to the
+  // same waiter instances, so /respond can resolve them by name.
+  let client;
+  if (humanPlayers.length > 0) {
+    sessionId = crypto.randomUUID();
+    const hybridClient = new HybridClient({ aiClient });
+    const waiters = new Map();
+    for (const player of humanPlayers) {
+      const w = new HumanWaiter(sessionId, player.name);
+      waiters.set(player.name, w);
+      hybridClient.registerWaiter(player.name, w);
+    }
+    sessionEntry = { waiters, hybridClient };
+    humanSessions.set(sessionId, sessionEntry);
+    client = hybridClient;
+  } else {
+    client = aiClient;
+  }
+
+  sendEvent("config", {
+    mode: "real",
+    seed: cfg.seed,
+    players: cfg.players,
+    rounds: cfg.rounds,
+    model: process.env.MOONLIGHT_MODEL || "claude-sonnet-4-5",
+    sessionId,                                  // null in spectator mode
+    playingAs: humanPlayers.map(p => p.name),   // always an array; empty when spectating
+  });
+  sendEvent("budget", costTracker.summary());
 
   try {
     await runGameStreaming(state, client, { discussionRounds: cfg.rounds }, (ev) => {
       sendEvent(ev.kind, ev);
 
-      // Right after game_start, tell the human their role. The SSE stream is
-      // per-connection, so this stays private to them.
-      if (ev.kind === "game_start" && humanPlayer) {
-        sendEvent("you_are", {
-          name: humanPlayer.name,
-          role: humanPlayer.role.name,
-        });
+      // Right after game_start, tell each human their role. The SSE stream
+      // is per-connection, so this stays private to whoever is on it.
+      // Phase A: at most one human per connection. Phase B: per-player streams.
+      if (ev.kind === "game_start") {
+        for (const p of humanPlayers) {
+          sendEvent("you_are", { name: p.name, role: p.role.name });
+        }
       }
 
       if (ev.kind === "speech" || ev.kind === "vote_resolution" || ev.kind === "night_resolution") {
@@ -302,7 +326,13 @@ router.get("/stream", requireAuth, async (req, res) => {
 
 // ─── POST /api/moonlight/respond ──────────────────────────────────────────
 //
-// The human player POSTs their response here. Body: { sessionId, response }.
+// The human player POSTs their response here.
+// Body: { sessionId, playerName, response }.
+//
+// playerName names which seat in the session this response is for. Phase A
+// always has one human per session, but the field is required now so the
+// Phase B lobby (with N humans per game) doesn't need a breaking API change.
+//
 // Response shape depends on the task — same shape an AI client would return:
 //   speak:           { speech: "..." }
 //   vote:            { vote: "PlayerName", reasoning: "..." }
@@ -315,20 +345,27 @@ router.get("/stream", requireAuth, async (req, res) => {
 // validation here is just basic shape checking.
 
 router.post("/respond", requireAuth, (req, res) => {
-  const { sessionId, response } = req.body || {};
+  const { sessionId, playerName, response } = req.body || {};
   if (!sessionId || typeof sessionId !== "string") {
     return res.status(400).json({ error: "sessionId is required" });
+  }
+  if (!playerName || typeof playerName !== "string") {
+    return res.status(400).json({ error: "playerName is required" });
   }
   if (!response || typeof response !== "object") {
     return res.status(400).json({ error: "response object is required" });
   }
 
-  const waiter = humanSessions.get(sessionId);
-  if (!waiter) {
+  const session = humanSessions.get(sessionId);
+  if (!session) {
     return res.status(404).json({ error: "Session not found or already completed" });
   }
+  const waiter = session.waiters.get(playerName);
+  if (!waiter) {
+    return res.status(404).json({ error: `No human seat named "${playerName}" in this session` });
+  }
   if (!waiter.isWaiting()) {
-    return res.status(409).json({ error: "No pending input request for this session" });
+    return res.status(409).json({ error: "No pending input request for this seat" });
   }
 
   try {

@@ -167,7 +167,8 @@ class GameState {
   static fromConfig({
     playerNames,
     roleCounts = null,
-    humanSeat = null,
+    humanSeat = null,         // legacy: single-human alias, kept for back-compat
+    humanSeats = null,        // new: array of human-controlled seat names
     personalities = null,
     rng = null,
   }) {
@@ -183,11 +184,22 @@ class GameState {
       );
     }
 
-    if (humanSeat !== null && !playerNames.includes(humanSeat)) {
-      throw new Error(
-        `humanSeat=${JSON.stringify(humanSeat)} not in playerNames=${JSON.stringify(playerNames)}`
-      );
+    // Resolve which seats are human. The new humanSeats field wins; humanSeat
+    // is honored only when humanSeats wasn't supplied (back-compat for callers
+    // that still pass a single string). humanSeats=[] explicitly means
+    // spectator mode — no humans, even if humanSeat is also set.
+    const _humanSeats = humanSeats !== null
+      ? humanSeats
+      : (humanSeat !== null ? [humanSeat] : []);
+
+    for (const seat of _humanSeats) {
+      if (!playerNames.includes(seat)) {
+        throw new Error(
+          `human seat ${JSON.stringify(seat)} not in playerNames=${JSON.stringify(playerNames)}`
+        );
+      }
     }
+    const _humanSeatSet = new Set(_humanSeats);
 
     // Build the role pool, shuffle, and assign in order.
     const rolePool = [];
@@ -201,7 +213,7 @@ class GameState {
     const players = playerNames.map((name, i) => new Player({
       name,
       role: rolePool[i],
-      isHuman: name === humanSeat,
+      isHuman: _humanSeatSet.has(name),
       personality: _personalities[name] || null,
     }));
 

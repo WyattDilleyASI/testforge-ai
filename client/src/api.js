@@ -209,4 +209,6 @@ export const api = {
 
   // Moonlight (hidden feature)
   runMoonlightGame: (config) => request("/moonlight/run", { method: "POST", body: config }),
+  respondToMoonlight: (sessionId, playerName, response) =>
+    request("/moonlight/respond", { method: "POST", body: { sessionId, playerName, response } }),
 };

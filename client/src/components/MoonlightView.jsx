@@ -267,7 +267,8 @@ export const MoonlightView = ({ currentUser }) => {
         setRunMeta({
           seed: d.seed, players: d.players, rounds: d.rounds,
           model: d.model, mode: "real",
-          playingAs: d.playingAs || null,
+          // playingAs is always an array (Phase A: 0 or 1 entries; Phase B: N).
+          playingAs: Array.isArray(d.playingAs) ? d.playingAs : [],
         });
         if (d.sessionId) sessionIdRef.current = d.sessionId;
       } catch {}
@@ -375,23 +376,19 @@ export const MoonlightView = ({ currentUser }) => {
   const handleBegin = () => (mode === "real" ? handleBeginReal() : handleBeginFake());
 
   // POST the human's response to /respond. Clears pendingInput on success.
+  // playerName names which seat this response is for — required by the
+  // server so multi-human sessions can route the response to the right
+  // waiter. In Phase A there's only one human per session, so it's always
+  // humanNameRef.current.
   const handleHumanSubmit = async (response) => {
     const sessionId = sessionIdRef.current;
-    if (!sessionId) {
+    const playerName = humanNameRef.current;
+    if (!sessionId || !playerName) {
       setError("No active session. Try starting a new game.");
       return;
     }
     try {
-      const res = await fetch("/api/moonlight/respond", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ sessionId, response }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "<no body>");
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-      }
+      await api.respondToMoonlight(sessionId, playerName, response);
       setPendingInput(null);
     } catch (err) {
       setError(`Failed to submit input: ${err.message}`);
