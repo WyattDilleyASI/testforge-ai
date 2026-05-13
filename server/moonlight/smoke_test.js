@@ -14,6 +14,8 @@ const {
 } = require("./roles");
 
 const { GameState, Phase, SeededRng } = require("./game_state");
+const { HumanWaiter } = require("./human_waiter");
+const { HybridClient } = require("./hybrid_client");
 
 function deepEq(a, b) {
   if (a === b) return true;
@@ -271,8 +273,242 @@ assertEq(entries[0].day, 0, "First entry was on day 0 (setup)");
 assertEq(entries[1].day, 1, "Second entry on day 1");
 assertEq(entries[1].phase, Phase.DAY, "Second entry during DAY phase");
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PHASE A — multi-human engine plumbing
+//
+// These sections lock in the target behavior for the multiplayer refactor.
+// They will FAIL against the current code until Phase A is complete; each
+// failure points at the next required engine change.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Multi-human seat assignment ───────────────────────────────────────────
+
+section("Multi-human seat assignment");
+
+// Old single-human API still works — humanSeat stays as a back-compat alias.
+const mhLegacy = GameState.fromConfig({
+  playerNames: ["A", "B", "C", "D", "E", "F", "G", "H"],
+  humanSeat: "C",
+  rng: new SeededRng(123),
+});
+assertEq(mhLegacy.getPlayer("C").isHuman, true,
+  "humanSeat (legacy singular) still flags the named player");
+assertEq(mhLegacy.players.filter(p => p.isHuman).length, 1,
+  "humanSeat results in exactly one human");
+
+// New API: humanSeats accepts an array of names.
+const mhPair = GameState.fromConfig({
+  playerNames: ["A", "B", "C", "D", "E", "F", "G", "H"],
+  humanSeats: ["B", "F"],
+  rng: new SeededRng(123),
+});
+assertEq(mhPair.getPlayer("B").isHuman, true, "humanSeats flags first named seat");
+assertEq(mhPair.getPlayer("F").isHuman, true, "humanSeats flags second named seat");
+assertEq(mhPair.getPlayer("A").isHuman, false, "Unnamed seats remain AI");
+assertEq(mhPair.players.filter(p => p.isHuman).length, 2,
+  "humanSeats with two entries produces exactly two humans");
+
+// Empty array → spectator mode (no humans).
+const mhSpectator = GameState.fromConfig({
+  playerNames: ["A", "B", "C", "D", "E", "F", "G"],
+  humanSeats: [],
+  rng: new SeededRng(123),
+});
+assertEq(mhSpectator.players.filter(p => p.isHuman).length, 0,
+  "Empty humanSeats produces no humans (spectator mode)");
+
+// If both are passed, the new field wins — legacy alias is ignored.
+const mhBoth = GameState.fromConfig({
+  playerNames: ["A", "B", "C", "D", "E", "F", "G"],
+  humanSeat: "G",
+  humanSeats: ["A", "B"],
+  rng: new SeededRng(123),
+});
+assertEq(mhBoth.getPlayer("A").isHuman, true, "humanSeats wins over humanSeat: A");
+assertEq(mhBoth.getPlayer("B").isHuman, true, "humanSeats wins over humanSeat: B");
+assertEq(mhBoth.getPlayer("G").isHuman, false,
+  "humanSeats wins over humanSeat: legacy humanSeat ignored when humanSeats given");
+
+// Unknown name in humanSeats throws — same rule humanSeat already enforces.
+assertRaises(
+  () => GameState.fromConfig({
+    playerNames: ["A", "B", "C", "D", "E", "F", "G"],
+    humanSeats: ["A", "NotAPlayer"],
+    rng: new SeededRng(1),
+  }),
+  "Rejects humanSeats containing a name not in playerNames",
+);
+
+// ── HybridClient registration ─────────────────────────────────────────────
+
+section("HybridClient registration");
+
+// Tiny stand-in for an AI client. Records each call for later inspection.
+function makeStubAiClient() {
+  const calls = [];
+  return {
+    calls,
+    async call(player, state, task) {
+      calls.push({ player: player.name, task });
+      return { vote: null, target: null, speech: "", reasoning: "stub" };
+    },
+  };
+}
+
+const hc1 = new HybridClient({ aiClient: makeStubAiClient() });
+assertEq(hc1.waiters.size, 0, "HybridClient starts with empty waiters map");
+
+const wA = new HumanWaiter("session-test", "Alice");
+hc1.registerWaiter("Alice", wA);
+assertEq(hc1.waiters.size, 1, "registerWaiter adds one entry");
+assertEq(hc1.waiters.get("Alice") === wA, true,
+  "Waiter retrievable by player name");
+
+const wB = new HumanWaiter("session-test", "Bob");
+hc1.registerWaiter("Bob", wB);
+assertEq(hc1.waiters.size, 2, "registerWaiter accepts a second distinct seat");
+
+assertRaises(
+  () => hc1.registerWaiter("Alice", new HumanWaiter("session-test", "Alice")),
+  "Duplicate registerWaiter for the same player name throws",
+);
+
+assertRaises(
+  () => new HybridClient({}),
+  "HybridClient construction requires aiClient",
+);
+
+// ── Async test declarations ──────────────────────────────────────────────
+//
+// HybridClient.call() and cancelAll() return promises, so these sections
+// run inside an async IIFE at the bottom of the file. Their assertions
+// look like the sync ones — just wrapped in async/await.
+
+async function testHybridRouting() {
+  section("HybridClient routing");
+
+  const routingState = GameState.fromConfig({
+    playerNames: ["AI1", "Alice", "AI2", "Bob", "AI3", "AI4", "AI5"],
+    humanSeats: ["Alice", "Bob"],
+    rng: new SeededRng(50),
+  });
+
+  const stubAi = makeStubAiClient();
+  const hc = new HybridClient({ aiClient: stubAi });
+  const waiterAlice = new HumanWaiter("s", "Alice");
+  const waiterBob = new HumanWaiter("s", "Bob");
+  hc.registerWaiter("Alice", waiterAlice);
+  hc.registerWaiter("Bob", waiterBob);
+
+  // Collect emitted events so we can verify the waiter announced its
+  // input request through the orchestrator's emit channel.
+  const events = [];
+  hc.setEmit((kind, data) => events.push({ kind, data }));
+
+  // AI seat → routed to stub AI client.
+  const ai1 = routingState.getPlayer("AI1");
+  await hc.call(ai1, routingState, "vote");
+  assertEq(stubAi.calls.length, 1, "AI seat routed to aiClient.call()");
+  assertEq(stubAi.calls[0].player, "AI1", "Correct AI player was called");
+
+  // Human seat → routed to that player's waiter, NOT the AI client.
+  const alice = routingState.getPlayer("Alice");
+  const alicePromise = hc.call(alice, routingState, "vote");
+  // The call hasn't resolved yet — the waiter is now in pending state.
+  assertEq(waiterAlice.isWaiting(), true, "Alice's waiter is pending after call()");
+  assertEq(events.length, 1, "human_input_needed event was emitted");
+  assertEq(events[0].kind, "human_input_needed",
+    "Emitted event kind is human_input_needed");
+  assertEq(events[0].data.speaker, "Alice", "Event identifies Alice as the speaker");
+
+  // Resolve the waiter externally — simulates POST /respond firing.
+  waiterAlice.resolve({ vote: "AI1", reasoning: "human input" });
+  const aliceResult = await alicePromise;
+  assertEq(aliceResult.vote, "AI1",
+    "Alice's call() resolved with the submitted response");
+  assertEq(stubAi.calls.length, 1,
+    "AI client was NOT consulted for Alice's turn");
+
+  // Bob's call resolves through Bob's waiter, not Alice's.
+  const bob = routingState.getPlayer("Bob");
+  const bobPromise = hc.call(bob, routingState, "vote");
+  assertEq(waiterBob.isWaiting(), true, "Bob's waiter is pending");
+  assertEq(waiterAlice.isWaiting(), false,
+    "Alice's waiter is NOT pending (already resolved earlier)");
+  waiterBob.resolve({ vote: "AI2", reasoning: "human input" });
+  const bobResult = await bobPromise;
+  assertEq(bobResult.vote, "AI2", "Bob's call() resolved through his own waiter");
+
+  // Failure modes: human seat without a registered waiter.
+  const orphanState = GameState.fromConfig({
+    playerNames: ["A", "B", "C", "D", "E", "F", "G"],
+    humanSeats: ["A"],
+    rng: new SeededRng(99),
+  });
+  const orphanClient = new HybridClient({ aiClient: makeStubAiClient() });
+  orphanClient.setEmit(() => {});
+  let threwOrphan = false;
+  try {
+    await orphanClient.call(orphanState.getPlayer("A"), orphanState, "vote");
+  } catch { threwOrphan = true; }
+  assertEq(threwOrphan, true,
+    "call() on human seat with no registered waiter throws");
+
+  // Failure mode: human turn before setEmit() was called.
+  const noEmitClient = new HybridClient({ aiClient: makeStubAiClient() });
+  noEmitClient.registerWaiter("A", new HumanWaiter("s", "A"));
+  let threwNoEmit = false;
+  try {
+    await noEmitClient.call(orphanState.getPlayer("A"), orphanState, "vote");
+  } catch { threwNoEmit = true; }
+  assertEq(threwNoEmit, true,
+    "call() on human turn before setEmit() throws");
+}
+
+async function testCancelAll() {
+  section("HybridClient cancellation");
+
+  const cancelState = GameState.fromConfig({
+    playerNames: ["A", "B", "C", "D", "E", "F", "G"],
+    humanSeats: ["A", "B"],
+    rng: new SeededRng(7),
+  });
+
+  const hc = new HybridClient({ aiClient: makeStubAiClient() });
+  const wCancelA = new HumanWaiter("s", "A");
+  const wCancelB = new HumanWaiter("s", "B");
+  hc.registerWaiter("A", wCancelA);
+  hc.registerWaiter("B", wCancelB);
+  hc.setEmit(() => {});
+
+  const callA = hc.call(cancelState.getPlayer("A"), cancelState, "vote");
+  const callB = hc.call(cancelState.getPlayer("B"), cancelState, "vote");
+
+  assertEq(wCancelA.isWaiting(), true, "Waiter A is pending before cancelAll()");
+  assertEq(wCancelB.isWaiting(), true, "Waiter B is pending before cancelAll()");
+
+  hc.cancelAll("Test cancellation");
+
+  let aRejected = false;
+  let bRejected = false;
+  try { await callA; } catch { aRejected = true; }
+  try { await callB; } catch { bRejected = true; }
+
+  assertEq(aRejected, true, "cancelAll() rejects waiter A's pending promise");
+  assertEq(bRejected, true, "cancelAll() rejects waiter B's pending promise");
+}
+
 // ── Done ───────────────────────────────────────────────────────────────────
 
-console.log("\n" + "=".repeat(50));
-console.log("✓ All smoke tests passed.");
-console.log("=".repeat(50));
+(async () => {
+  await testHybridRouting();
+  await testCancelAll();
+
+  console.log("\n" + "=".repeat(50));
+  console.log("✓ All smoke tests passed.");
+  console.log("=".repeat(50));
+})().catch(err => {
+  console.error("\n✗ Smoke test failed in async section:");
+  console.error(err);
+  process.exit(1);
+});
