@@ -258,13 +258,18 @@ async function ingestExtractionResults(jobId) {
     throw new Error(`Job ${jobId} has no extraction batch ID`);
   }
 
-  // Idempotency guard — if candidates exist, this has already run
+  // Idempotency guard — if text candidates exist, this has already run.
+  // Filter on media_type IS NULL so we don't false-trigger on image
+  // candidates that landed earlier in a mixed job.
   const existing = db
-    .prepare("SELECT COUNT(*) AS c FROM kb_seeding_candidates WHERE job_id = ?")
+    .prepare(
+      "SELECT COUNT(*) AS c FROM kb_seeding_candidates " +
+        "WHERE job_id = ? AND media_type IS NULL"
+    )
     .get(jobId);
   if (existing.c > 0) {
     console.log(
-      `Job ${jobId} already has ${existing.c} candidates; skipping ingestion`
+      `Job ${jobId} already has ${existing.c} text candidates; skipping ingestion`
     );
     return;
   }
@@ -341,7 +346,13 @@ async function ingestExtractionResults(jobId) {
     `);
 
     const txn = db.transaction(() => {
-      let runningCount = 0;
+      // Start after any image candidates already inserted in this job.
+      // Read inside the transaction for a consistent snapshot.
+      let runningCount = db
+        .prepare(
+          "SELECT COUNT(*) AS c FROM kb_seeding_candidates WHERE job_id = ?"
+        )
+        .get(jobId).c;
       for (const c of candidatesToInsert) {
         const candId = buildCandidateId(jobId, runningCount);
 

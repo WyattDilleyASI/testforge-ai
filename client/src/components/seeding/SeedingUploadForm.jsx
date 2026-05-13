@@ -15,8 +15,29 @@ import { seedingApi } from "../../api-seeding";
 // subsections, swap this import (or pass subsections in as a prop).
 import { api } from "../../api";
 
-const MAX_TOTAL_CHARS = 1024 * 1024; // mirrors server-side cap
-const ACCEPTED_EXTENSIONS = ".txt,.md,.markdown,.html,.htm,.docx";
+const MAX_TOTAL_CHARS = 1024 * 1024; // mirrors server-side cap (text only)
+const ACCEPTED_EXTENSIONS = ".txt,.md,.markdown,.html,.htm,.docx,.png,.jpg,.jpeg,.webp";
+
+const isImageFile = (file) => {
+  if (!file) return false;
+  if ((file.type || "").startsWith("image/")) return true;
+  return /\.(png|jpe?g|webp)$/i.test(file.name || "");
+};
+
+// Thumbnail badge for file list rows. Images get a blue "IMG" badge;
+// text files get a neutral badge with their uppercase extension.
+const getFileBadge = (file, COLORS) => {
+  if (isImageFile(file)) {
+    return { label: "IMG", bg: "#E6F1FB", fg: "#185FA5" };
+  }
+  const name = (file?.name || "").toLowerCase();
+  const ext = (name.split(".").pop() || "FILE").toUpperCase();
+  return {
+    label: ext.slice(0, 4),
+    bg: COLORS.surface,
+    fg: COLORS.textMuted,
+  };
+};
 
 export const SeedingUploadForm = ({ onCancel, onCreated }) => {
   const COLORS = useTheme();
@@ -47,8 +68,14 @@ export const SeedingUploadForm = ({ onCancel, onCreated }) => {
     }
   }, []);
 
-  const totalChars = content.length + files.reduce((sum, f) => sum + f.size, 0);
-  const overLimit = totalChars > MAX_TOTAL_CHARS;
+  // Text-like files contribute to the text char budget; images don't
+  // (their byte size doesn't represent characters and the server checks
+  // them against MAX_FILE_SIZE per-file, not the total-chars cap).
+  const totalTextChars = content.length + files
+    .filter((f) => !isImageFile(f))
+    .reduce((sum, f) => sum + f.size, 0);
+  const imageCount = files.filter(isImageFile).length;
+  const overLimit = totalTextChars > MAX_TOTAL_CHARS;
   const canSubmit = !submitting && !overLimit &&
     (content.trim().length > 0 || files.length > 0);
 
@@ -151,7 +178,7 @@ Claude will extract candidate KB entries and cross-reference them against your e
                   Click to choose, or drop files here
                 </div>
                 <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
-                  .txt · .md · .html · .docx · (5 MB per file)
+                  .txt · .md · .html · .docx · .png · .jpg · .webp · 10 MB per file
                 </div>
                 <input
                   ref={fileInputRef}
@@ -166,32 +193,46 @@ Claude will extract candidate KB entries and cross-reference them against your e
 
               {files.length > 0 && (
                 <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: 6, overflow: "hidden" }}>
-                  {files.map((file, idx) => (
-                    <div
-                      key={`${file.name}-${idx}`}
-                      style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        padding: "8px 12px",
-                        borderBottom: idx < files.length - 1 ? `1px solid ${COLORS.border}` : "none",
-                      }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, color: COLORS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {file.name}
-                        </div>
-                        <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
-                          {(file.size / 1024).toFixed(1)} KB · {file.type || "unknown"}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => removeFile(idx)}
-                        disabled={submitting}
-                        style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", padding: 4, fontSize: 12, fontFamily: mono }}
+                  {files.map((file, idx) => {
+                    const badge = getFileBadge(file, COLORS);
+                    const isImg = isImageFile(file);
+                    return (
+                      <div
+                        key={`${file.name}-${idx}`}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 10,
+                          padding: "8px 12px",
+                          borderBottom: idx < files.length - 1 ? `1px solid ${COLORS.border}` : "none",
+                        }}
                       >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+                        <div style={{
+                          width: 36, height: 36, borderRadius: 4,
+                          background: badge.bg, color: badge.fg,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 10, fontWeight: 700, fontFamily: mono,
+                          flexShrink: 0, letterSpacing: "0.05em",
+                        }}>
+                          {badge.label}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 13, color: COLORS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {file.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+                            {(file.size / 1024).toFixed(1)} KB
+                            {isImg ? " · vision describe" : " · text extraction"}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeFile(idx)}
+                          disabled={submitting}
+                          style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", padding: 4, fontSize: 12, fontFamily: mono }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -226,7 +267,8 @@ Claude will extract candidate KB entries and cross-reference them against your e
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 12, color: overLimit ? "#E24B4A" : COLORS.textMuted, fontFamily: mono }}>
-          {totalChars.toLocaleString()} / {MAX_TOTAL_CHARS.toLocaleString()} chars
+          {totalTextChars.toLocaleString()} / {MAX_TOTAL_CHARS.toLocaleString()} text chars
+          {imageCount > 0 && ` · ${imageCount} image${imageCount !== 1 ? "s" : ""}`}
           {overLimit && " — exceeds limit, split into multiple jobs"}
         </div>
         <div style={{ display: "flex", gap: 8 }}>

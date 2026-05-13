@@ -6,6 +6,7 @@ const fs = require("fs");
 // ─── DATABASE PATHS ─────────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const IMAGES_DIR = path.join(DATA_DIR, "images");
+const SEEDING_IMAGES_DIR = path.join(DATA_DIR, "seeding-images");
 
 const DB_PATHS = {
   core:         path.join(DATA_DIR, "core.db"),
@@ -75,11 +76,55 @@ function deleteImageDir(kbId) {
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// ─── SEEDING IMAGE FILESYSTEM HELPERS ───────────────────────────────────────
+//
+// Parallel to the kb-entry image helpers above, but scoped to a seeding
+// job_id. Images live in data/seeding-images/{job_id}/ while a candidate
+// is in pending_review state. On accept, the file is moved into the
+// standard data/images/{kb_id}/ location. On reject or job finalize,
+// the seeding directory is cleaned up.
+
+function getSeedingImageDir(jobId) {
+  const dir = path.join(SEEDING_IMAGES_DIR, jobId);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function saveSeedingImage(jobId, name, base64Data) {
+  const dir = getSeedingImageDir(jobId);
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filePath = path.join(dir, safeName);
+  fs.writeFileSync(filePath, Buffer.from(base64Data, "base64"));
+  return safeName;
+}
+
+function readSeedingImage(jobId, fileName) {
+  const filePath = path.join(SEEDING_IMAGES_DIR, jobId, fileName);
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath);
+}
+
+function readSeedingImageBase64(jobId, fileName) {
+  const buf = readSeedingImage(jobId, fileName);
+  return buf ? buf.toString("base64") : null;
+}
+
+function deleteSeedingImage(jobId, fileName) {
+  const filePath = path.join(SEEDING_IMAGES_DIR, jobId, fileName);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+function deleteSeedingImageDir(jobId) {
+  const dir = path.join(SEEDING_IMAGES_DIR, jobId);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+}
+
 // ─── SCHEMA ─────────────────────────────────────────────────────────────────
 
 function initialize() {
-  // Ensure images directory exists
+  // Ensure images directories exist
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  if (!fs.existsSync(SEEDING_IMAGES_DIR)) fs.mkdirSync(SEEDING_IMAGES_DIR, { recursive: true });
 
   // Run migration from legacy single DB if it exists
   migrateLegacyDb();
@@ -576,4 +621,7 @@ module.exports = {
   getInsightCache, setInsightCache,
   saveImage, readImage, readImageBase64, deleteImage, deleteImageDir, getImageDir,
   IMAGES_DIR,
+  saveSeedingImage, readSeedingImage, readSeedingImageBase64,
+  deleteSeedingImage, deleteSeedingImageDir, getSeedingImageDir,
+  SEEDING_IMAGES_DIR,
 };

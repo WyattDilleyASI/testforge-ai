@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useTheme, mono } from "../../theme";
-import { KB_TYPE_CODES, KB_TYPE_COLORS } from "../../api-seeding";
+import { seedingApi, KB_TYPE_CODES, KB_TYPE_COLORS } from "../../api-seeding";
 import { RequirementMatch } from "./RequirementMatch";
 
 export const CandidateCard = ({
@@ -95,6 +95,9 @@ export const CandidateCard = ({
           />
         )}
         <span style={{ ...badgeStyle(colors), fontWeight: 600 }}>{code} · {confidence}</span>
+        {candidate.media_type && (
+          <span style={badgeStyle({ bg: "#E6F1FB", fg: "#185FA5" })}>IMG</span>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: COLORS.textBright, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {candidate.title}
@@ -239,9 +242,35 @@ const ExpandedCard = ({
           <input type="checkbox" checked={selected} onChange={onToggleSelect} style={{ margin: 0 }} />
         )}
         <span style={{ ...badgeStyle(colors), fontWeight: 600 }}>{code} · {confidence}</span>
+        {candidate.media_type && (
+          <span style={badgeStyle({ bg: "#E6F1FB", fg: "#185FA5" })}>IMG</span>
+        )}
         <div style={{ flex: 1 }} />
         <IconButton onClick={onToggleExpand} title="Collapse" COLORS={COLORS}>▴</IconButton>
       </div>
+
+      {/* Image preview — only for image candidates */}
+      {candidate.media_type && candidate.image_file && (
+        <div style={{
+          background: COLORS.surface,
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: 6, padding: 12, marginBottom: 14,
+          display: "flex", flexDirection: "column",
+          alignItems: "center", gap: 6,
+        }}>
+          <img
+            src={seedingApi.candidateImageUrl(candidate.job_id, candidate.candidate_id)}
+            alt={candidate.source_input_ref?.source_name || "Candidate image"}
+            style={{
+              maxWidth: "100%", maxHeight: 320, objectFit: "contain",
+              borderRadius: 4, display: "block",
+            }}
+          />
+          <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+            {candidate.source_input_ref?.source_name || candidate.image_file} · {candidate.media_type}
+          </div>
+        </div>
+      )}
 
       {/* Title */}
       <input

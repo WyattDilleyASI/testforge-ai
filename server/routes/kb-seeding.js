@@ -2,8 +2,9 @@
 // KB Seeding Wizard — bulk content extraction into curated KB entries
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Two-pass pipeline via Claude Batch API:
-//   Pass 1 (extraction):     raw text → candidate KB entries
+// Two-pass pipeline:
+//   Pass 1 (extraction):     raw text → Batch API → candidates
+//                            uploaded images → Claude vision → candidates
 //   Pass 2 (cross-reference): candidates × requirements → suggested links
 //
 // Candidates flow through review status into kb_entries on accept.
@@ -17,7 +18,14 @@
 const express = require("express");
 const multer = require("multer");
 
-const { getDb, getKbDb, getReqDb, logAudit } = require("../db");
+const {
+  getDb, getKbDb, getReqDb, logAudit,
+  saveImage,
+  readSeedingImage,
+  readSeedingImageBase64,
+  deleteSeedingImage,
+  deleteSeedingImageDir,
+} = require("../db");
 const { requireAuth, requireRole } = require("../auth");
 
 const { parseInputFile, chunkText } = require("../kb-seeding/parser");
@@ -26,6 +34,7 @@ const {
   submitExtractionBatch,
   ingestExtractionResults,
 } = require("../kb-seeding/extraction");
+const { processImageCandidates } = require("../kb-seeding/image-extraction");
 const {
   submitXrefBatch,
   ingestXrefResults,
@@ -37,7 +46,7 @@ const router = express.Router();
 
 const MAX_TOTAL_CHARS = 1024 * 1024;  // 1MB extracted text per job
 const CHUNK_CHARS = 120000;           // ~30K input tokens per extraction chunk
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB — accommodates images
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -161,6 +170,8 @@ function buildCandidateResponse(candidateRow) {
     reviewed_at: candidateRow.reviewed_at,
     reviewed_by: candidateRow.reviewed_by,
     xref_matches: enrichedMatches,
+    media_type: candidateRow.media_type || null,
+    image_file: candidateRow.image_file || null,
   };
 }
 
@@ -264,6 +275,14 @@ async function maybeSyncJob(jobId) {
 // ════════════════════════════════════════════════════════════════════════════
 
 // POST /api/kb/seeding/jobs — Create a job; kicks off Pass 1
+//
+// Files are split by source_type at parse time:
+//   - text-like (txt, md, html, docx, plus pasted content) → Batch API
+//   - images (png, jpg, webp)                              → Claude vision (sync)
+//
+// Mixed jobs are common: image candidates land synchronously before this
+// route returns, while the text batch runs async in the background and
+// GET /jobs/:jobId advances the state machine when it completes.
 router.post(
   "/jobs",
   requireRole("Admin", "QA Manager"),
@@ -282,21 +301,26 @@ router.post(
         }
       }
 
-      // Gather all input text
-      const inputs = [];
+      // Split inputs by source_type
+      const textInputs = [];
+      const imageInputs = [];
+
       if (content && content.trim()) {
-        inputs.push({
+        textInputs.push({
           source: "pasted",
           name: "pasted_text",
           text: content,
           source_type: "text",
         });
       }
+
       for (const file of req.files || []) {
         try {
           const parsed = await parseInputFile(file);
-          if (parsed.text && parsed.text.trim()) {
-            inputs.push({
+          if (parsed.source_type === "image") {
+            imageInputs.push(parsed);
+          } else if (parsed.text && parsed.text.trim()) {
+            textInputs.push({
               source: "upload",
               name: file.originalname,
               text: parsed.text,
@@ -310,24 +334,31 @@ router.post(
         }
       }
 
-      if (inputs.length === 0) {
+      if (textInputs.length === 0 && imageInputs.length === 0) {
         return res.status(400).json({ error: "No content provided" });
       }
 
-      const totalChars = inputs.reduce((sum, i) => sum + i.text.length, 0);
+      // Text size cap (images don't contribute to this)
+      const totalChars = textInputs.reduce((sum, i) => sum + i.text.length, 0);
       if (totalChars > MAX_TOTAL_CHARS) {
         return res.status(413).json({
-          error: `Total content (${totalChars} chars) exceeds limit (${MAX_TOTAL_CHARS}). Split into multiple jobs.`,
+          error: `Total text content (${totalChars} chars) exceeds limit (${MAX_TOTAL_CHARS}). Split into multiple jobs.`,
         });
       }
 
       // Create job row
       const jobId = nextJobId();
-      const sourceTypes = [...new Set(inputs.map(i => i.source_type))];
+      const sourceTypes = [
+        ...new Set([
+          ...textInputs.map(i => i.source_type),
+          ...(imageInputs.length > 0 ? ["image"] : []),
+        ]),
+      ];
       const inputSummary = {
         file_count: req.files ? req.files.length : 0,
         pasted_chars: content ? content.length : 0,
         total_chars: totalChars,
+        image_count: imageInputs.length,
         source_types: sourceTypes,
       };
 
@@ -345,34 +376,99 @@ router.post(
         process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514"
       );
 
-      // Chunk inputs for extraction
-      const chunks = [];
-      for (const input of inputs) {
-        const inputChunks = chunkText(input.text, CHUNK_CHARS);
-        inputChunks.forEach((chunk, idx) => {
-          chunks.push({
-            text: chunk,
-            source_name: input.name,
-            chunk_index: idx,
-            source_url: null,
+      // Pass 1a: image extraction (synchronous). Per-image errors are
+      // isolated inside processImageCandidates; we only fail the whole
+      // job if the function itself throws.
+      let imageResult = { processed: 0, candidates: 0, errors: 0 };
+      if (imageInputs.length > 0) {
+        try {
+          imageResult = await processImageCandidates(jobId, imageInputs);
+        } catch (err) {
+          console.error(`Image extraction failed for ${jobId}:`, err);
+          getKbDb().prepare(`
+            UPDATE kb_seeding_jobs
+            SET status = 'failed', error = ?
+            WHERE job_id = ?
+          `).run(`Image extraction failed: ${err.message}`, jobId);
+          return res.status(500).json({
+            error: `Image extraction failed: ${err.message}`,
           });
-        });
+        }
       }
 
-      // Submit Pass 1 batch (also persists batch_id_extract and chunks metadata)
-      const batchId = await submitExtractionBatch(jobId, chunks);
+      // Pass 1b: text extraction (Batch API, async). Job stays in
+      // 'extracting' until GET /jobs/:jobId observes batch completion
+      // and advances the state machine.
+      //
+      // If image-only, advance directly to xref or review since there's
+      // no batch to wait on.
+      let chunkCount = 0;
+      if (textInputs.length > 0) {
+        const chunks = [];
+        for (const input of textInputs) {
+          const inputChunks = chunkText(input.text, CHUNK_CHARS);
+          inputChunks.forEach((chunk, idx) => {
+            chunks.push({
+              text: chunk,
+              source_name: input.name,
+              chunk_index: idx,
+              source_url: null,
+            });
+          });
+        }
+        chunkCount = chunks.length;
+        await submitExtractionBatch(jobId, chunks);
+      } else if (imageResult.candidates > 0) {
+        // Image-only job with candidates: kick off xref directly.
+        try {
+          const xrefBatchId = await submitXrefBatch(jobId);
+          if (xrefBatchId) {
+            getKbDb().prepare(`
+              UPDATE kb_seeding_jobs
+              SET status = 'cross_referencing', batch_id_xref = ?
+              WHERE job_id = ?
+            `).run(xrefBatchId, jobId);
+          } else {
+            getKbDb().prepare(`
+              UPDATE kb_seeding_jobs SET status = 'review' WHERE job_id = ?
+            `).run(jobId);
+          }
+        } catch (err) {
+          // Xref submission failure isn't fatal — user can still review.
+          console.error(`Xref submission failed for ${jobId}:`, err);
+          getKbDb().prepare(`
+            UPDATE kb_seeding_jobs
+            SET status = 'review', error = ?
+            WHERE job_id = ?
+          `).run(`Cross-reference submission failed: ${err.message}`, jobId);
+        }
+      } else {
+        // Image-only job that produced zero candidates — straight to review.
+        getKbDb().prepare(`
+          UPDATE kb_seeding_jobs SET status = 'review' WHERE job_id = ?
+        `).run(jobId);
+      }
 
       logAudit(
         req.session.name,
         "KB_SEEDING_JOB_CREATED",
-        `Created seeding job ${jobId} (${chunks.length} chunks, ${totalChars} chars)`
+        `Created seeding job ${jobId} ` +
+          `(${chunkCount} text chunks, ${totalChars} chars, ` +
+          `${imageInputs.length} images → ${imageResult.candidates} candidates)`
       );
+
+      // Read final status — image-only jobs may have advanced past 'extracting'
+      const finalJob = getKbDb()
+        .prepare("SELECT status FROM kb_seeding_jobs WHERE job_id = ?")
+        .get(jobId);
 
       return res.status(202).json({
         job_id: jobId,
-        status: "extracting",
-        chunks: chunks.length,
+        status: finalJob.status,
+        chunks: chunkCount,
         total_chars: totalChars,
+        image_candidates: imageResult.candidates,
+        image_errors: imageResult.errors,
       });
     } catch (err) {
       console.error("Seeding job creation error:", err);
@@ -518,6 +614,14 @@ router.post(
       WHERE job_id = ?
     `).run(JSON.stringify(stats), new Date().toISOString(), jobId);
 
+    // Sweep any leftover seeding images for this job. Accepted ones have
+    // already been moved out; rejected ones may still be on disk if the
+    // per-candidate best-effort cleanup failed.
+    try { deleteSeedingImageDir(jobId); }
+    catch (err) {
+      console.error(`Failed to clean up seeding images for ${jobId}:`, err);
+    }
+
     logAudit(
       req.session.name,
       "KB_SEEDING_JOB_FINALIZED",
@@ -556,6 +660,12 @@ router.delete(
       db.prepare("DELETE FROM kb_seeding_jobs WHERE job_id = ?").run(jobId);
     });
     txn();
+
+    // Sweep seeding images for this cancelled job
+    try { deleteSeedingImageDir(jobId); }
+    catch (err) {
+      console.error(`Failed to clean up seeding images for ${jobId}:`, err);
+    }
 
     logAudit(req.session.name, "KB_SEEDING_JOB_CANCELLED", `Cancelled ${jobId}`);
     return res.json({ ok: true });
@@ -604,6 +714,43 @@ router.get("/candidates/:candId", requireAuth, (req, res) => {
   if (!row) return res.status(404).json({ error: "Candidate not found" });
   return res.json(buildCandidateResponse(row));
 });
+
+// GET /api/kb/seeding/jobs/:jobId/candidates/:candId/image — Serve image preview
+// Used during review to display the image attached to an image candidate.
+// Returns the raw image bytes with the candidate's media_type. The jobId
+// in the URL is verified against the candidate's job_id as defense in depth.
+router.get(
+  "/jobs/:jobId/candidates/:candId/image",
+  requireAuth,
+  (req, res) => {
+    const { jobId, candId } = req.params;
+    const candidate = getKbDb()
+      .prepare(
+        "SELECT job_id, media_type, image_file " +
+        "FROM kb_seeding_candidates WHERE candidate_id = ?"
+      )
+      .get(candId);
+
+    if (!candidate) {
+      return res.status(404).json({ error: "Candidate not found" });
+    }
+    if (candidate.job_id !== jobId) {
+      return res.status(404).json({ error: "Candidate not found in this job" });
+    }
+    if (!candidate.image_file || !candidate.media_type) {
+      return res.status(404).json({ error: "Candidate has no attached image" });
+    }
+
+    const buf = readSeedingImage(jobId, candidate.image_file);
+    if (!buf) {
+      return res.status(404).json({ error: "Image file not found" });
+    }
+
+    res.set("Content-Type", candidate.media_type);
+    res.set("Cache-Control", "private, max-age=300");
+    res.send(buf);
+  }
+);
 
 // PATCH /api/kb/seeding/candidates/:candId — Edit a candidate during review
 router.patch(
@@ -753,13 +900,35 @@ function acceptCandidateInTransaction(candId, userName) {
   const userEdits = computeUserEdits(candidate);
   const finalStatus = userEdits ? "edited_accepted" : "accepted";
 
+  // If the candidate has an attached image, move it into the kb entry's
+  // image directory and build the images JSON. The seeding image is
+  // deleted by the caller after the transaction commits (see the
+  // returned `seedingImageToCleanup` field).
+  let imagesJson = "[]";
+  if (candidate.media_type && candidate.image_file) {
+    const base64Data = readSeedingImageBase64(
+      candidate.job_id, candidate.image_file
+    );
+    if (!base64Data) {
+      throw new Error(
+        `Seeding image missing for candidate ${candId}: ${candidate.image_file}`
+      );
+    }
+    const savedName = saveImage(kbId, candidate.image_file, base64Data);
+    imagesJson = JSON.stringify([{
+      name: savedName,
+      media_type: candidate.media_type,
+      description: candidate.content,
+    }]);
+  }
+
   // Insert kb_entry
   db.prepare(`
     INSERT INTO kb_entries
       (kb_id, title, type, content, tags, related_reqs, images,
        subsection_id, pinned, created_by,
        source, source_url, source_ref)
-    VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, 'seeded', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'seeded', ?, ?)
   `).run(
     kbId,
     candidate.title,
@@ -767,6 +936,7 @@ function acceptCandidateInTransaction(candId, userName) {
     candidate.content,
     candidate.suggested_tags || "[]",
     JSON.stringify(relatedReqs),
+    imagesJson,
     candidate.subsection_id,
     candidate.pinned,
     `${userName} (seeded from ${candidate.job_id})`,
@@ -792,7 +962,14 @@ function acceptCandidateInTransaction(candId, userName) {
     candId
   );
 
-  return { kbId, finalStatus, relatedReqs };
+  return {
+    kbId,
+    finalStatus,
+    relatedReqs,
+    seedingImageToCleanup: (candidate.media_type && candidate.image_file)
+      ? { jobId: candidate.job_id, fileName: candidate.image_file }
+      : null,
+  };
 }
 
 // POST /api/kb/seeding/candidates/:candId/accept — Accept a candidate
@@ -806,6 +983,17 @@ router.post(
     try {
       const txn = db.transaction(() => acceptCandidateInTransaction(candId, req.session.name));
       const result = txn();
+
+      // Best-effort cleanup of the seeding image after successful commit.
+      // If this fails, the file will get swept up at finalize anyway.
+      if (result.seedingImageToCleanup) {
+        try {
+          deleteSeedingImage(
+            result.seedingImageToCleanup.jobId,
+            result.seedingImageToCleanup.fileName
+          );
+        } catch { /* non-critical */ }
+      }
 
       logAudit(
         req.session.name,
@@ -849,6 +1037,12 @@ router.post(
       WHERE candidate_id = ?
     `).run(new Date().toISOString(), req.session.name, candId);
 
+    // Clean up the seeding image for rejected image candidates
+    if (candidate.image_file) {
+      try { deleteSeedingImage(candidate.job_id, candidate.image_file); }
+      catch { /* non-critical, swept up at finalize */ }
+    }
+
     return res.json(buildCandidateResponse(
       db.prepare("SELECT * FROM kb_seeding_candidates WHERE candidate_id = ?").get(candId)
     ));
@@ -872,6 +1066,7 @@ router.post(
     const db = getKbDb();
     const created_kb_ids = [];
     const errors = [];
+    const seedingImagesToCleanup = [];
     let skipped = 0;
 
     const txn = db.transaction(() => {
@@ -879,6 +1074,9 @@ router.post(
         try {
           const result = acceptCandidateInTransaction(candId, req.session.name);
           created_kb_ids.push(result.kbId);
+          if (result.seedingImageToCleanup) {
+            seedingImagesToCleanup.push(result.seedingImageToCleanup);
+          }
         } catch (err) {
           // Skipping is acceptable — don't fail the batch
           if (err.message.includes("cannot accept")) {
@@ -890,6 +1088,12 @@ router.post(
       }
     });
     txn();
+
+    // Best-effort cleanup of seeding images after successful commit
+    for (const cleanup of seedingImagesToCleanup) {
+      try { deleteSeedingImage(cleanup.jobId, cleanup.fileName); }
+      catch { /* non-critical */ }
+    }
 
     logAudit(
       req.session.name,
@@ -923,8 +1127,14 @@ router.post(
     let processed = 0;
     let skipped = 0;
 
+    const seedingImagesToCleanup = [];
     const txn = db.transaction(() => {
       for (const candId of candidate_ids) {
+        // Capture image info before update so we know what to clean up
+        const candidate = db
+          .prepare("SELECT job_id, image_file FROM kb_seeding_candidates WHERE candidate_id = ?")
+          .get(candId);
+
         const result = db.prepare(`
           UPDATE kb_seeding_candidates
           SET status = 'rejected',
@@ -933,10 +1143,26 @@ router.post(
           WHERE candidate_id = ? AND status = 'pending_review'
         `).run(now, reviewer, candId);
 
-        if (result.changes === 1) processed++; else skipped++;
+        if (result.changes === 1) {
+          processed++;
+          if (candidate?.image_file) {
+            seedingImagesToCleanup.push({
+              jobId: candidate.job_id,
+              fileName: candidate.image_file,
+            });
+          }
+        } else {
+          skipped++;
+        }
       }
     });
     txn();
+
+    // Best-effort cleanup after commit
+    for (const cleanup of seedingImagesToCleanup) {
+      try { deleteSeedingImage(cleanup.jobId, cleanup.fileName); }
+      catch { /* non-critical */ }
+    }
 
     logAudit(
       req.session.name,
