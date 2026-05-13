@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Input, Select, ErrorBanner, AutoResizeTextarea, InlineConfirm } from "./shared";
+import { Card, Badge, Button, Input, Select, ErrorBanner, AutoResizeTextarea, InlineConfirm, OverflowMenu } from "./shared";
 import { SeedingView } from "../views/SeedingView";
 
 // ─── localStorage helpers for collapse state ────────────────────────────────
@@ -39,6 +39,13 @@ export const KbView = ({ kbEntries, requirements, refresh, currentUser }) => {
   const [renamingSub, setRenamingSub] = useState(null);
   const [renameSubName, setRenameSubName] = useState("");
   const [confirmDeleteSec, setConfirmDeleteSec] = useState(null);
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
+
+  const clearAllKb = async () => {
+    await api.clearAllKb();
+    setClearAllConfirm(false);
+    refresh();
+  };
   const [confirmDeleteSub, setConfirmDeleteSub] = useState(null);
   const [editingSubDesc, setEditingSubDesc] = useState(null);
   const [subDescDraft, setSubDescDraft] = useState("");
@@ -837,21 +844,31 @@ export const KbView = ({ kbEntries, requirements, refresh, currentUser }) => {
           {dragMode && " · Drag mode active"}
         </p>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {tab === "browse" && !dragMode && !isSearching && sections.length > 0 && (
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {tab === "browse" && !dragMode && !isSearching && sections.length > 0 && !clearAllConfirm && (
           <Button variant="secondary" small onClick={toggleAll}>{allAreCollapsed ? "Expand All" : "Collapse All"}</Button>
         )}
-        {tab === "browse" && !dragMode && kbEntries.length > 0 && (
-          <Button variant="secondary" small onClick={() => api.exportKbJson()}>Export JSON</Button>
-        )}
-        {tab === "browse" && !dragMode && (
-          <Button variant="secondary" small onClick={() => importFileRef.current?.click()}>Import JSON</Button>
-        )}
-        {tab === "browse" && !dragMode && kbEntries.length > 0 && (
+        {tab === "browse" && !dragMode && kbEntries.length > 0 && !clearAllConfirm && (
           <Button variant="secondary" small onClick={() => { setDragMode(true); setAddingEntryTo(null); resetForm(); cancelEdit(); }}>Rearrange</Button>
         )}
         {tab === "browse" && dragMode && (
           <Button small onClick={exitDragMode} style={{ background: COLORS.accent }}>Done Rearranging</Button>
+        )}
+        {tab === "browse" && !dragMode && clearAllConfirm && (
+          <InlineConfirm
+            prompt={`Delete all ${kbEntries.length} KB entr${kbEntries.length === 1 ? "y" : "ies"}? This also deletes their image files.`}
+            onConfirm={clearAllKb}
+            onCancel={() => setClearAllConfirm(false)}
+          />
+        )}
+        {tab === "browse" && !dragMode && !clearAllConfirm && (
+          <OverflowMenu
+            items={[
+              { label: "Export JSON", onClick: () => api.exportKbJson(), disabled: kbEntries.length === 0 },
+              { label: "Import JSON", onClick: () => importFileRef.current?.click() },
+              { label: "Clear All", onClick: () => setClearAllConfirm(true), severity: "danger", hidden: !isManager || kbEntries.length === 0 },
+            ]}
+          />
         )}
       </div>
     </div>
@@ -932,12 +949,26 @@ export const KbView = ({ kbEntries, requirements, refresh, currentUser }) => {
       <div style={{
         marginBottom: 12, padding: "10px 16px", borderRadius: 8,
         background: COLORS.surfaceRaised, border: `1px solid ${COLORS.border}`,
-        display: "flex", alignItems: "center", gap: 12,
+        display: "flex", alignItems: "flex-start", gap: 12, flexDirection: "column",
       }}>
-        <span style={{ fontSize: 13, color: COLORS.textBright }}>
-          Import complete — {importResult.imported} imported, {importResult.skipped} skipped
-        </span>
-        <Button small variant="ghost" onClick={() => setImportResult(null)}>Dismiss</Button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+          <span style={{ fontSize: 13, color: COLORS.textBright, flex: 1 }}>
+            Import complete — {importResult.imported} imported, {importResult.skipped} skipped
+          </span>
+          <Button small variant="ghost" onClick={() => setImportResult(null)}>Dismiss</Button>
+        </div>
+        {importResult.skipReasons && Object.keys(importResult.skipReasons).length > 0 && (
+          <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, width: "100%" }}>
+            {Object.entries(importResult.skipReasons).map(([reason, count]) => (
+              <div key={reason} style={{ marginTop: 2 }}>• <span style={{ color: COLORS.amber }}>{count}</span> — {reason}</div>
+            ))}
+          </div>
+        )}
+        {importResult.droppedSubsections > 0 && (
+          <div style={{ fontSize: 11, color: COLORS.amber, fontFamily: mono, width: "100%" }}>
+            • {importResult.droppedSubsections} entr{importResult.droppedSubsections === 1 ? "y" : "ies"} moved to Uncategorized (referenced subsection didn't exist)
+          </div>
+        )}
       </div>
     )}
 

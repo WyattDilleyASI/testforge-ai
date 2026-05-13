@@ -6,11 +6,28 @@
 // Called once from db.js initialize() via initializeAL().
 // Safe to call repeatedly — uses IF NOT EXISTS throughout.
 
-const { getCoreDb, getTcDb } = require("../db");
+const { getCoreDb, getTcDb, getKbDb } = require("../db");
 
 function initializeAL() {
   const core = getCoreDb();
   const tcDb = getTcDb();
+  const kbDb = getKbDb();
+
+  // ── Migration: updated_at on kb_entries ───────────────────────────
+  // Used by the KB Review engine for lazy counter invalidation — when a
+  // KB entry is edited (manually or via an approved suggestion), counters
+  // accumulated before that edit are stale and get reset on next sync.
+  //
+  // NOTE: SQLite's ALTER TABLE ADD COLUMN does NOT allow expression defaults
+  // like `DEFAULT (datetime('now'))`. We add the column with no default,
+  // then backfill existing rows with their created_at (or current time as
+  // a fallback). New rows will get the default-current-timestamp behavior
+  // applied at the route layer when content is edited.
+  const kbCols = kbDb.prepare("PRAGMA table_info(kb_entries)").all().map(c => c.name);
+  if (!kbCols.includes("updated_at")) {
+    kbDb.exec("ALTER TABLE kb_entries ADD COLUMN updated_at TEXT");
+    kbDb.exec("UPDATE kb_entries SET updated_at = COALESCE(created_at, datetime('now')) WHERE updated_at IS NULL");
+  }
 
   // ── Migration: snapshot column on test_cases ──────────────────────
   // Stores the original generated state of a TC before any human edits.
@@ -196,6 +213,77 @@ function initializeAL() {
     GROUP BY month, depth, generated_by
     ORDER BY month DESC, depth;
   `);
+
+  // ── kb_edit_counters (testcases.db) ───────────────────────────────
+  // Tracks how many times each KB entry has been referenced by a TC
+  // that was subsequently edited in a particular field. Bumped from the
+  // feedback recording path whenever an "approved_with_edits" event fires
+  // for a TC that used one or more KB entries.
+  //
+  // status:
+  //   accumulating         — still below threshold
+  //   ready_for_synthesis  — hit threshold, awaiting Claude synthesis
+  //   synthesized          — suggestion has been generated; counter is
+  //                          frozen until KB entry is updated
+  //
+  // sample_tc_ids: bounded JSON array (max 3 TCs) used as evidence for
+  // the synthesis prompt. We keep at most 3 to limit prompt cost; the
+  // counter itself records the true count.
+  //
+  // first_seen: used for lazy invalidation. If kb_entries.updated_at >
+  // first_seen, the counter is stale and gets reset on next visit.
+  tcDb.exec(`
+    CREATE TABLE IF NOT EXISTS kb_edit_counters (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      kb_id         TEXT    NOT NULL,
+      edit_field    TEXT    NOT NULL,
+      count         INTEGER NOT NULL DEFAULT 0,
+      sample_tc_ids TEXT    NOT NULL DEFAULT '[]',
+      status        TEXT    NOT NULL DEFAULT 'accumulating' CHECK (status IN (
+                      'accumulating', 'ready_for_synthesis', 'synthesized'
+                    )),
+      first_seen    TEXT    NOT NULL DEFAULT (datetime('now')),
+      last_seen     TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(kb_id, edit_field)
+    );
+  `);
+  tcDb.exec("CREATE INDEX IF NOT EXISTS idx_kb_counters_status ON kb_edit_counters(status);");
+  tcDb.exec("CREATE INDEX IF NOT EXISTS idx_kb_counters_kb     ON kb_edit_counters(kb_id);");
+
+  // ── kb_suggestions (testcases.db) ─────────────────────────────────
+  // Claude-synthesized suggestions to update a KB entry's content,
+  // generated when an edit counter hits the threshold. Always require
+  // manual approval before applying — KB drives all future generation,
+  // so bad auto-applies could cascade.
+  //
+  // current_content: snapshot of the KB entry's content at synthesis
+  // time. Lets the reviewer see what was being suggested against, even
+  // if the KB entry was edited in the meantime.
+  //
+  // claude_input / claude_output: raw prompt + response, for debugging
+  // and audit. Optional — null if we don't want to retain.
+  tcDb.exec(`
+    CREATE TABLE IF NOT EXISTS kb_suggestions (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      kb_id            TEXT    NOT NULL,
+      edit_field       TEXT    NOT NULL,
+      evidence_tc_ids  TEXT    NOT NULL DEFAULT '[]',
+      current_content  TEXT,
+      proposed_content TEXT,
+      rationale        TEXT,
+      status           TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN (
+                         'pending', 'approved', 'rejected'
+                       )),
+      decision_by      TEXT,
+      decision_at      TEXT,
+      decision_note    TEXT,
+      claude_input     TEXT,
+      claude_output    TEXT,
+      created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  tcDb.exec("CREATE INDEX IF NOT EXISTS idx_kb_suggestions_status ON kb_suggestions(status);");
+  tcDb.exec("CREATE INDEX IF NOT EXISTS idx_kb_suggestions_kb     ON kb_suggestions(kb_id);");
 
   console.log("  ✓ Adaptive Learning Engine tables initialized");
 }

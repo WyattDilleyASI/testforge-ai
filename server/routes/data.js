@@ -360,17 +360,36 @@ router.post("/kb/import", requireAuth, importUpload.single("file"), (req, res) =
 
     let imported = 0;
     let skipped = 0;
+    const skipReasons = {};
+    const trackSkip = (reason) => { skipReasons[reason] = (skipReasons[reason] || 0) + 1; skipped++; };
+
+    // Build a set of valid subsection_ids so we can drop FK references that
+    // don't exist in this deployment (e.g., file exported from another project).
+    // Entries with an unknown subsection_id are imported into Uncategorized.
+    const validSubsectionIds = new Set(
+      db.prepare("SELECT subsection_id FROM kb_subsections").all().map(r => r.subsection_id)
+    );
+    let droppedSubsections = 0;
 
     for (const entry of entries) {
       const { kb_id, title, type, content, tags, related_reqs, images, subsection_id, created_by, created_at } = entry;
-      if (!title || !content) { skipped++; continue; }
+      if (!title || !content) { trackSkip("missing_title_or_content"); continue; }
 
       if (mode === "merge" && kb_id) {
         const exists = db.prepare("SELECT 1 FROM kb_entries WHERE kb_id = ?").get(kb_id);
-        if (exists) { skipped++; continue; }
+        if (exists) { trackSkip("kb_id_already_exists"); continue; }
       }
 
       const useId = kb_id || nextKbId();
+
+      // Validate subsection_id: if it references a subsection that no longer
+      // exists, drop it to NULL so the entry lands in Uncategorized rather
+      // than failing the FK constraint.
+      let resolvedSubsection = subsection_id || null;
+      if (resolvedSubsection && !validSubsectionIds.has(resolvedSubsection)) {
+        resolvedSubsection = null;
+        droppedSubsections++;
+      }
 
       try {
         const savedImages = [];
@@ -391,18 +410,21 @@ router.post("/kb/import", requireAuth, importUpload.single("file"), (req, res) =
           JSON.stringify(Array.isArray(tags) ? tags : []),
           JSON.stringify(Array.isArray(related_reqs) ? related_reqs : []),
           JSON.stringify(savedImages),
-          subsection_id || null,
+          resolvedSubsection,
           created_by || req.session.name,
           created_at || new Date().toISOString()
         );
         imported++;
-      } catch {
-        skipped++;
+      } catch (err) {
+        console.error(`KB import: failed to insert kb_id=${useId}:`, err.message);
+        trackSkip(`insert_failed: ${err.message}`);
       }
     }
 
-    logAudit(req.session.name, "KB_IMPORTED", `Imported ${imported} KB entries (mode: ${mode}), skipped ${skipped}`);
-    res.json({ ok: true, imported, skipped });
+    logAudit(req.session.name, "KB_IMPORTED", `Imported ${imported} KB entries (mode: ${mode}), skipped ${skipped}${droppedSubsections > 0 ? `, ${droppedSubsections} re-categorized to Uncategorized` : ""}`);
+    if (skipped > 0) console.warn("KB import skip reasons:", skipReasons);
+    if (droppedSubsections > 0) console.warn(`KB import: ${droppedSubsections} entries had unknown subsection_id, moved to Uncategorized`);
+    res.json({ ok: true, imported, skipped, skipReasons, droppedSubsections });
   } catch (err) {
     console.error("KB import error:", err);
     res.status(500).json({ error: err.message });
@@ -622,7 +644,7 @@ router.put("/kb/:kbId", requireAuth, (req, res) => {
     updates.push(`type: ${type}`);
   }
   if (content !== undefined && content.trim()) {
-    db.prepare("UPDATE kb_entries SET content = ? WHERE kb_id = ?").run(content.trim(), req.params.kbId);
+    db.prepare("UPDATE kb_entries SET content = ?, updated_at = datetime('now') WHERE kb_id = ?").run(content.trim(), req.params.kbId);
     updates.push("content updated");
   }
   if (tags !== undefined) {
@@ -649,6 +671,16 @@ router.put("/kb/:kbId/pin", requireAuth, (req, res) => {
   db.prepare("UPDATE kb_entries SET pinned = ? WHERE kb_id = ?").run(newPinned, req.params.kbId);
   logAudit(req.session.name, "KB_UPDATED", `${newPinned ? "Pinned" : "Unpinned"} ${req.params.kbId}`);
   res.json({ ok: true, pinned: newPinned });
+});
+
+// DELETE /api/kb/all — clear every KB entry (Admin / QA Manager only)
+router.delete("/kb/all", requireRole("Admin", "QA Manager"), (req, res) => {
+  const db = getKbDb();
+  const existing = db.prepare("SELECT kb_id FROM kb_entries").all();
+  for (const { kb_id } of existing) deleteImageDir(kb_id);
+  const result = db.prepare("DELETE FROM kb_entries").run();
+  logAudit(req.session.name, "KB_CLEAR_ALL", `Cleared all ${result.changes} KB entries`);
+  res.json({ ok: true, deleted: result.changes });
 });
 
 // DELETE /api/kb — delete selected KB entries

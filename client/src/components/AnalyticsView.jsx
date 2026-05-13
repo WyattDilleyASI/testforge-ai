@@ -59,6 +59,16 @@ export const AnalyticsView = ({ currentUser }) => {
   const [newExemplarTcId, setNewExemplarTcId] = useState("");
   const [exemplarError, setExemplarError] = useState("");
 
+  // KB Review state (Phase 1+2 — counters + Claude-synthesized suggestions)
+  const [kbCounters, setKbCounters] = useState(null);
+  const [kbSuggestions, setKbSuggestions] = useState([]);
+  const [kbSuggestionFilter, setKbSuggestionFilter] = useState("pending"); // pending | approved | rejected | all
+  const [kbSynthesizing, setKbSynthesizing] = useState(false);
+  const [kbSynthResult, setKbSynthResult] = useState(null);
+  const [kbDecisionId, setKbDecisionId] = useState(null);     // suggestion being acted on (for inline busy)
+  const [kbError, setKbError] = useState("");
+  const kbPendingCount = kbSuggestions.filter(s => s.status === "pending").length;
+
   // Health state
   const [health, setHealth] = useState(null);
   const [maintenanceResult, setMaintenanceResult] = useState(null);
@@ -73,6 +83,7 @@ export const AnalyticsView = ({ currentUser }) => {
     { key: "feedback", label: "Feedback" },
     ...(isManager ? [{ key: "rules", label: "Rules" }] : []),
     ...(isManager ? [{ key: "exemplars", label: "Exemplars" }] : []),
+    ...(isManager ? [{ key: "kbreview", label: kbPendingCount > 0 ? `KB Review (${kbPendingCount})` : "KB Review" }] : []),
     ...(isAdmin ? [{ key: "system", label: "System" }] : []),
     { key: "guide", label: "Guide" },
   ];
@@ -113,6 +124,46 @@ export const AnalyticsView = ({ currentUser }) => {
   useEffect(() => { if (tab === "rules") loadRules(); }, [tab, loadRules]);
   useEffect(() => { if (tab === "exemplars") loadExemplars(); }, [tab, loadExemplars]);
   useEffect(() => { if (tab === "system") loadHealth(); }, [tab, loadHealth]);
+
+  const loadKbReview = useCallback(async () => {
+    if (!isManager) return;
+    try {
+      setKbError("");
+      const [counters, suggestions] = await Promise.all([
+        api.getKbReviewCounters(),
+        api.getKbSuggestions(),
+      ]);
+      setKbCounters(counters);
+      setKbSuggestions(suggestions);
+    } catch (e) { setKbError(e.message); }
+  }, [isManager]);
+
+  useEffect(() => { if (tab === "kbreview") loadKbReview(); }, [tab, loadKbReview]);
+  // Also load once on mount so the tab label badge count is accurate.
+  useEffect(() => { if (isManager) loadKbReview(); }, [isManager, loadKbReview]);
+
+  const runKbSynthesis = async () => {
+    setKbSynthesizing(true);
+    setKbSynthResult(null);
+    setKbError("");
+    try {
+      const result = await api.runKbReviewSynthesis();
+      setKbSynthResult(result);
+      await loadKbReview();
+    } catch (e) { setKbError(e.message); }
+    finally { setKbSynthesizing(false); }
+  };
+
+  const decideKbSuggestion = async (id, action, note) => {
+    setKbDecisionId(id);
+    setKbError("");
+    try {
+      if (action === "approve") await api.approveKbSuggestion(id, note);
+      else await api.rejectKbSuggestion(id, note);
+      await loadKbReview();
+    } catch (e) { setKbError(e.message); }
+    finally { setKbDecisionId(null); }
+  };
 
   // ── Rule Actions ────────────────────────────────────────────────────
 
@@ -831,6 +882,196 @@ export const AnalyticsView = ({ currentUser }) => {
   );
 
   // ═══════════════════════════════════════════════════════════════════
+  // RENDER: KB Review Tab (Manager/Admin)
+  //
+  // Surfaces Claude-synthesized suggestions for fixing knowledge base
+  // entries when their referenced TCs are repeatedly edited in the same
+  // KB-informed field. See server/al/kb_review.js for the detection
+  // pipeline.
+  // ═══════════════════════════════════════════════════════════════════
+
+  const renderKbReview = () => {
+    const counterStats = kbCounters?.stats || [];
+    const readyCount = counterStats.find(s => s.status === "ready_for_synthesis")?.cnt || 0;
+    const accumulating = counterStats.find(s => s.status === "accumulating")?.cnt || 0;
+    const synthesized = counterStats.find(s => s.status === "synthesized")?.cnt || 0;
+    const threshold = kbCounters?.threshold ?? 3;
+
+    const filtered = kbSuggestionFilter === "all"
+      ? kbSuggestions
+      : kbSuggestions.filter(s => s.status === kbSuggestionFilter);
+
+    return <>
+      {/* Stats row */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 20 }}>
+        <Stat COLORS={COLORS} label="Pending Suggestions" value={kbSuggestions.filter(s => s.status === "pending").length} color="amber" sub="Awaiting review" />
+        <Stat COLORS={COLORS} label="Ready for Synthesis" value={readyCount} color={readyCount > 0 ? "accent" : "textMuted"} sub={`Hit threshold of ${threshold}`} />
+        <Stat COLORS={COLORS} label="Accumulating" value={accumulating} color="textMuted" sub="Below threshold" />
+        <Stat COLORS={COLORS} label="Synthesized (lifetime)" value={synthesized} color="textMuted" />
+      </div>
+
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 4 }}>
+              Run synthesis on {readyCount} ready counter{readyCount === 1 ? "" : "s"}
+            </div>
+            <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+              Calls Claude per ready counter. Costs tokens. Generates pending suggestions for review below.
+            </div>
+          </div>
+          <Button onClick={runKbSynthesis} disabled={kbSynthesizing || readyCount === 0}>
+            {kbSynthesizing ? "Synthesizing..." : "Run Synthesis"}
+          </Button>
+        </div>
+        {kbSynthResult && (
+          <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 6, background: COLORS.surface, border: `1px solid ${COLORS.border}`, fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+            {kbSynthResult.results.filter(r => r.ok).length} suggestion(s) generated · {kbSynthResult.results.filter(r => !r.ok).length} failed
+            {kbSynthResult.results.filter(r => !r.ok).map((r, i) => (
+              <div key={i} style={{ color: COLORS.red, marginTop: 2 }}>• {r.kb_id}: {r.error}</div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {kbError && <ErrorBanner msg={kbError} />}
+
+      {/* Filter pills */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
+        {[
+          ["pending", "Pending", kbSuggestions.filter(s => s.status === "pending").length],
+          ["approved", "Approved", kbSuggestions.filter(s => s.status === "approved").length],
+          ["rejected", "Rejected", kbSuggestions.filter(s => s.status === "rejected").length],
+          ["all", "All", kbSuggestions.length],
+        ].map(([key, label, count]) => {
+          const isActive = kbSuggestionFilter === key;
+          return (
+            <button key={key} onClick={() => setKbSuggestionFilter(key)} style={{
+              padding: "5px 12px", borderRadius: 6,
+              border: `1px solid ${isActive ? COLORS.accent : COLORS.border}`,
+              background: isActive ? COLORS.accentDim : "transparent",
+              cursor: "pointer", fontSize: 12, fontFamily: mono,
+              fontWeight: isActive ? 600 : 400,
+              color: isActive ? COLORS.accent : COLORS.textMuted,
+              transition: "all 0.15s ease",
+            }}>
+              {label} <span style={{ opacity: 0.6 }}>({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Suggestion list */}
+      {filtered.length === 0 ? (
+        <div style={{ padding: "40px 20px", textAlign: "center", color: COLORS.textMuted, fontSize: 13 }}>
+          {kbSuggestionFilter === "pending"
+            ? readyCount > 0
+              ? "No pending suggestions. Click \"Run Synthesis\" to generate them from ready counters."
+              : "No pending suggestions. Counters accumulate as users edit test cases that reference KB entries."
+            : `No ${kbSuggestionFilter} suggestions.`}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {filtered.map(s => renderKbSuggestionCard(s))}
+        </div>
+      )}
+    </>;
+  };
+
+  // Single suggestion card with diff view + approve/reject controls.
+  // current_content and proposed_content are rendered side-by-side on
+  // desktop, stacked on mobile.
+  const renderKbSuggestionCard = (s) => {
+    const evidenceIds = (() => { try { return JSON.parse(s.evidence_tc_ids || "[]"); } catch { return []; } })();
+    const isBusy = kbDecisionId === s.id;
+    const statusColor = s.status === "approved" ? "green" : s.status === "rejected" ? "red" : "amber";
+    const fieldLabel = s.edit_field === "steps" ? "Test Steps" : s.edit_field === "preconditions" ? "Setup" : s.edit_field;
+
+    return (
+      <Card key={s.id} style={{ padding: 0, overflow: "hidden" }}>
+        {/* Header strip */}
+        <div style={{
+          padding: "12px 16px",
+          borderBottom: `1px solid ${COLORS.border}`,
+          display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+        }}>
+          <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.purple, background: COLORS.purpleDim, padding: "2px 8px", borderRadius: 4 }}>{s.kb_id}</span>
+          <Badge color="accent">{fieldLabel} edits</Badge>
+          <Badge color={statusColor}>{s.status}</Badge>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+            {new Date(s.created_at + "Z").toLocaleString()}
+          </span>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 16 }}>
+          {/* Rationale */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Rationale</div>
+            <div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6 }}>{s.rationale}</div>
+          </div>
+
+          {/* Evidence */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Evidence</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {evidenceIds.map(tcId => (
+                <span key={tcId} style={{ fontFamily: mono, fontSize: 11, fontWeight: 600, color: COLORS.green, background: COLORS.greenDim, padding: "2px 8px", borderRadius: 4 }}>{tcId}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Diff view: current vs proposed */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Current Content</div>
+              <pre style={{
+                margin: 0, padding: "10px 12px", borderRadius: 6,
+                background: `${COLORS.red}11`, border: `1px solid ${COLORS.red}33`,
+                fontSize: 12, color: COLORS.text, lineHeight: 1.6,
+                whiteSpace: "pre-wrap", wordBreak: "break-word",
+                fontFamily: font, maxHeight: 400, overflowY: "auto",
+              }}>{s.current_content || "(empty)"}</pre>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Proposed Content</div>
+              <pre style={{
+                margin: 0, padding: "10px 12px", borderRadius: 6,
+                background: `${COLORS.green}11`, border: `1px solid ${COLORS.green}33`,
+                fontSize: 12, color: COLORS.text, lineHeight: 1.6,
+                whiteSpace: "pre-wrap", wordBreak: "break-word",
+                fontFamily: font, maxHeight: 400, overflowY: "auto",
+              }}>{s.proposed_content || "(empty)"}</pre>
+            </div>
+          </div>
+
+          {/* Decision row */}
+          {s.status === "pending" ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Button variant="primary" small disabled={isBusy} onClick={() => decideKbSuggestion(s.id, "approve")}>
+                {isBusy ? "Working..." : "✓ Approve & Apply"}
+              </Button>
+              <Button variant="danger" small disabled={isBusy} onClick={() => decideKbSuggestion(s.id, "reject")}>
+                ✗ Reject
+              </Button>
+              <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+                Approving writes proposed content to {s.kb_id} and resets its counters.
+              </span>
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
+              {s.status === "approved" ? "Applied" : "Dismissed"} by {s.decision_by || "system"}
+              {s.decision_at && ` on ${new Date(s.decision_at + "Z").toLocaleString()}`}
+              {s.decision_note && ` — ${s.decision_note}`}
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
   // RENDER: System Tab (Admin only)
   // ═══════════════════════════════════════════════════════════════════
 
@@ -979,6 +1220,7 @@ export const AnalyticsView = ({ currentUser }) => {
       {tab === "feedback" && renderFeedback()}
       {tab === "rules" && renderRules()}
       {tab === "exemplars" && renderExemplars()}
+      {tab === "kbreview" && renderKbReview()}
       {tab === "system" && renderSystem()}
       {tab === "guide" && renderGuide()}
     </div>
