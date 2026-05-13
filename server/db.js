@@ -6,6 +6,7 @@ const fs = require("fs");
 // ─── DATABASE PATHS ─────────────────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const IMAGES_DIR = path.join(DATA_DIR, "images");
+const SEEDING_IMAGES_DIR = path.join(DATA_DIR, "seeding-images");
 
 const DB_PATHS = {
   core:         path.join(DATA_DIR, "core.db"),
@@ -75,11 +76,55 @@ function deleteImageDir(kbId) {
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// ─── SEEDING IMAGE FILESYSTEM HELPERS ───────────────────────────────────────
+//
+// Parallel to the kb-entry image helpers above, but scoped to a seeding
+// job_id. Images live in data/seeding-images/{job_id}/ while a candidate
+// is in pending_review state. On accept, the file is moved into the
+// standard data/images/{kb_id}/ location. On reject or job finalize,
+// the seeding directory is cleaned up.
+
+function getSeedingImageDir(jobId) {
+  const dir = path.join(SEEDING_IMAGES_DIR, jobId);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function saveSeedingImage(jobId, name, base64Data) {
+  const dir = getSeedingImageDir(jobId);
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filePath = path.join(dir, safeName);
+  fs.writeFileSync(filePath, Buffer.from(base64Data, "base64"));
+  return safeName;
+}
+
+function readSeedingImage(jobId, fileName) {
+  const filePath = path.join(SEEDING_IMAGES_DIR, jobId, fileName);
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath);
+}
+
+function readSeedingImageBase64(jobId, fileName) {
+  const buf = readSeedingImage(jobId, fileName);
+  return buf ? buf.toString("base64") : null;
+}
+
+function deleteSeedingImage(jobId, fileName) {
+  const filePath = path.join(SEEDING_IMAGES_DIR, jobId, fileName);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
+
+function deleteSeedingImageDir(jobId) {
+  const dir = path.join(SEEDING_IMAGES_DIR, jobId);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+}
+
 // ─── SCHEMA ─────────────────────────────────────────────────────────────────
 
 function initialize() {
-  // Ensure images directory exists
+  // Ensure images directories exist
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  if (!fs.existsSync(SEEDING_IMAGES_DIR)) fs.mkdirSync(SEEDING_IMAGES_DIR, { recursive: true });
 
   // Run migration from legacy single DB if it exists
   migrateLegacyDb();
@@ -274,6 +319,10 @@ function initialize() {
   if (!kbCols.includes("images")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN images TEXT DEFAULT '[]'");
   if (!kbCols.includes("related_reqs")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN related_reqs TEXT DEFAULT '[]'");
   if (!kbCols.includes("pinned")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+  // Provenance columns for KB Seeding (folded in from migrate-kb-seeding.js)
+  if (!kbCols.includes("source")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN source TEXT DEFAULT 'manual'");
+  if (!kbCols.includes("source_url")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN source_url TEXT");
+  if (!kbCols.includes("source_ref")) kbDb.exec("ALTER TABLE kb_entries ADD COLUMN source_ref TEXT");
 
   // ┌──────────────────────────────────────────────────────────────────────┐
   // │  NEW: KB Sections & Subsections                                      │
@@ -315,6 +364,78 @@ function initialize() {
   if (!subCols.includes("description")) {
     kbDb.exec("ALTER TABLE kb_subsections ADD COLUMN description TEXT DEFAULT ''");
   }
+
+  // ┌──────────────────────────────────────────────────────────────────────┐
+  // │  KB Seeding Wizard tables                                            │
+  // │  Folded in from server/scripts/migrate-kb-seeding{,-images}.js so    │
+  // │  fresh deployments don't have to run them manually.                  │
+  // └──────────────────────────────────────────────────────────────────────┘
+
+  kbDb.exec(`
+    CREATE TABLE IF NOT EXISTS kb_seeding_jobs (
+      job_id                TEXT PRIMARY KEY,
+      created_by            TEXT NOT NULL,
+      created_at            TEXT NOT NULL,
+      status                TEXT NOT NULL,
+      input_summary         TEXT,
+      default_subsection_id TEXT,
+      batch_id_extract      TEXT,
+      batch_id_xref         TEXT,
+      model_version         TEXT,
+      stats                 TEXT,
+      error                 TEXT,
+      completed_at          TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS kb_seeding_candidates (
+      candidate_id          TEXT PRIMARY KEY,
+      job_id                TEXT NOT NULL REFERENCES kb_seeding_jobs(job_id),
+      title                 TEXT NOT NULL,
+      type                  TEXT NOT NULL,
+      content               TEXT NOT NULL,
+      suggested_tags        TEXT,
+      subsection_id         TEXT,
+      pinned                INTEGER DEFAULT 0,
+      extraction_confidence REAL,
+      source_input_ref      TEXT,
+      source_url            TEXT,
+      status                TEXT NOT NULL DEFAULT 'pending_review',
+      final_kb_id           TEXT,
+      user_edits            TEXT,
+      original_extracted    TEXT,
+      reviewed_at           TEXT,
+      reviewed_by           TEXT,
+      media_type            TEXT,
+      image_file            TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_seeding_candidates_job_status
+      ON kb_seeding_candidates(job_id, status);
+
+    CREATE TABLE IF NOT EXISTS kb_seeding_xref_matches (
+      match_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      candidate_id    TEXT NOT NULL REFERENCES kb_seeding_candidates(candidate_id),
+      req_id          TEXT NOT NULL,
+      confidence      REAL NOT NULL,
+      justification   TEXT,
+      auto_applied    INTEGER DEFAULT 0,
+      user_decision   TEXT DEFAULT 'pending'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_xref_candidate
+      ON kb_seeding_xref_matches(candidate_id);
+
+    CREATE INDEX IF NOT EXISTS idx_xref_req_conf
+      ON kb_seeding_xref_matches(req_id, confidence DESC);
+  `);
+
+  // Migration: media_type/image_file on kb_seeding_candidates.
+  // Only fires on installations where the table predates the consolidated
+  // CREATE above (i.e. where migrate-kb-seeding.js had been run but
+  // migrate-kb-seeding-images.js had not).
+  const seedCandCols = kbDb.prepare("PRAGMA table_info(kb_seeding_candidates)").all().map(c => c.name);
+  if (!seedCandCols.includes("media_type")) kbDb.exec("ALTER TABLE kb_seeding_candidates ADD COLUMN media_type TEXT");
+  if (!seedCandCols.includes("image_file")) kbDb.exec("ALTER TABLE kb_seeding_candidates ADD COLUMN image_file TEXT");
 
   // ── Seed data ──
   const userCount = core.prepare("SELECT COUNT(*) as count FROM users").get().count;
@@ -576,4 +697,7 @@ module.exports = {
   getInsightCache, setInsightCache,
   saveImage, readImage, readImageBase64, deleteImage, deleteImageDir, getImageDir,
   IMAGES_DIR,
+  saveSeedingImage, readSeedingImage, readSeedingImageBase64,
+  deleteSeedingImage, deleteSeedingImageDir, getSeedingImageDir,
+  SEEDING_IMAGES_DIR,
 };
