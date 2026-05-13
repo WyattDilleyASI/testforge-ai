@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker, useIsMobile } from "./shared";
+import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useExpandCollapse, useInlineEdit } from "../hooks";
 
 export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) => {
@@ -25,6 +25,10 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
   const [filter, setFilter] = useState("all"); // all | draft | reviewed | rejected
   const [searchQuery, setSearchQuery] = useState("");
   const [rejectingTcId, setRejectingTcId] = useState(null);
+  const [purgingTcId, setPurgingTcId] = useState(null);
+  const [bulkConfirm, setBulkConfirm] = useState(null);   // null | "delete" | "purge"
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [clearRejectedConfirm, setClearRejectedConfirm] = useState(false);
   const [traceSearch, setTraceSearch] = useState("");
 
   const sortedTcs = [...testCases].sort((a, b) => (b.generated_at || "").localeCompare(a.generated_at || ""));
@@ -77,6 +81,15 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
     } catch (err) { console.error(err); }
   };
 
+  // Called by PurgeConfirmation when the user confirms. Errors propagate up
+  // so the PurgeConfirmation panel can surface them inline; on success we
+  // close the panel and refresh.
+  const confirmPurge = async (tcId) => {
+    await api.discardTestCase(tcId);
+    setPurgingTcId(null);
+    refresh();
+  };
+
   const refineTestCase = async (tcId) => {
     if (!refineFeedback.trim()) return;
     setRefineLoading(true); setRefineError("");
@@ -99,26 +112,38 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
   };
 
   const clearAll = async () => {
-    if (!window.confirm(`Delete all ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}? This cannot be undone.`)) return;
     setClearing(true);
-    try { await api.clearTestCases(); refresh(); }
-    catch (err) { alert(`Failed: ${err.message}`); }
+    try {
+      await api.clearTestCases();
+      setClearAllConfirm(false);
+      refresh();
+    } catch (err) { alert(`Failed: ${err.message}`); }
     finally { setClearing(false); }
   };
 
   const clearRejected = async () => {
-    if (!window.confirm(`Delete ${rejectedCount} rejected test case${rejectedCount !== 1 ? "s" : ""}? This cannot be undone.`)) return;
-    try { await api.clearRejectedTestCases(); refresh(); }
-    catch (err) { alert(`Failed: ${err.message}`); }
+    try {
+      await api.clearRejectedTestCases();
+      setClearRejectedConfirm(false);
+      refresh();
+    } catch (err) { alert(`Failed: ${err.message}`); }
   };
 
   const exportSelected = () => { api.exportTestCasesXlsx([...selectedTcIds]); exitSelectMode(); };
 
   const deleteSelected = async () => {
-    const count = selectedTcIds.size;
-    if (!window.confirm(`Delete ${count} selected test case${count !== 1 ? "s" : ""}? This cannot be undone.`)) return;
     await runAsync(async () => {
       await api.deleteTestCases([...selectedTcIds]);
+      setBulkConfirm(null);
+      exitSelectMode();
+      refresh();
+    });
+  };
+
+  const purgeSelected = async () => {
+    await runAsync(async () => {
+      await api.discardTestCases([...selectedTcIds]);
+      setBulkConfirm(null);
       exitSelectMode();
       refresh();
     });
@@ -144,17 +169,62 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {!tcSelectMode && <>
-            {rejectedCount > 0 && <Button variant="danger" small onClick={clearRejected}>Clear Rejected ({rejectedCount})</Button>}
-            <Button variant="danger" small onClick={clearAll} disabled={testCases.length === 0 || clearing}>{clearing ? "Clearing..." : "Clear All"}</Button>
+            {rejectedCount > 0 && !clearRejectedConfirm && (
+              <Button variant="danger" small onClick={() => setClearRejectedConfirm(true)}>Clear Rejected ({rejectedCount})</Button>
+            )}
+            {clearRejectedConfirm && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: COLORS.red }}>Delete {rejectedCount} rejected test case{rejectedCount !== 1 ? "s" : ""}?</span>
+                <Button variant="danger" small onClick={clearRejected}>Confirm</Button>
+                <Button variant="ghost" small onClick={() => setClearRejectedConfirm(false)}>Cancel</Button>
+              </div>
+            )}
+            {!clearAllConfirm && (
+              <Button variant="danger" small onClick={() => setClearAllConfirm(true)} disabled={testCases.length === 0}>Clear All</Button>
+            )}
+            {clearAllConfirm && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: COLORS.red }}>Delete all {testCases.length} test case{testCases.length !== 1 ? "s" : ""}?</span>
+                <Button variant="danger" small onClick={clearAll} disabled={clearing}>{clearing ? "Deleting..." : "Confirm"}</Button>
+                <Button variant="ghost" small onClick={() => setClearAllConfirm(false)} disabled={clearing}>Cancel</Button>
+              </div>
+            )}
             {testCases.length > 0 && <Button variant="secondary" small onClick={() => api.exportTestCasesXlsx()} disabled={testCases.length === 0}>Export XLSX</Button>}
             {testCases.length > 0 && <Button variant="secondary" small onClick={enterSelectMode}>Select</Button>}
           </>}
-          {tcSelectMode && <>
-            <Button variant="secondary" small onClick={selectAllTcs}>{allSelected ? "Deselect All" : "Select All"}</Button>
-            <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
-            <Button variant="danger" small onClick={deleteSelected} disabled={selectedTcIds.size === 0 || asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
-            <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
-          </>}
+          {tcSelectMode && (bulkConfirm === "purge" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: COLORS.amber, fontWeight: 600 }}>
+                ⚠ Purge {selectedTcIds.size} test case{selectedTcIds.size !== 1 ? "s" : ""}? Their feedback will also be erased from the learning engine.
+              </span>
+              <Button variant="warning" small onClick={purgeSelected} disabled={asyncLoading}>
+                {asyncLoading ? "Purging..." : "Confirm"}
+              </Button>
+              <Button variant="ghost" small onClick={() => setBulkConfirm(null)} disabled={asyncLoading}>
+                Cancel
+              </Button>
+            </div>
+          ) : bulkConfirm === "delete" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: COLORS.red, fontWeight: 600 }}>
+                Delete {selectedTcIds.size} selected test case{selectedTcIds.size !== 1 ? "s" : ""}?
+              </span>
+              <Button variant="danger" small onClick={deleteSelected} disabled={asyncLoading}>
+                {asyncLoading ? "Deleting..." : "Confirm"}
+              </Button>
+              <Button variant="ghost" small onClick={() => setBulkConfirm(null)} disabled={asyncLoading}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button variant="secondary" small onClick={selectAllTcs}>{allSelected ? "Deselect All" : "Select All"}</Button>
+              <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
+              <Button variant="danger" small onClick={() => setBulkConfirm("delete")} disabled={selectedTcIds.size === 0 || asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
+              <Button variant="warning" small onClick={() => setBulkConfirm("purge")} disabled={selectedTcIds.size === 0 || asyncLoading}>Purge Selected ({selectedTcIds.size})</Button>
+              <Button variant="ghost" small onClick={exitSelectMode}>Cancel</Button>
+            </>
+          ))}
         </div>
       </div>
 
@@ -218,6 +288,7 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
                     {expanded && <Button small variant="secondary" onClick={e => { e.stopPropagation(); edit.isEditing(tc.tc_id) ? edit.cancelEdit() : edit.startEdit(tc.tc_id, parseEditForm(tc)); }}>{edit.isEditing(tc.tc_id) ? "Cancel" : "Edit"}</Button>}
                     <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
                     <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}> &#10007;</Button>
+                    <Button small variant="warning" onClick={e => { e.stopPropagation(); setPurgingTcId(purgingTcId === tc.tc_id ? null : tc.tc_id); }} title="Purge — removes the TC and erases its feedback from the learning engine">⚠ Purge</Button>
                     <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
                   </div>
                 </div>
@@ -228,6 +299,17 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
                     <RejectionPicker
                       onReject={(reason) => updateStatus(tc.tc_id, "Rejected", reason)}
                       onCancel={() => setRejectingTcId(null)}
+                    />
+                  </div>
+                )}
+
+                {/* Purge confirmation panel — full-width below header */}
+                {purgingTcId === tc.tc_id && (
+                  <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                    <PurgeConfirmation
+                      tcId={tc.tc_id}
+                      onConfirm={confirmPurge}
+                      onCancel={() => setPurgingTcId(null)}
                     />
                   </div>
                 )}

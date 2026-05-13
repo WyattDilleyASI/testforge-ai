@@ -482,33 +482,100 @@ router.post("/import", requireAuth, (req, res) => {
   }
 });
 
+// GET /api/testcases/:tcId/purge-preview — return counts of feedback events
+// and exemplar entries that would be erased if this TC is discarded.
+// Used by the Purge confirmation dialog to show the user what's at stake.
+router.get("/:tcId/purge-preview", requireMobileAuth, (req, res) => {
+  const db = getTcDb();
+  const tc = db.prepare("SELECT tc_id FROM test_cases WHERE tc_id = ?").get(req.params.tcId);
+  if (!tc) return res.status(404).json({ error: "Test case not found" });
+
+  const preview = al.getPurgePreviewForTestCases([req.params.tcId]);
+  res.json(preview);
+});
+
 // DELETE /api/testcases/bulk — delete specific test cases by ID
+// Query param ?discard=true also purges AL feedback events and exemplar
+// entries for the affected TCs, so they don't influence future generation.
 router.delete("/bulk", requireMobileAuth, (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids must be a non-empty array" });
   const db = getTcDb();
+  const discard = req.query.discard === "true";
+
+  let purgeResult = { feedbackEvents: 0, exemplars: 0 };
+  if (discard) {
+    purgeResult = al.purgeFeedbackForTestCases(ids);
+  }
+
   const placeholders = ids.map(() => "?").join(",");
   db.prepare(`DELETE FROM test_cases WHERE tc_id IN (${placeholders})`).run(...ids);
-  logAudit(req.body.deletedBy || "Mobile App", "TC_DELETE_BULK", `Deleted ${ids.length} test case(s): ${ids.join(", ")}`);
-  res.json({ ok: true, deleted: ids.length });
+
+  const caller = req.body.deletedBy || "Mobile App";
+  const action = discard ? "TC_DISCARD_BULK" : "TC_DELETE_BULK";
+  const verb = discard ? "Discarded" : "Deleted";
+  const purgeNote = discard
+    ? ` (purged ${purgeResult.feedbackEvents} feedback events, ${purgeResult.exemplars} exemplars)`
+    : "";
+  logAudit(caller, action, `${verb} ${ids.length} test case(s)${purgeNote}: ${ids.join(", ")}`);
+
+  res.json({ ok: true, deleted: ids.length, discarded: discard, purged: purgeResult });
 });
 
 // DELETE /api/testcases — clear all test cases
+// Query param ?discard=true also purges AL feedback events and exemplar
+// entries for all TCs, so they don't influence future generation.
 router.delete("/", requireAuth, (req, res) => {
   const db = getTcDb();
+  const discard = req.query.discard === "true";
+
+  let purgeResult = { feedbackEvents: 0, exemplars: 0 };
+  if (discard) {
+    const tcIds = db.prepare("SELECT tc_id FROM test_cases").all().map(r => r.tc_id);
+    if (tcIds.length > 0) {
+      purgeResult = al.purgeFeedbackForTestCases(tcIds);
+    }
+  }
+
   const count = db.prepare("SELECT COUNT(*) as count FROM test_cases").get().count;
   db.prepare("DELETE FROM test_cases").run();
-  logAudit(req.session.name, "TC_CLEAR_ALL", `Deleted all ${count} test cases`);
-  res.json({ ok: true, deleted: count });
+
+  const action = discard ? "TC_DISCARD_ALL" : "TC_CLEAR_ALL";
+  const verb = discard ? "Discarded" : "Deleted";
+  const purgeNote = discard
+    ? ` (purged ${purgeResult.feedbackEvents} feedback events, ${purgeResult.exemplars} exemplars)`
+    : "";
+  logAudit(req.session.name, action, `${verb} all ${count} test cases${purgeNote}`);
+
+  res.json({ ok: true, deleted: count, discarded: discard, purged: purgeResult });
 });
 
 // DELETE /api/testcases/rejected — delete all rejected test cases
+// Query param ?discard=true also purges AL feedback events and exemplar
+// entries for the rejected TCs, so they don't influence future generation.
 router.delete("/rejected", requireAuth, (req, res) => {
   const db = getTcDb();
+  const discard = req.query.discard === "true";
+
+  let purgeResult = { feedbackEvents: 0, exemplars: 0 };
+  if (discard) {
+    const tcIds = db.prepare("SELECT tc_id FROM test_cases WHERE status = 'Rejected'").all().map(r => r.tc_id);
+    if (tcIds.length > 0) {
+      purgeResult = al.purgeFeedbackForTestCases(tcIds);
+    }
+  }
+
   const count = db.prepare("SELECT COUNT(*) as count FROM test_cases WHERE status = 'Rejected'").get().count;
   db.prepare("DELETE FROM test_cases WHERE status = 'Rejected'").run();
-  logAudit(req.session.name, "TC_CLEAR_REJECTED", `Deleted ${count} rejected test cases`);
-  res.json({ ok: true, deleted: count });
+
+  const action = discard ? "TC_DISCARD_REJECTED" : "TC_CLEAR_REJECTED";
+  const verb = discard ? "Discarded" : "Deleted";
+  const purgeNote = discard
+    ? ` (purged ${purgeResult.feedbackEvents} feedback events, ${purgeResult.exemplars} exemplars)`
+    : "";
+  logAudit(req.session.name, action, `${verb} ${count} rejected test cases${purgeNote}`);
+
+  res.json({ ok: true, deleted: count, discarded: discard, purged: purgeResult });
 });
 
 

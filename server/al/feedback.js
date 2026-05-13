@@ -161,8 +161,83 @@ function logFeedbackEvent({
   );
 }
 
+// ─── Discard Mode: Purge Feedback ───────────────────────────────────
+
+/**
+ * Remove all feedback events and exemplar entries associated with the given
+ * test case IDs. Called from the discard delete path (?discard=true) so
+ * discarded TCs don't pollute the next AL aggregation run or get injected
+ * into future generation prompts as exemplars.
+ *
+ * NOTE: This does NOT unwind influence from events that have already been
+ * aggregated (processed_at IS NOT NULL). Those events have already shaped
+ * existing rules — those rules remain. Discard prevents *future* pollution;
+ * it does not rewrite history. rule_evidence rows are intentionally left
+ * alone so the audit trail of which events built which rules stays intact.
+ *
+ * Wrapped in a transaction so a failure mid-purge can't leave the AL tables
+ * in a half-cleaned state.
+ *
+ * @param {string[]} tcIds - Test case IDs to purge (e.g. ["TC-RS-001-003"])
+ * @returns {{ feedbackEvents: number, exemplars: number }} - Counts removed
+ */
+function purgeFeedbackForTestCases(tcIds) {
+  if (!Array.isArray(tcIds) || tcIds.length === 0) {
+    return { feedbackEvents: 0, exemplars: 0 };
+  }
+
+  const db = getTcDb();
+  const placeholders = tcIds.map(() => "?").join(",");
+
+  const txn = db.transaction((ids) => {
+    const fb = db
+      .prepare(`DELETE FROM feedback_events WHERE tc_id IN (${placeholders})`)
+      .run(...ids);
+    const ex = db
+      .prepare(`DELETE FROM exemplar_test_cases WHERE tc_id IN (${placeholders})`)
+      .run(...ids);
+    return { feedbackEvents: fb.changes, exemplars: ex.changes };
+  });
+
+  return txn(tcIds);
+}
+
+/**
+ * Preview what purgeFeedbackForTestCases would remove for the given TC IDs,
+ * without actually deleting anything. Used by the discard confirmation dialog
+ * to show the user exactly what feedback signal will be erased.
+ *
+ * Same array-input shape as the purge helper so a single-TC call passes
+ * `[tcId]` and a future bulk preview can pass the full array.
+ *
+ * @param {string[]} tcIds - Test case IDs to count feedback for
+ * @returns {{ feedbackEvents: number, exemplars: number }} - Counts that would be purged
+ */
+function getPurgePreviewForTestCases(tcIds) {
+  if (!Array.isArray(tcIds) || tcIds.length === 0) {
+    return { feedbackEvents: 0, exemplars: 0 };
+  }
+
+  const db = getTcDb();
+  const placeholders = tcIds.map(() => "?").join(",");
+
+  const fb = db
+    .prepare(`SELECT COUNT(*) AS count FROM feedback_events WHERE tc_id IN (${placeholders})`)
+    .get(...tcIds);
+  const ex = db
+    .prepare(`SELECT COUNT(*) AS count FROM exemplar_test_cases WHERE tc_id IN (${placeholders})`)
+    .get(...tcIds);
+
+  return {
+    feedbackEvents: fb.count,
+    exemplars: ex.count,
+  };
+}
+
 module.exports = {
   REJECTION_REASONS,
   computeTcDiff,
   logFeedbackEvent,
+  purgeFeedbackForTestCases,
+  getPurgePreviewForTestCases,
 };

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTheme, font, mono, DRAFT_DISCLAIMER } from "../theme";
+import { api } from "../api";
 
 // ── RESPONSIVE BREAKPOINT HOOK ───────────────────────────────────────────────
 // Returns true when the viewport is narrower than the given pixel width.
@@ -90,8 +91,104 @@ export const Badge = ({ color = "accent", children, style }) => {
 export const Button = ({ variant = "primary", children, onClick, disabled, style, small }) => {
   const T = useTheme();
   const base = { fontFamily: font, fontSize: small ? 12 : 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", borderRadius: 6, padding: small ? "5px 12px" : "9px 20px", transition: "all 0.2s", opacity: disabled ? 0.4 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
-  const variants = { primary: { ...base, background: T.accent, color: T.bg }, secondary: { ...base, background: T.surfaceRaised, color: T.text, border: `1px solid ${T.border}` }, danger: { ...base, background: T.redDim, color: T.red, border: `1px solid ${T.red}33` }, ghost: { ...base, background: "transparent", color: T.textMuted } };
-  return <button style={{ ...variants[variant], ...style }} onClick={onClick} disabled={disabled}>{children}</button>;
+  const variants = { primary: { ...base, background: T.accent, color: T.bg }, secondary: { ...base, background: T.surfaceRaised, color: T.text, border: `1px solid ${T.border}` }, danger: { ...base, background: T.redDim, color: T.red, border: `1px solid ${T.red}33` }, warning: { ...base, background: T.amberDim, color: T.amber, border: `1px solid ${T.amber}33` }, ghost: { ...base, background: "transparent", color: T.textMuted } };  return <button style={{ ...variants[variant], ...style }} onClick={onClick} disabled={disabled}>{children}</button>;
+};
+
+// ── PURGE CONFIRMATION ────────────────────────────────────────────────────────
+// Inline panel shown when a user clicks the Purge button on a TC. Loads the
+// purge preview (counts of feedback events and exemplar entries that would
+// be erased) and waits for the user to confirm. Matches the inline-panel
+// pattern of RejectionPicker rather than a modal dialog.
+//
+// Props:
+//   tcId      — test case ID being purged
+//   onConfirm — async function called with tcId when user confirms. The parent
+//               handles the actual discard call and refresh.
+//   onCancel  — called when the user dismisses without confirming.
+export const PurgeConfirmation = ({ tcId, onConfirm, onCancel }) => {
+  const T = useTheme();
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [purging, setPurging] = useState(false);
+  const [purgeError, setPurgeError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError("");
+    api.getPurgePreview(tcId)
+      .then(data => { if (!cancelled) { setPreview(data); setLoading(false); } })
+      .catch(err => { if (!cancelled) { setLoadError(err.message); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [tcId]);
+
+  const handleConfirm = async () => {
+    setPurging(true);
+    setPurgeError("");
+    try {
+      await onConfirm(tcId);
+    } catch (err) {
+      setPurgeError(err.message);
+      setPurging(false);
+    }
+  };
+
+  return (
+    <div style={{
+      padding: 12,
+      background: T.amberDim,
+      border: `1px solid ${T.amber}66`,
+      borderRadius: 6,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ color: T.amber, fontSize: 14 }}>⚠</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: T.amber }}>
+          Purge <span style={{ fontFamily: mono }}>{tcId}</span>?
+        </span>
+      </div>
+
+      {loading && (
+        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
+          Loading impact...
+        </div>
+      )}
+
+      {loadError && (
+        <div style={{ fontSize: 12, color: T.red, marginBottom: 10 }}>
+          Couldn't load preview: {loadError}
+        </div>
+      )}
+
+      {preview && !loading && (
+        <>
+          <div style={{ fontSize: 12, color: T.text, marginBottom: 6, lineHeight: 1.5 }}>
+            This will remove the test case and erase its feedback from the learning engine:
+          </div>
+          <ul style={{ margin: "0 0 10px 18px", padding: 0, fontFamily: mono, fontSize: 12, color: T.amber, lineHeight: 1.7 }}>
+            <li>{preview.feedbackEvents} feedback event{preview.feedbackEvents !== 1 ? "s" : ""}</li>
+            <li>{preview.exemplars} exemplar entr{preview.exemplars !== 1 ? "ies" : "y"}</li>
+          </ul>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10, fontStyle: "italic", lineHeight: 1.5 }}>
+            For bad samples that shouldn't influence future generations. Already-aggregated rules are not unwound.
+          </div>
+        </>
+      )}
+
+      {purgeError && (
+        <div style={{ fontSize: 12, color: T.red, marginBottom: 10 }}>
+          Purge failed: {purgeError}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        <Button small variant="ghost" onClick={onCancel} disabled={purging}>Cancel</Button>
+        <Button small variant="warning" onClick={handleConfirm} disabled={loading || purging || !!loadError}>
+          {purging ? "Purging..." : "Purge"}
+        </Button>
+      </div>
+    </div>
+  );
 };
 
 export const Card = ({ children, style, glow, ...rest }) => {
