@@ -337,7 +337,7 @@ Paste the URL above and add the Authorization header.`,
             <span style={{ fontSize: 10, color: COLORS.textMuted }}>3 KB · zero dependencies</span>
           </div>
           <div style={{ paddingLeft: 28, fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6, padding: "8px 12px 8px 28px", background: COLORS.bg, borderRadius: 6, marginLeft: 28 }}>
-            <div style={{ marginBottom: 4, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, fontSize: 9, textTransform: "uppercase" }}>Suggested location</div>
+            <div style={{ marginBottom: 4, fontWeight: 600, color: COLORS.textMuted, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Suggested location</div>
             {installOs === "windows"
               ? <div><span style={{ fontFamily: mono, color: COLORS.accent }}>C:\Users\you\Documents\mcp-bridge.mjs</span></div>
               : <div><span style={{ fontFamily: mono, color: COLORS.accent }}>~/Documents/mcp-bridge.mjs</span></div>
@@ -444,7 +444,7 @@ Paste the URL above and add the Authorization header.`,
           />
           {bridgePath.trim() ? (
             <div style={{ marginTop: 6, padding: "8px 12px", background: COLORS.bg, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
-              <div style={{ fontSize: 9, fontFamily: mono, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Bridge script path (auto-generated)</div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Bridge script path (auto-generated)</div>
               <div style={{ fontSize: 11, fontFamily: mono, color: COLORS.accent, wordBreak: "break-all" }}>{fullBridgePath}</div>
             </div>
           ) : (
@@ -528,7 +528,7 @@ Paste the URL above and add the Authorization header.`,
               </div>
               {/* Config folder locations */}
               <div style={{ padding: "10px 12px", background: COLORS.bg, borderRadius: 6, border: `1px solid ${COLORS.border}`, fontSize: 10, lineHeight: 1.8 }}>
-                <div style={{ fontWeight: 600, color: COLORS.textMuted, marginBottom: 4, fontFamily: mono, textTransform: "uppercase", fontSize: 9 }}>Place the file in this folder:</div>
+                <div style={{ fontWeight: 600, color: COLORS.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 10 }}>Place the file in this folder:</div>
                 <div style={{ color: installOs === "windows" ? COLORS.textBright : COLORS.textMuted }}>
                   <span style={{ fontFamily: mono, fontWeight: 600 }}>Windows (Standard):</span>{" "}
                   <span style={{ fontFamily: mono }}>%APPDATA%\Claude\</span>

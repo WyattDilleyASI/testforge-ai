@@ -284,7 +284,7 @@ export const AnalyticsView = ({ currentUser }) => {
     const arrow = (label, color) => (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "0 4px" }}>
         <div style={{ fontSize: 18, color: COLORS[color] || COLORS.accent, lineHeight: 1 }}>↓</div>
-        <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.04em", textAlign: "center", maxWidth: 80 }}>{label}</div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", textAlign: "center", maxWidth: 80 }}>{label}</div>
       </div>
     );
 
@@ -296,7 +296,7 @@ export const AnalyticsView = ({ currentUser }) => {
         textAlign: "center", transition: "all 0.2s ease",
       }}>
         <div style={{ fontSize: 28, marginBottom: 8, lineHeight: 1 }}>{icon}</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: COLORS[color] || COLORS.textBright, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>{title}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: COLORS[color] || COLORS.textBright, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{title}</div>
         <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6 }}>{desc}</div>
       </div>
     );
