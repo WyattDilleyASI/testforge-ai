@@ -56,6 +56,9 @@ export const api = {
   refineTestCase: (tcId, feedback) => request(`/testcases/${tcId}/refine`, { method: "POST", body: { feedback } }),
   refinePrompt: (tcId, feedback) => request(`/testcases/${tcId}/refine-prompt`, { method: "POST", body: { feedback } }),
   deleteTestCases: (ids) => request("/testcases/bulk", { method: "DELETE", body: { ids } }),
+  discardTestCase: (tcId) => request("/testcases/bulk?discard=true", { method: "DELETE", body: { ids: [tcId] } }),
+  discardTestCases: (ids) => request("/testcases/bulk?discard=true", { method: "DELETE", body: { ids } }),
+  getPurgePreview: (tcId) => request(`/testcases/${tcId}/purge-preview`),
   clearTestCases: () => request("/testcases", { method: "DELETE" }),
   clearRejectedTestCases: () => request("/testcases/rejected", { method: "DELETE" }),
   exportTestCasesXlsx: (tcIds) => {

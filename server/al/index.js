@@ -27,9 +27,11 @@ module.exports = {
   initializeAL: schema.initializeAL,
 
   // ── Feedback (AL-002) ──────────────────────────────────────────────
-  REJECTION_REASONS:  feedback.REJECTION_REASONS,
-  computeTcDiff:      feedback.computeTcDiff,
-  logFeedbackEvent:   feedback.logFeedbackEvent,
+  REJECTION_REASONS:            feedback.REJECTION_REASONS,
+  computeTcDiff:                feedback.computeTcDiff,
+  logFeedbackEvent:             feedback.logFeedbackEvent,
+  purgeFeedbackForTestCases:    feedback.purgeFeedbackForTestCases,
+  getPurgePreviewForTestCases:  feedback.getPurgePreviewForTestCases,
 
   // ── Analytics (AL-003) ─────────────────────────────────────────────
   // Session tracking

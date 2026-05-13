@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, JamaImportPanel, useIsMobile } from "./shared";
+import { Card, Badge, Button, Select, ReqIdTag, Spinner, EmptyState, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, JamaImportPanel, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useInlineEdit } from "../hooks";
 
 export const TestCaseView = ({ requirements, testCases, refresh, initialReqId }) => {
@@ -50,6 +50,8 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
 
   // Adaptive Learning Engine Stuff
   const [rejectingTcId, setRejectingTcId] = useState(null);
+  const [purgingTcId, setPurgingTcId] = useState(null);
+  const [clearRejectedConfirm, setClearRejectedConfirm] = useState(false);
   const [genHint, setGenHint] = useState(null);
 
   // Edit state — via hooks
@@ -158,6 +160,15 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
     } catch (err) { console.error(err); }
   };
 
+  // Called by PurgeConfirmation when the user confirms. Errors propagate up
+  // so the PurgeConfirmation panel can surface them inline; on success we
+  // close the panel and refresh.
+  const confirmPurge = async (tcId) => {
+    await api.discardTestCase(tcId);
+    setPurgingTcId(null);
+    refresh();
+  };
+
   const startEdit = (tc) => {
     let desc = { objective: "", scope: "", assumptions: [] };
     let setup = { preconditions: [], environment: [], equipment: [], testData: [] };
@@ -200,8 +211,11 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
   };
 
   const clearRejected = async () => {
-    if (!window.confirm(`Delete ${sessionRejectedCount} rejected test case${sessionRejectedCount !== 1 ? "s" : ""}? This cannot be undone.`)) return;
-    try { await api.clearRejectedTestCases(); refresh(); } catch (err) { alert(`Failed: ${err.message}`); }
+    try {
+      await api.clearRejectedTestCases();
+      setClearRejectedConfirm(false);
+      refresh();
+    } catch (err) { alert(`Failed: ${err.message}`); }
   };
 
   const doDocImport = async (e) => {
@@ -637,8 +651,15 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                 <Button variant="primary" small onClick={exportSelected} disabled={selectedTcIds.size === 0}>Export Selected ({selectedTcIds.size})</Button>
                 <Button variant="ghost" small onClick={() => { setTcSelectMode(false); clearTcSelection(); }}>Cancel</Button>
               </>}
-              {sessionRejectedCount > 0 && (
-                <Button variant="danger" small onClick={clearRejected}>Clear Rejected ({sessionRejectedCount})</Button>
+              {sessionRejectedCount > 0 && !clearRejectedConfirm && (
+                <Button variant="danger" small onClick={() => setClearRejectedConfirm(true)}>Clear Rejected ({sessionRejectedCount})</Button>
+              )}
+              {clearRejectedConfirm && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, color: COLORS.red }}>Delete {sessionRejectedCount} rejected test case{sessionRejectedCount !== 1 ? "s" : ""}?</span>
+                  <Button variant="danger" small onClick={clearRejected}>Confirm</Button>
+                  <Button variant="ghost" small onClick={() => setClearRejectedConfirm(false)}>Cancel</Button>
+                </div>
               )}
             </div>
           </div>
@@ -711,6 +732,12 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                             style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
                             &#10007; Reject
                           </Button>
+                          <Button small variant="warning"
+                            onClick={() => setPurgingTcId(purgingTcId === selectedTc.tc_id ? null : selectedTc.tc_id)}
+                            title="Purge — removes the TC and erases its feedback from the learning engine"
+                            style={isMobile ? { flex: 1, justifyContent: "center" } : {}}>
+                            ⚠ Purge
+                          </Button>
                         </div>
                       </div>
 
@@ -719,6 +746,16 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                           <RejectionPicker
                             onReject={(reason) => updateStatus(selectedTc.tc_id, "Rejected", reason)}
                             onCancel={() => setRejectingTcId(null)}
+                          />
+                        </div>
+                      )}
+
+                      {purgingTcId === selectedTc.tc_id && (
+                        <div style={{ marginBottom: 12 }}>
+                          <PurgeConfirmation
+                            tcId={selectedTc.tc_id}
+                            onConfirm={confirmPurge}
+                            onCancel={() => setPurgingTcId(null)}
                           />
                         </div>
                       )}
