@@ -23,6 +23,8 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
   const [refineCopyState, setRefineCopyState] = useState("idle");
 
   const [filter, setFilter] = useState("all"); // all | draft | reviewed | rejected
+  const [hoveredFilter, setHoveredFilter] = useState(null);
+  const [hoveredTcId, setHoveredTcId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [rejectingTcId, setRejectingTcId] = useState(null);
   const [purgingTcId, setPurgingTcId] = useState(null);
@@ -237,16 +239,29 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
       {/* Filter tabs */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", gap: 4 }}>
-          {[["all", "All"], ["draft", "Draft"], ["reviewed", "Reviewed"], ["rejected", "Rejected"]].map(([key, label]) => (
-            <button key={key} onClick={() => setFilter(key)} style={{
-              padding: "5px 12px", borderRadius: 6, border: `1px solid ${filter === key ? COLORS.accent : COLORS.border}`,
-              background: filter === key ? COLORS.accentDim : "transparent", cursor: "pointer",
-              fontSize: 12, fontFamily: mono, fontWeight: filter === key ? 600 : 400,
-              color: filter === key ? COLORS.accent : COLORS.textMuted,
-            }}>
-              {label} <span style={{ opacity: 0.6 }}>({counts[key]})</span>
-            </button>
-          ))}
+          {[["all", "All"], ["draft", "Draft"], ["reviewed", "Reviewed"], ["rejected", "Rejected"]].map(([key, label]) => {
+            const isActive = filter === key;
+            const isHovered = hoveredFilter === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                onMouseEnter={() => setHoveredFilter(key)}
+                onMouseLeave={() => setHoveredFilter(null)}
+                style={{
+                  padding: "5px 12px", borderRadius: 6,
+                  border: `1px solid ${isActive ? COLORS.accent : isHovered ? `${COLORS.accent}55` : COLORS.border}`,
+                  background: isActive ? COLORS.accentDim : isHovered ? `${COLORS.accent}11` : "transparent",
+                  cursor: "pointer",
+                  fontSize: 12, fontFamily: mono, fontWeight: isActive ? 600 : 400,
+                  color: isActive ? COLORS.accent : isHovered ? COLORS.text : COLORS.textMuted,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {label} <span style={{ opacity: 0.6 }}>({counts[key]})</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -262,7 +277,20 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
             const expanded = isExpanded(tc.tc_id);
 
             return (
-              <Card key={tc.tc_id} style={{ marginBottom: 10, border: tcSelectMode && isSelected(tc.tc_id) ? `1px solid ${COLORS.accent}` : undefined }}>
+              <Card
+                key={tc.tc_id}
+                onMouseEnter={() => setHoveredTcId(tc.tc_id)}
+                onMouseLeave={() => setHoveredTcId(null)}
+                style={{
+                  marginBottom: 10,
+                  border: tcSelectMode && isSelected(tc.tc_id)
+                    ? `1px solid ${COLORS.accent}`
+                    : hoveredTcId === tc.tc_id
+                      ? `1px solid ${COLORS.accent}55`
+                      : undefined,
+                  transition: "border-color 0.15s ease",
+                }}
+              >
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }} onClick={() => tcSelectMode ? toggleTcSelect(tc.tc_id) : toggleExpand(tc.tc_id)}>
                   {tcSelectMode && <input type="checkbox" checked={isSelected(tc.tc_id)} onChange={() => toggleTcSelect(tc.tc_id)} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
                   <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.green, background: COLORS.greenDim, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}>{tc.tc_id}</span>

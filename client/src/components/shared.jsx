@@ -90,8 +90,29 @@ export const Badge = ({ color = "accent", children, style }) => {
 
 export const Button = ({ variant = "primary", children, onClick, disabled, style, small }) => {
   const T = useTheme();
-  const base = { fontFamily: font, fontSize: small ? 12 : 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", borderRadius: 6, padding: small ? "5px 12px" : "9px 20px", transition: "all 0.2s", opacity: disabled ? 0.4 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
-  const variants = { primary: { ...base, background: T.accent, color: T.bg }, secondary: { ...base, background: T.surfaceRaised, color: T.text, border: `1px solid ${T.border}` }, danger: { ...base, background: T.redDim, color: T.red, border: `1px solid ${T.red}33` }, warning: { ...base, background: T.amberDim, color: T.amber, border: `1px solid ${T.amber}33` }, ghost: { ...base, background: "transparent", color: T.textMuted } };  return <button style={{ ...variants[variant], ...style }} onClick={onClick} disabled={disabled}>{children}</button>;
+  const [hover, setHover] = useState(false);
+  const base = { fontFamily: font, fontSize: small ? 12 : 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", borderRadius: 6, padding: small ? "5px 12px" : "9px 20px", transition: "all 0.15s ease", opacity: disabled ? 0.4 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
+  const variants = {
+    primary:   { ...base, background: T.accent, color: T.bg },
+    secondary: { ...base, background: T.surfaceRaised, color: T.text, border: `1px solid ${T.border}` },
+    danger:    { ...base, background: T.redDim, color: T.red, border: `1px solid ${T.red}33` },
+    warning:   { ...base, background: T.amberDim, color: T.amber, border: `1px solid ${T.amber}33` },
+    ghost:     { ...base, background: "transparent", color: T.textMuted },
+  };
+  const hoverStyles = !disabled && hover ? {
+    primary:   { filter: "brightness(1.08)", transform: "translateY(-1px)" },
+    secondary: { background: T.accentDim, borderColor: `${T.accent}55`, color: T.textBright },
+    danger:    { background: `${T.red}22`, borderColor: `${T.red}66` },
+    warning:   { background: `${T.amber}22`, borderColor: `${T.amber}66` },
+    ghost:     { background: `${T.accent}11`, color: T.text },
+  }[variant] : {};
+  return <button
+    style={{ ...variants[variant], ...style, ...hoverStyles }}
+    onClick={onClick}
+    disabled={disabled}
+    onMouseEnter={() => setHover(true)}
+    onMouseLeave={() => setHover(false)}
+  >{children}</button>;
 };
 
 // ── PURGE CONFIRMATION ────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ req_id: "", title: "", description: "", acceptanceCriteria: "", priority: "High", status: "Draft", module: "Requirement Ingestion" });
+  const [hoveredReqId, setHoveredReqId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -324,7 +325,25 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
       const tcRels = rels.filter(rel => rel.group === "Verification Test Case" || rel.direction === "Downstream");
       const reqRels = rels.filter(rel => rel.group !== "Verification Test Case" && rel.direction !== "Downstream");
 
-      return <Card key={r.req_id} style={{ marginBottom: 10, cursor: isEditing ? "default" : "pointer", borderColor: isEditing ? COLORS.accent + "44" : reqSelectMode && isSelected(r.req_id) ? COLORS.accent : undefined, boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined }} onClick={() => { if (reqSelectMode) { toggleReqSelect(r.req_id); return; } if (!isEditing) { edit.cancelEdit(); toggleExpand(r.req_id); } }}>
+      return <Card
+        key={r.req_id}
+        onMouseEnter={() => !isEditing && setHoveredReqId(r.req_id)}
+        onMouseLeave={() => setHoveredReqId(null)}
+        style={{
+          marginBottom: 10,
+          cursor: isEditing ? "default" : "pointer",
+          borderColor: isEditing
+            ? COLORS.accent + "44"
+            : reqSelectMode && isSelected(r.req_id)
+              ? COLORS.accent
+              : hoveredReqId === r.req_id
+                ? `${COLORS.accent}55`
+                : undefined,
+          boxShadow: isEditing ? `0 0 20px ${COLORS.accentGlow}` : undefined,
+          transition: "border-color 0.15s ease",
+        }}
+        onClick={() => { if (reqSelectMode) { toggleReqSelect(r.req_id); return; } if (!isEditing) { edit.cancelEdit(); toggleExpand(r.req_id); } }}
+      >
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
           {reqSelectMode && <input type="checkbox" checked={isSelected(r.req_id)} onChange={() => toggleReqSelect(r.req_id)} onClick={e => e.stopPropagation()} style={{ marginTop: 2, cursor: "pointer", accentColor: COLORS.accent }} />}
           <ReqIdTag id={r.req_id} />
