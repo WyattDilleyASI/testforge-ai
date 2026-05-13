@@ -430,3 +430,207 @@ export const RejectionPicker = ({ onReject, onCancel }) => {
     </div>
   );
 };
+
+// ── TEST CASE EDIT FORM ───────────────────────────────────────────────────────
+// Shared edit form used by the TC generation page and the TC library. Renders
+// Title/Type, optional Traced Requirements selector, Description, Setup, and
+// Test Steps sections, plus Save/Cancel buttons.
+//
+// Props:
+//   editForm        — current form state (title, type, description{}, setup{}, steps[], linked_req_ids[])
+//   setEditForm     — setter (accepts updater fn)
+//   onSave          — called when user clicks Save
+//   onCancel        — called when user clicks Cancel
+//   saving          — disables Save while true; shows "Saving..." label
+//   error           — optional error string shown next to buttons
+//   requirements    — optional. When provided, shows the Traced Requirements section.
+//   traceSearch     — controlled search query for the trace selector (string)
+//   setTraceSearch  — setter for traceSearch
+//   stopPropagation — wrap onClick handlers in stopPropagation (use when parent card is clickable)
+//   wrapperStyle    — override the outer container style (e.g., to add a top border)
+export const TestCaseEditForm = ({
+  editForm,
+  setEditForm,
+  onSave,
+  onCancel,
+  saving,
+  error,
+  requirements,
+  traceSearch,
+  setTraceSearch,
+  stopPropagation = false,
+  wrapperStyle,
+}) => {
+  const T = useTheme();
+  const swallow = (handler) => stopPropagation
+    ? (e) => { e?.stopPropagation?.(); handler?.(e); }
+    : handler;
+
+  const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
+  const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, color: T.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
+  const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
+  const arrVal = (arr) => (arr || []).join("\n");
+  const arrChange = (path, e) => {
+    const items = e.target.value.split("\n");
+    setEditForm(p => {
+      const parts = path.split(".");
+      if (parts.length === 1) return { ...p, [parts[0]]: items };
+      if (parts[0] === "description") return { ...p, description: { ...p.description, [parts[1]]: items } };
+      if (parts[0] === "setup") return { ...p, setup: { ...p.setup, [parts[1]]: items } };
+      return p;
+    });
+  };
+  const arrHint = <div style={{ fontSize: 10, color: T.textMuted, fontFamily: mono, marginBottom: 4 }}>One item per line</div>;
+  const section = (label) => <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 16, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>{label}</div>;
+
+  const showTraces = Array.isArray(requirements);
+
+  return (
+    <div style={wrapperStyle || { display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          {lbl("Title")}
+          {inp(editForm.title, e => setEditForm(p => ({ ...p, title: e.target.value })))}
+        </div>
+        <div style={{ minWidth: 150 }}>
+          {lbl("Type")}
+          <select value={editForm.type} onChange={e => setEditForm(p => ({ ...p, type: e.target.value }))} style={{ width: "100%", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 4, color: T.textBright, fontSize: 12, padding: "6px 10px", outline: "none" }}>
+            {["Happy Path", "Negative", "Boundary", "Edge Case"].map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {showTraces && <>
+        {section("Traced Requirements")}
+        <div style={{ border: `1px solid ${T.border}`, borderRadius: 6, background: T.bg, overflow: "hidden" }}>
+          {(editForm.linked_req_ids || []).length > 0 && (
+            <div style={{
+              display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 8px 6px",
+              borderBottom: `1px solid ${T.border}`, background: T.accentDim,
+            }}>
+              {(editForm.linked_req_ids || []).map(rid => (
+                <span key={rid} style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  background: T.accent, color: T.bg,
+                  fontSize: 10, fontFamily: mono, fontWeight: 700,
+                  padding: "2px 6px 2px 8px", borderRadius: 10,
+                }}>
+                  {rid}
+                  <span
+                    role="button"
+                    onClick={swallow(() => setEditForm(p => ({ ...p, linked_req_ids: (p.linked_req_ids || []).filter(id => id !== rid) })))}
+                    style={{ cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "0 2px", borderRadius: "50%", opacity: 0.7 }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                    onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+                  >×</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ padding: "6px 8px", borderBottom: `1px solid ${T.border}` }}>
+            <input
+              value={traceSearch || ""}
+              onChange={e => setTraceSearch?.(e.target.value)}
+              placeholder="Search requirements by ID or title..."
+              style={{ width: "100%", boxSizing: "border-box", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, color: T.textBright, fontSize: 12, padding: "6px 10px", fontFamily: mono, outline: "none" }}
+              onClick={swallow(() => {})}
+            />
+          </div>
+          <div style={{ maxHeight: 180, overflowY: "auto", padding: 8 }}>
+            {requirements.length === 0 && (
+              <div style={{ fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>No requirements loaded</div>
+            )}
+            {(() => {
+              const linked = editForm.linked_req_ids || [];
+              const query = (traceSearch || "").toLowerCase().trim();
+              const filtered = requirements.filter(req => {
+                const alreadyLinked = linked.includes(req.req_id);
+                if (alreadyLinked) return true;
+                if (!query) return true;
+                return req.req_id.toLowerCase().includes(query)
+                  || (req.title || "").toLowerCase().includes(query);
+              });
+              const sorted = [...filtered].sort((a, b) => {
+                const aLinked = linked.includes(a.req_id) ? 0 : 1;
+                const bLinked = linked.includes(b.req_id) ? 0 : 1;
+                if (aLinked !== bLinked) return aLinked - bLinked;
+                return a.req_id.localeCompare(b.req_id);
+              });
+              if (sorted.length === 0) {
+                return <div style={{ fontSize: 11, color: T.textMuted, fontStyle: "italic", padding: "4px 0" }}>No matches for "{traceSearch}"</div>;
+              }
+              return sorted.map(req => {
+                const isLinked = linked.includes(req.req_id);
+                return (
+                  <label key={req.req_id} style={{
+                    display: "flex", alignItems: "flex-start", gap: 8, padding: "5px 6px",
+                    cursor: "pointer", fontSize: 12, color: T.text,
+                    borderRadius: 4,
+                    background: isLinked ? `${T.accent}11` : "transparent",
+                    borderLeft: isLinked ? `3px solid ${T.accent}` : "3px solid transparent",
+                    transition: "background 0.3s ease, border-left 0.3s ease",
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={isLinked}
+                      onChange={() => setEditForm(p => ({
+                        ...p,
+                        linked_req_ids: isLinked
+                          ? (p.linked_req_ids || []).filter(id => id !== req.req_id)
+                          : [...(p.linked_req_ids || []), req.req_id],
+                      }))}
+                      style={{ marginTop: 2, accentColor: T.accent }}
+                    />
+                    <span>
+                      <span style={{ fontFamily: mono, fontWeight: 600, color: isLinked ? T.accent : T.textMuted, transition: "color 0.3s ease" }}>{req.req_id}</span>
+                      {req.title && <span style={{ color: T.textMuted }}> — {req.title}</span>}
+                    </span>
+                  </label>
+                );
+              });
+            })()}
+          </div>
+        </div>
+        {(editForm.linked_req_ids || []).length > 0 && (
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, fontFamily: mono }}>
+            {editForm.linked_req_ids.length} requirement{editForm.linked_req_ids.length !== 1 ? "s" : ""} traced
+          </div>
+        )}
+      </>}
+
+      {section("Description")}
+      <div>{lbl("Objective")}{ta(editForm.description?.objective || "", e => setEditForm(p => ({ ...p, description: { ...p.description, objective: e.target.value } })), 4)}</div>
+      <div>{lbl("Scope")}{ta(editForm.description?.scope || "", e => setEditForm(p => ({ ...p, description: { ...p.description, scope: e.target.value } })), 2)}</div>
+      <div>{lbl("Assumptions")}{arrHint}{ta(arrVal(editForm.description?.assumptions), e => arrChange("description.assumptions", e), 3)}</div>
+
+      {section("Setup")}
+      <div>{lbl("Preconditions")}{arrHint}{ta(arrVal(editForm.setup?.preconditions), e => arrChange("setup.preconditions", e), 3)}</div>
+      <div>{lbl("Environment")}{arrHint}{ta(arrVal(editForm.setup?.environment), e => arrChange("setup.environment", e), 2)}</div>
+      <div>{lbl("Equipment")}{arrHint}{ta(arrVal(editForm.setup?.equipment), e => arrChange("setup.equipment", e), 2)}</div>
+      <div>{lbl("Test Data")}{arrHint}{ta(arrVal(editForm.setup?.testData), e => arrChange("setup.testData", e), 2)}</div>
+
+      {section("Test Steps")}
+      {(editForm.steps || []).map((s, i) => (
+        <div key={i} style={{ paddingLeft: 10, borderLeft: `2px solid ${T.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, fontFamily: mono }}>Step {i + 1}</div>
+            <button
+              onClick={swallow(() => setEditForm(p => ({ ...p, steps: p.steps.filter((_, j) => j !== i) })))}
+              disabled={(editForm.steps || []).length <= 1}
+              style={{ background: "none", border: "none", cursor: "pointer", color: T.red, fontFamily: mono, fontSize: 14, lineHeight: 1, padding: "0 2px", opacity: (editForm.steps || []).length <= 1 ? 0.25 : 0.6 }}
+              title="Delete step"
+            >×</button>
+          </div>
+          <div style={{ marginBottom: 4 }}>{lbl("Action")}{ta(s.step, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, step: e.target.value } : st) })), 2)}</div>
+          <div>{lbl("Expected Result")}{ta(s.expectedResult, e => setEditForm(p => ({ ...p, steps: p.steps.map((st, j) => j === i ? { ...st, expectedResult: e.target.value } : st) })), 2)}</div>
+        </div>
+      ))}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+        <Button small onClick={swallow(onSave)} disabled={saving || !editForm.title?.trim()}>{saving ? "Saving..." : "Save"}</Button>
+        <Button small variant="ghost" onClick={swallow(onCancel)}>Cancel</Button>
+        {error && <span style={{ fontSize: 11, color: T.red, fontFamily: mono }}>{error}</span>}
+      </div>
+    </div>
+  );
+};
