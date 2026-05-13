@@ -555,6 +555,7 @@ useEffect(() => {
           : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
         )}
         {page === "kb" && <KbView kbEntries={kbEntries} requirements={requirements} refresh={loadData} />}
+        {page === "kb-seeding" && <SeedingView currentUser={currentUser} />}
         {page === "moonlight" && <MoonlightView currentUser={currentUser} />}
         {page === "analytics" && <AnalyticsView currentUser={currentUser} />}
         {page === "deferred" && <DeferredView />}
