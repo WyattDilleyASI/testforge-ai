@@ -121,7 +121,7 @@ export const Sidebar = ({ active, onNavigate, currentUser, onLogout, currentThem
     </div>
 
     {/* Nav items — stable padding and gap; label fades */}
-    <nav style={{ padding: "12px 10px", flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+    <nav style={{ padding: "12px 10px", flex: 1, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 2 }}>
       {NAV_ITEMS
         .filter(item => !item.adminOnly || currentUser.role === "Admin")
         .map(item => {

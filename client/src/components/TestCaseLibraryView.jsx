@@ -271,19 +271,30 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
                       {tc.title}
                       {tc.status === "Draft" && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.amber, background: COLORS.amberDim, padding: "1px 6px", borderRadius: 3, fontWeight: 700, textTransform: "uppercase" }}>Draft</span>}
                     </div>
-                    <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-                      {tc.project_id && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Project ID: <span style={{ color: COLORS.accent }}>{tc.project_id}</span></span>}
-                      {tc.upstream_relationship?.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Upstream: {tc.upstream_relationship.map(u => <span key={u.id} style={{ color: COLORS.purple, marginRight: 4 }}>{u.id}</span>)}</span>}
-                      {(tc.linked_req_ids || []).length > 0 && <><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</>}
-                      <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
-                    </div>
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
-                    {expanded && <Button small variant="secondary" onClick={e => { e.stopPropagation(); edit.isEditing(tc.tc_id) ? edit.cancelEdit() : edit.startEdit(tc.tc_id, parseEditForm(tc)); }}>{edit.isEditing(tc.tc_id) ? "Cancel" : "Edit"}</Button>}
-                    <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>{tc.status === "Reviewed" ? "Reviewed" : "Mark Reviewed"}</Button>
-                    <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}> &#10007;</Button>
-                    <Button small variant="warning" onClick={e => { e.stopPropagation(); setPurgingTcId(purgingTcId === tc.tc_id ? null : tc.tc_id); }} title="Purge — removes the TC and erases its feedback from the learning engine">⚠ Purge</Button>
-                    <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"} style={{ marginLeft: 4 }}>{tc.status}</Badge>
+                    {(tc.project_id || tc.upstream_relationship?.length > 0 || (tc.linked_req_ids || []).length > 0) && (
+                      <div style={{ display: "flex", gap: 12, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        {tc.project_id && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Project ID: <span style={{ color: COLORS.accent }}>{tc.project_id}</span></span>}
+                        {tc.upstream_relationship?.length > 0 && <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>Upstream: {tc.upstream_relationship.map(u => <span key={u.id} style={{ color: COLORS.purple, marginRight: 4 }}>{u.id}</span>)}</span>}
+                        {(tc.linked_req_ids || []).length > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>Traces to:</span>{(tc.linked_req_ids || []).map(rid => <ReqIdTag key={rid} id={rid} />)}</span>}
+                      </div>
+                    )}
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+                    <Button small variant={tc.status === "Reviewed" ? "primary" : "ghost"} onClick={e => { e.stopPropagation(); updateStatus(tc.tc_id, "Reviewed"); }}>
+                      {tc.status === "Reviewed" ? "✓ Approved" : "Approve"}
+                    </Button>
+                    <Button small variant={tc.status === "Rejected" ? "danger" : "ghost"} onClick={e => { e.stopPropagation(); setRejectingTcId(rejectingTcId === tc.tc_id ? null : tc.tc_id); }}>
+                      ✗ Reject
+                    </Button>
+                    {expanded && <>
+                      <span style={{ width: 1, height: 20, background: COLORS.border, marginLeft: 4, marginRight: 4 }} />
+                      <Button small variant="secondary" onClick={e => { e.stopPropagation(); edit.isEditing(tc.tc_id) ? edit.cancelEdit() : edit.startEdit(tc.tc_id, parseEditForm(tc)); }}>{edit.isEditing(tc.tc_id) ? "Cancel" : "Edit"}</Button>
+                      <Button small variant="warning" onClick={e => { e.stopPropagation(); setPurgingTcId(purgingTcId === tc.tc_id ? null : tc.tc_id); }} title="Purge — removes the TC and erases its feedback from the learning engine">⚠ Purge</Button>
+                    </>}
                   </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
+                  <Badge color={tc.type === "Happy Path" ? "green" : tc.type === "Negative" ? "red" : tc.type === "Boundary" ? "amber" : "purple"}>{tc.type}</Badge>
+                  <Badge color={tc.status === "Reviewed" ? "green" : tc.status === "Rejected" ? "red" : "amber"}>{tc.status}</Badge>
                 </div>
 
                 {/* Rejection reason picker — full-width below header */}
