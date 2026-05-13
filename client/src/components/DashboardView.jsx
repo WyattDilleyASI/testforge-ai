@@ -89,73 +89,6 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
       </div>
     </div>}
 
-    {/* KB Coverage by Section */}
-    {sections.length > 0 && <div style={{ marginBottom: 24 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Knowledge Base by Section</div>
-      <Card>
-        {sections.map((sec, idx) => {
-          const isDefault = sec.is_default;
-          const entryCount = isDefault ? (sec.entry_count || 0) : (sec.subsections || []).reduce((sum, s) => sum + (s.entry_count || 0), 0);
-          const subCount = isDefault ? 0 : (sec.subsections || []).length;
-          const barPct = maxEntries > 0 ? Math.round((entryCount / maxEntries) * 100) : 0;
-          const isEmpty = entryCount === 0;
-
-          return (
-            <div key={sec.section_id} style={{
-              padding: "12px 0",
-              borderBottom: idx < sections.length - 1 ? `1px solid ${COLORS.border}` : "none",
-            }}>
-              {/* Section header row */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: isEmpty ? COLORS.textMuted : COLORS.textBright, flex: 1 }}>
-                  {sec.name}
-                  {isDefault && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.purple, background: COLORS.purpleDim, padding: "1px 6px", borderRadius: 3, marginLeft: 8, fontWeight: 700 }}>DEFAULT</span>}
-                </span>
-                <span style={{ fontSize: 12, fontFamily: mono, fontWeight: 700, color: isEmpty ? COLORS.textMuted : COLORS.purple, minWidth: 80, textAlign: "right" }}>
-                  {entryCount} {entryCount === 1 ? "entry" : "entries"}
-                </span>
-              </div>
-
-              {/* Bar + detail */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ flex: 1, height: 6, background: COLORS.border, borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{
-                    width: `${barPct}%`,
-                    height: "100%",
-                    background: isEmpty ? "transparent" : COLORS.purple,
-                    borderRadius: 3,
-                    transition: "width 0.3s ease",
-                  }} />
-                </div>
-                <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, minWidth: 100, textAlign: "right" }}>
-                  {isDefault ? (isEmpty ? "No entries" : `${entryCount} uncategorized`) : `${subCount} subsection${subCount !== 1 ? "s" : ""}`}
-                </span>
-              </div>
-
-              {/* Subsection breakdown (non-default sections with subsections) */}
-              {!isDefault && subCount > 0 && (
-                <div style={{ marginTop: 8, paddingLeft: 12 }}>
-                  {(sec.subsections || []).map(sub => {
-                    const subEmpty = (sub.entry_count || 0) === 0;
-                    return (
-                      <div key={sub.subsection_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
-                        <span style={{ fontSize: 11, color: subEmpty ? COLORS.textMuted : COLORS.text, flex: 1 }}>
-                          {sub.name}
-                        </span>
-                        <span style={{ fontSize: 10, fontFamily: mono, color: subEmpty ? COLORS.textMuted : COLORS.purple, fontWeight: 600 }}>
-                          {sub.entry_count || 0}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </Card>
-    </div>}
-
     {/* Coverage Gap Insight */}
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -257,6 +190,73 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
         )}
       </Card>
     </div>
+
+    {/* KB Coverage by Section */}
+    {sections.length > 0 && <div style={{ marginBottom: 24 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Knowledge Base by Section</div>
+      <Card>
+        {sections.map((sec, idx) => {
+          const isDefault = sec.is_default;
+          const entryCount = isDefault ? (sec.entry_count || 0) : (sec.subsections || []).reduce((sum, s) => sum + (s.entry_count || 0), 0);
+          const subCount = isDefault ? 0 : (sec.subsections || []).length;
+          const barPct = maxEntries > 0 ? Math.round((entryCount / maxEntries) * 100) : 0;
+          const isEmpty = entryCount === 0;
+
+          return (
+            <div key={sec.section_id} style={{
+              padding: "12px 0",
+              borderBottom: idx < sections.length - 1 ? `1px solid ${COLORS.border}` : "none",
+            }}>
+              {/* Section header row */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: isEmpty ? COLORS.textMuted : COLORS.textBright, flex: 1 }}>
+                  {sec.name}
+                  {isDefault && <span style={{ fontSize: 9, fontFamily: mono, color: COLORS.purple, background: COLORS.purpleDim, padding: "1px 6px", borderRadius: 3, marginLeft: 8, fontWeight: 700 }}>DEFAULT</span>}
+                </span>
+                <span style={{ fontSize: 12, fontFamily: mono, fontWeight: 700, color: isEmpty ? COLORS.textMuted : COLORS.purple, minWidth: 80, textAlign: "right" }}>
+                  {entryCount} {entryCount === 1 ? "entry" : "entries"}
+                </span>
+              </div>
+
+              {/* Bar + detail */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ flex: 1, height: 6, background: COLORS.border, borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{
+                    width: `${barPct}%`,
+                    height: "100%",
+                    background: isEmpty ? "transparent" : COLORS.purple,
+                    borderRadius: 3,
+                    transition: "width 0.3s ease",
+                  }} />
+                </div>
+                <span style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, minWidth: 100, textAlign: "right" }}>
+                  {isDefault ? (isEmpty ? "No entries" : `${entryCount} uncategorized`) : `${subCount} subsection${subCount !== 1 ? "s" : ""}`}
+                </span>
+              </div>
+
+              {/* Subsection breakdown (non-default sections with subsections) */}
+              {!isDefault && subCount > 0 && (
+                <div style={{ marginTop: 8, paddingLeft: 12 }}>
+                  {(sec.subsections || []).map(sub => {
+                    const subEmpty = (sub.entry_count || 0) === 0;
+                    return (
+                      <div key={sub.subsection_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0" }}>
+                        <span style={{ fontSize: 11, color: subEmpty ? COLORS.textMuted : COLORS.text, flex: 1 }}>
+                          {sub.name}
+                        </span>
+                        <span style={{ fontSize: 10, fontFamily: mono, color: subEmpty ? COLORS.textMuted : COLORS.purple, fontWeight: 600 }}>
+                          {sub.entry_count || 0}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+    </div>}
 
     {/* Untested Requirements */}
     {untested.length > 0 && <Card><div style={{ fontSize: 12, fontWeight: 600, color: COLORS.amber, marginBottom: 12 }}>Untested Requirements</div>{untested.map(r => <div key={r.req_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${COLORS.border}` }}><ReqIdTag id={r.req_id} /><span style={{ fontSize: 13, color: COLORS.text, flex: 1 }}>{r.title}</span><Badge color="amber">{r.priority}</Badge></div>)}</Card>}
