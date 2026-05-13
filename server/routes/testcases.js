@@ -841,13 +841,21 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
     const priority = linkedReqIds.length > 0 && reqMap[linkedReqIds[0]] ? reqMap[linkedReqIds[0]].priority : "High";
 
     // Format upstream relationships as "ID - Name; ID - Name"
+    // Source from linked_req_ids primarily; fall back to raw upstream_relationship for Jama-imported TCs.
     let upstreamText = "";
-    try {
-      const ups = JSON.parse(tc.upstream_relationship || "[]");
-      if (Array.isArray(ups) && ups.length > 0) {
-        upstreamText = ups.map(u => `${u.id} - ${u.name}`).join("; ");
-      }
-    } catch {}
+    if (linkedReqIds.length > 0) {
+      upstreamText = linkedReqIds.map(id => {
+        const r = reqMap[id];
+        return r && r.title ? `${id} - ${r.title}` : id;
+      }).join("; ");
+    } else {
+      try {
+        const ups = JSON.parse(tc.upstream_relationship || "[]");
+        if (Array.isArray(ups) && ups.length > 0) {
+          upstreamText = ups.map(u => `${u.id} - ${u.name}`).join("; ");
+        }
+      } catch {}
+    }
 
     // Unpack structured description and setup if JSON, otherwise use plain text
     const tlReqs = JSON.parse(tc.testlink_requirements || "[]");

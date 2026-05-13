@@ -26,11 +26,14 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
   const [kbSelected, setKbSelected] = useState(new Set());
   const [allKbEntries, setAllKbEntries] = useState([]);
 
-  // KB panel collapse (mobile: collapsed by default)
-  const [kbPanelOpen, setKbPanelOpen] = useState(!isMobile);
+  // KB drawer — opens as an overlay from the right
+  const [kbDrawerOpen, setKbDrawerOpen] = useState(false);
 
-  // Selected requirement preview panel
-  const [reqPreviewOpen, setReqPreviewOpen] = useState(true);
+  // Generator card auto-collapses to a summary strip once a session exists
+  const [generatorExpanded, setGeneratorExpanded] = useState(true);
+
+  // Claude.ai manual workflow card — collapsed by default
+  const [claudeCardOpen, setClaudeCardOpen] = useState(false);
 
   // Manual import / copy state
   const [copyState, setCopyState] = useState("idle");
@@ -145,6 +148,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
       if (result.budget_warning) setBudgetWarning(result.budget_warning);
       setSessionTcIds(newTcs.map(tc => tc.tc_id));
       setSelectedSessionTc(newTcs[0]?.tc_id || null);
+      setGeneratorExpanded(false);
       refresh();
     } catch (err) { setApiError(err.message); }
     finally { setGenerating(false); }
@@ -220,6 +224,14 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
 
   const selectedTc = selectedSessionTc ? testCases.find(tc => tc.tc_id === selectedSessionTc) : null;
 
+  // Count of KB entries explicitly assigned to the selected requirement via related_reqs
+  const assignedKbCount = selectedReqId
+    ? allKbEntries.filter(kb => {
+        const kbRelReqs = Array.isArray(kb.related_reqs) ? kb.related_reqs : (() => { try { return JSON.parse(kb.related_reqs || "[]"); } catch { return []; } })();
+        return kbRelReqs.includes(selectedReqId);
+      }).length
+    : 0;
+
   const SL = ({ children }) => (
     <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>
   );
@@ -271,15 +283,44 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
           />
       )}
 
-      {/* Generator — two-panel */}
-      <Card glow style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
-        <div style={{ display: "flex", gap: 20, flexDirection: isMobile ? "column" : "row" }}>
-
+      {/* Generator — collapses to a summary strip after a session is generated */}
+      {!generatorExpanded && selectedReqId ? (() => {
+        const req = requirements.find(r => r.req_id === selectedReqId);
+        const depthLabel = depth === "basic" ? "Basic" : depth === "comprehensive" ? "Comprehensive" : "Standard";
+        const focusLabels = [...focuses].slice(0, 2).join(", ");
+        const moreFocuses = focuses.size > 2 ? ` +${focuses.size - 2}` : "";
+        return (
+          <Card style={{ marginBottom: 16, padding: "10px 14px" }}>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Generator</span>
+                {req && <ReqIdTag id={req.req_id} />}
+                {req?.title && <span style={{ fontSize: 12, color: COLORS.textBright, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : 280 }}>{req.title}</span>}
+                <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>· {depthLabel}</span>
+                {focuses.size > 0 && <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>· {focusLabels}{moreFocuses}</span>}
+                {kbSelected.size > 0 && <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>· {kbSelected.size} KB</span>}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <Button small variant="secondary" onClick={() => setGeneratorExpanded(true)}>Edit</Button>
+                <Button small onClick={generate} disabled={!selectedReqId || generating}>
+                  {generating ? "Regenerating..." : "Regenerate"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        );
+      })() : <Card glow style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
+          {sessionTcIds !== null && (
+            <span onClick={() => setGeneratorExpanded(false)} style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, cursor: "pointer", userSelect: "none" }} title="Collapse">▴</span>
+          )}
+        </div>
+        <div>
           {/* Controls */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Requirement</div>
+          <div>
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Requirement</div>
               <div style={{ position: "relative" }}>
                 <input
                   value={reqDropdownOpen ? reqSearch : (requirements.find(r => r.req_id === selectedReqId) ? `${selectedReqId} — ${requirements.find(r => r.req_id === selectedReqId).title}` : "")}
@@ -346,6 +387,36 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                 )}
               </div>
             </div>
+            {/* Depth + Test Focus row */}
+            <div style={{ display: "flex", gap: 16, marginBottom: 22, flexDirection: isMobile ? "column" : "row", alignItems: "flex-start" }}>
+              <div style={{ width: isMobile ? "100%" : 200, flexShrink: 0 }}>
+                <Select label="Depth" value={depth} onChange={setDepth} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Test Focus</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[
+                    { key: "safety_critical", label: "Safety Critical" },
+                    { key: "ui_ux_validation", label: "UI/UX Validation" },
+                    { key: "boundary_analysis", label: "Boundary Analysis" },
+                    { key: "error_recovery", label: "Error Recovery" },
+                    { key: "regression", label: "Regression" },
+                  ].map(f => {
+                    const active = focuses.has(f.key);
+                    return (
+                      <span key={f.key} onClick={() => toggleFocus(f.key)} style={{
+                        padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, cursor: "pointer", userSelect: "none",
+                        background: active ? COLORS.accentDim : COLORS.surface,
+                        color: active ? COLORS.accent : COLORS.textMuted,
+                        border: `1px solid ${active ? COLORS.accent + "66" : COLORS.border}`,
+                      }}>{f.label}</span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Requirement Details — always visible, no border, no collapse */}
             {selectedReqId && (() => {
               const req = requirements.find(r => r.req_id === selectedReqId);
               if (!req) return null;
@@ -353,81 +424,54 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
               const priorityColor = req.priority === "High" ? "red" : req.priority === "Medium" ? "amber" : "green";
               const statusColor = req.status === "Approved" ? "green" : req.status === "Rejected" ? "red" : "amber";
               return (
-                <div style={{
-                  marginBottom: 12, padding: "8px 12px", borderRadius: 6,
-                  background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-                }}>
-                  <div
-                    onClick={() => setReqPreviewOpen(o => !o)}
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      cursor: "pointer", userSelect: "none",
-                    }}
-                  >
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, color: COLORS.textMuted,
-                      fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em",
-                    }}>
-                      Requirement Details
-                    </span>
-                    <span style={{ fontSize: 12, color: COLORS.textMuted }}>{reqPreviewOpen ? "▴" : "▾"}</span>
+                <div style={{ marginBottom: 22 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                    Requirement Details
                   </div>
-                  {reqPreviewOpen && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: mono, fontWeight: 600, color: COLORS.accent }}>{req.req_id}</span>
-                        {req.title && <span style={{ color: COLORS.textBright, fontWeight: 500, fontSize: 12 }}>{req.title}</span>}
-                        {req.priority && <Badge color={priorityColor} style={{ fontSize: 9 }}>{req.priority}</Badge>}
-                        {req.status && <Badge color={statusColor} style={{ fontSize: 9 }}>{req.status}</Badge>}
-                      </div>
-                      {req.description && (
-                        <div style={{ marginTop: 6, fontSize: 12, color: COLORS.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                          {req.description}
-                        </div>
-                      )}
-                      {req.rationale && (
-                        <div style={{ marginTop: 8 }}>
-                          <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Rationale</div>
-                          <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{req.rationale}</div>
-                        </div>
-                      )}
-                      {acList.length > 0 && (
-                        <div style={{ marginTop: 8 }}>
-                          <div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Acceptance Criteria</div>
-                          {acList.map((ac, i) => (
-                            <div key={i} style={{ fontSize: 12, color: COLORS.text, paddingLeft: 12, marginTop: 2, borderLeft: `2px solid ${COLORS.border}` }}>• {ac}</div>
-                          ))}
-                        </div>
-                      )}
+                  {req.title && (
+                    <div style={{ fontSize: 15, fontWeight: 600, color: COLORS.textBright, lineHeight: 1.35, marginBottom: 6 }}>
+                      {req.title}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: mono, fontWeight: 600, color: COLORS.accent, fontSize: 11 }}>{req.req_id}</span>
+                    {req.priority && <Badge color={priorityColor} style={{ fontSize: 9 }}>{req.priority}</Badge>}
+                    {req.status && <Badge color={statusColor} style={{ fontSize: 9 }}>{req.status}</Badge>}
+                  </div>
+                  {req.description && (
+                    <div style={{ marginTop: 10, fontSize: 13, color: COLORS.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                      {req.description}
+                    </div>
+                  )}
+                  {req.rationale && (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Rationale</div>
+                      <div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{req.rationale}</div>
+                    </div>
+                  )}
+                  {acList.length > 0 && (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Acceptance Criteria</div>
+                      {acList.map((ac, i) => (
+                        <div key={i} style={{ fontSize: 13, color: COLORS.text, paddingLeft: 12, marginTop: 4, borderLeft: `2px solid ${COLORS.border}`, lineHeight: 1.6 }}>• {ac}</div>
+                      ))}
                     </div>
                   )}
                 </div>
               );
             })()}
-            <div style={{ marginBottom: 12 }}>
-              <Select label="Depth" value={depth} onChange={setDepth} options={[{ value: "basic", label: "Basic (2-3)" }, { value: "standard", label: "Standard (4-6)" }, { value: "comprehensive", label: "Comprehensive (6-10)" }]} />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Test Focus</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {[
-                  { key: "safety_critical", label: "Safety Critical" },
-                  { key: "ui_ux_validation", label: "UI/UX Validation" },
-                  { key: "boundary_analysis", label: "Boundary Analysis" },
-                  { key: "error_recovery", label: "Error Recovery" },
-                  { key: "regression", label: "Regression" },
-                ].map(f => {
-                  const active = focuses.has(f.key);
-                  return (
-                    <span key={f.key} onClick={() => toggleFocus(f.key)} style={{
-                      padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, cursor: "pointer", userSelect: "none",
-                      background: active ? COLORS.accentDim : COLORS.surface,
-                      color: active ? COLORS.accent : COLORS.textMuted,
-                      border: `1px solid ${active ? COLORS.accent + "66" : COLORS.border}`,
-                    }}>{f.label}</span>
-                  );
-                })}
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                Knowledge Base Context
+                {selectedReqId && assignedKbCount > 0 && (
+                  <span style={{ color: COLORS.accent, marginLeft: 6, fontWeight: 700 }}>
+                    · {assignedKbCount} assigned to this requirement
+                  </span>
+                )}
               </div>
+              <Button variant="secondary" small onClick={() => setKbDrawerOpen(true)}>
+                Edit Knowledge Base context{kbSelected.size > 0 ? ` (${kbSelected.size} selected)` : ""}
+              </Button>
             </div>
             {genHint && (
               <div style={{
@@ -492,130 +536,65 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
               </div>
             )}
           </div>
-
-          {/* KB selector */}
-          <div style={{ width: isMobile ? "100%" : 280, flexShrink: 0 }}>
-            {/* Header — acts as toggle on mobile */}
-            <div
-              onClick={isMobile ? () => setKbPanelOpen(o => !o) : undefined}
-              style={{
-                fontSize: 10, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono,
-                textTransform: "uppercase", marginBottom: 6,
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                cursor: isMobile ? "pointer" : "default",
-                padding: isMobile ? "8px 10px" : 0,
-                background: isMobile ? COLORS.surface : "transparent",
-                borderRadius: isMobile ? 6 : 0,
-                border: isMobile ? `1px solid ${COLORS.border}` : "none",
-              }}
-            >
-              <span>
-                Knowledge Base Context
-                {kbSelected.size > 0 && <span style={{ color: COLORS.accent, marginLeft: 6 }}>({kbSelected.size} selected)</span>}
-              </span>
-              {isMobile && <span style={{ fontSize: 12, opacity: 0.5 }}>{kbPanelOpen ? "▴" : "▾"}</span>}
-            </div>
-            {(!isMobile || kbPanelOpen) && (kbSections.length === 0
-              ? <div style={{ fontSize: 11, color: COLORS.textMuted }}>No KB entries found.</div>
-              : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: isMobile ? 200 : 240, overflowY: "auto", padding: 4, background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
-                  {kbSections.map(sec => {
-                    const allEntries = sec.is_default ? sec.entries : sec.subsections.flatMap(s => s.entries);
-                    const secExpanded = kbExpanded.has(sec.section_id);
-                    const secAllSelected = allEntries.length > 0 && allEntries.every(e => kbSelected.has(e.kb_id));
-                    const secSomeSelected = allEntries.some(e => kbSelected.has(e.kb_id));
-                    return (
-                      <div key={sec.section_id}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", cursor: "pointer", borderRadius: 4, background: secSomeSelected ? COLORS.accentDim + "44" : "transparent" }}>
-                          <span onClick={() => setKbExpanded(prev => { const n = new Set(prev); n.has(sec.section_id) ? n.delete(sec.section_id) : n.add(sec.section_id); return n; })}
-                            style={{ fontSize: 10, color: COLORS.textMuted, width: 10, flexShrink: 0 }}>{secExpanded ? "▾" : "▸"}</span>
-                          <input type="checkbox" checked={secAllSelected} onChange={() => toggleKbSection(sec)}
-                            style={{ accentColor: COLORS.accent, cursor: "pointer", flexShrink: 0 }}
-                            ref={el => { if (el) el.indeterminate = !secAllSelected && secSomeSelected; }} />
-                          <span onClick={() => setKbExpanded(prev => { const n = new Set(prev); n.has(sec.section_id) ? n.delete(sec.section_id) : n.add(sec.section_id); return n; })}
-                            style={{ fontSize: 11, fontWeight: 600, color: COLORS.textBright, flex: 1 }}>{sec.name}</span>
-                        </div>
-                        {secExpanded && (
-                          sec.is_default
-                            ? sec.entries.map(e => (
-                              <div key={e.kb_id} onClick={() => toggleKbEntry(e.kb_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 22px", cursor: "pointer", borderRadius: 4, background: kbSelected.has(e.kb_id) ? COLORS.accentDim + "33" : "transparent" }}>
-                                <input type="checkbox" checked={kbSelected.has(e.kb_id)} onChange={() => toggleKbEntry(e.kb_id)} style={{ accentColor: COLORS.accent, cursor: "pointer" }} onClick={ev => ev.stopPropagation()} />
-                                <span style={{ fontSize: 11, color: COLORS.text, flex: 1 }}>{e.title}</span>
-                              </div>
-                            ))
-                            : sec.subsections.map(sub => {
-                              const subAllSelected = sub.entries.length > 0 && sub.entries.every(e => kbSelected.has(e.kb_id));
-                              const subSomeSelected = sub.entries.some(e => kbSelected.has(e.kb_id));
-                              return (
-                                <div key={sub.subsection_id}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 16px", cursor: "pointer", borderRadius: 4, background: subSomeSelected ? COLORS.accentDim + "22" : "transparent" }}>
-                                    <input type="checkbox" checked={subAllSelected} onChange={() => toggleKbSubsection(sub.entries)}
-                                      style={{ accentColor: COLORS.accent, cursor: "pointer" }}
-                                      ref={el => { if (el) el.indeterminate = !subAllSelected && subSomeSelected; }} />
-                                    <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, flex: 1 }}>{sub.name}</span>
-                                    <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>{sub.entries.length}</span>
-                                  </div>
-                                  {sub.entries.map(e => (
-                                    <div key={e.kb_id} onClick={() => toggleKbEntry(e.kb_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 32px", cursor: "pointer", borderRadius: 4, background: kbSelected.has(e.kb_id) ? COLORS.accentDim + "33" : "transparent" }}>
-                                      <input type="checkbox" checked={kbSelected.has(e.kb_id)} onChange={() => toggleKbEntry(e.kb_id)} style={{ accentColor: COLORS.accent, cursor: "pointer" }} onClick={ev => ev.stopPropagation()} />
-                                      <span style={{ fontSize: 11, color: COLORS.text, flex: 1 }}>{e.title}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-          </div>
         </div>
-      </Card>
-
-      {/* Claude.ai manual workflow — desktop only */}
-      {!isMobile && <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33` }}>
-        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase", marginBottom: 3 }}>No API Key? Use Claude.ai Manually</div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted }}>Copy the prompt → paste into claude.ai → paste the JSON response back here</div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button variant="secondary" small disabled={!selectedReqId || copyState === "copying"} onClick={copyPrompt}
-              style={{ borderColor: COLORS.purple + "66", color: copyState === "copied" ? COLORS.green : copyState === "error" ? COLORS.red : COLORS.purple }}>
-              {copyState === "copying" ? "Fetching..." : copyState === "copied" ? "Copied!" : copyState === "error" ? "Failed" : "Copy Prompt"}
-            </Button>
-            <Button variant="secondary" small disabled={!selectedReqId} onClick={() => { setShowImport(!showImport); setImportError(""); }}
-              style={{ borderColor: COLORS.purple + "66", color: COLORS.purple }}>
-              {showImport ? "Cancel Import" : "Import Response"}
-            </Button>
-          </div>
-        </div>
-        {showImport && (
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
-            <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
-              Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
-            </div>
-            <AutoResizeTextarea
-              value={importJson}
-              onChange={e => setImportJson(e.target.value)}
-              placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "description": { "objective": "...", "scope": [], "assumptions": [] },\n    "setup": { "preconditions": [], "environment": [], "equipment": [], "testData": [] },\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "reqAttribute": "..."\n  }\n]'}
-              rows={8}
-              mono
-              error={!!importError}
-              style={{ borderRadius: 6, padding: "10px 12px" }}
-            />
-            {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
-            <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <Button variant="secondary" small onClick={() => { setShowImport(false); setImportJson(""); setImportError(""); }}>Cancel</Button>
-              <Button small disabled={!importJson.trim() || importing} onClick={doImport} style={{ background: COLORS.purple, color: COLORS.bg }}>
-                {importing ? "Saving..." : "Save Test Cases"}
-              </Button>
-            </div>
-          </div>
-        )}
       </Card>}
+
+      {/* Claude.ai manual workflow — collapsed header strip, desktop only */}
+      {!isMobile && (
+        <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33`, padding: claudeCardOpen ? undefined : "8px 14px" }}>
+          <div
+            onClick={() => setClaudeCardOpen(o => !o)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              cursor: "pointer", userSelect: "none",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase" }}>No API Key? Use Claude.ai Manually</span>
+              {!claudeCardOpen && <span style={{ fontSize: 11, color: COLORS.textMuted }}>Copy prompt · paste response</span>}
+            </div>
+            <span style={{ fontSize: 12, color: COLORS.textMuted }}>{claudeCardOpen ? "▴" : "▾"}</span>
+          </div>
+          {claudeCardOpen && (
+            <>
+              <div style={{ marginTop: 10, fontSize: 11, color: COLORS.textMuted }}>Copy the prompt → paste into claude.ai → paste the JSON response back here</div>
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                <Button variant="secondary" small disabled={!selectedReqId || copyState === "copying"} onClick={copyPrompt}
+                  style={{ borderColor: COLORS.purple + "66", color: copyState === "copied" ? COLORS.green : copyState === "error" ? COLORS.red : COLORS.purple }}>
+                  {copyState === "copying" ? "Fetching..." : copyState === "copied" ? "Copied!" : copyState === "error" ? "Failed" : "Copy Prompt"}
+                </Button>
+                <Button variant="secondary" small disabled={!selectedReqId} onClick={() => { setShowImport(!showImport); setImportError(""); }}
+                  style={{ borderColor: COLORS.purple + "66", color: COLORS.purple }}>
+                  {showImport ? "Cancel Import" : "Import Response"}
+                </Button>
+              </div>
+              {showImport && (
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8 }}>
+                    Paste the JSON array from Claude.ai below. Include the <span style={{ fontFamily: mono, color: COLORS.purple }}>[ ]</span> brackets.
+                  </div>
+                  <AutoResizeTextarea
+                    value={importJson}
+                    onChange={e => setImportJson(e.target.value)}
+                    placeholder={'[\n  {\n    "title": "...",\n    "type": "Happy Path",\n    "description": { "objective": "...", "scope": [], "assumptions": [] },\n    "setup": { "preconditions": [], "environment": [], "equipment": [], "testData": [] },\n    "steps": [{ "step": "...", "expectedResult": "..." }],\n    "reqAttribute": "..."\n  }\n]'}
+                    rows={8}
+                    mono
+                    error={!!importError}
+                    style={{ borderRadius: 6, padding: "10px 12px" }}
+                  />
+                  {importError && <div style={{ marginTop: 6, fontSize: 11, color: COLORS.red, fontFamily: mono }}>{importError}</div>}
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <Button variant="secondary" small onClick={() => { setShowImport(false); setImportJson(""); setImportError(""); }}>Cancel</Button>
+                    <Button small disabled={!importJson.trim() || importing} onClick={doImport} style={{ background: COLORS.purple, color: COLORS.bg }}>
+                      {importing ? "Saving..." : "Save Test Cases"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
 
       {/* Session results */}
       {sessionTcIds === null ? (
@@ -818,6 +797,103 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                 })()}
             </div>
           )}
+        </>
+      )}
+
+      {/* KB Context drawer — slides in from the right */}
+      {kbDrawerOpen && (
+        <>
+          <div
+            onClick={() => setKbDrawerOpen(false)}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+              zIndex: 999,
+            }}
+          />
+          <div style={{
+            position: "fixed", top: 0, right: 0, bottom: 0,
+            width: isMobile ? "100%" : 360,
+            background: COLORS.bg, borderLeft: `1px solid ${COLORS.border}`,
+            zIndex: 1000, display: "flex", flexDirection: "column",
+            boxShadow: "-8px 0 24px rgba(0,0,0,0.4)",
+          }}>
+            <div style={{
+              padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}`,
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Knowledge Base Context</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                  {kbSelected.size > 0 ? `${kbSelected.size} selected` : "Pick entries to include in the prompt"}
+                </div>
+              </div>
+              <span
+                onClick={() => setKbDrawerOpen(false)}
+                style={{ fontSize: 22, lineHeight: 1, color: COLORS.textMuted, cursor: "pointer", userSelect: "none", padding: "0 4px" }}
+                title="Close"
+              >×</span>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+              {kbSections.length === 0 ? (
+                <div style={{ fontSize: 12, color: COLORS.textMuted }}>No KB entries found.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {kbSections.map(sec => {
+                    const allEntries = sec.is_default ? sec.entries : sec.subsections.flatMap(s => s.entries);
+                    const secExpanded = kbExpanded.has(sec.section_id);
+                    const secAllSelected = allEntries.length > 0 && allEntries.every(e => kbSelected.has(e.kb_id));
+                    const secSomeSelected = allEntries.some(e => kbSelected.has(e.kb_id));
+                    return (
+                      <div key={sec.section_id}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px", cursor: "pointer", borderRadius: 4, background: secSomeSelected ? COLORS.accentDim + "44" : "transparent" }}>
+                          <span onClick={() => setKbExpanded(prev => { const n = new Set(prev); n.has(sec.section_id) ? n.delete(sec.section_id) : n.add(sec.section_id); return n; })}
+                            style={{ fontSize: 10, color: COLORS.textMuted, width: 10, flexShrink: 0 }}>{secExpanded ? "▾" : "▸"}</span>
+                          <input type="checkbox" checked={secAllSelected} onChange={() => toggleKbSection(sec)}
+                            style={{ accentColor: COLORS.accent, cursor: "pointer", flexShrink: 0 }}
+                            ref={el => { if (el) el.indeterminate = !secAllSelected && secSomeSelected; }} />
+                          <span onClick={() => setKbExpanded(prev => { const n = new Set(prev); n.has(sec.section_id) ? n.delete(sec.section_id) : n.add(sec.section_id); return n; })}
+                            style={{ fontSize: 12, fontWeight: 600, color: COLORS.textBright, flex: 1 }}>{sec.name}</span>
+                        </div>
+                        {secExpanded && (
+                          sec.is_default
+                            ? sec.entries.map(e => (
+                              <div key={e.kb_id} onClick={() => toggleKbEntry(e.kb_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 22px", cursor: "pointer", borderRadius: 4, background: kbSelected.has(e.kb_id) ? COLORS.accentDim + "33" : "transparent" }}>
+                                <input type="checkbox" checked={kbSelected.has(e.kb_id)} onChange={() => toggleKbEntry(e.kb_id)} style={{ accentColor: COLORS.accent, cursor: "pointer" }} onClick={ev => ev.stopPropagation()} />
+                                <span style={{ fontSize: 12, color: COLORS.text, flex: 1 }}>{e.title}</span>
+                              </div>
+                            ))
+                            : sec.subsections.map(sub => {
+                              const subAllSelected = sub.entries.length > 0 && sub.entries.every(e => kbSelected.has(e.kb_id));
+                              const subSomeSelected = sub.entries.some(e => kbSelected.has(e.kb_id));
+                              return (
+                                <div key={sub.subsection_id}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 16px", cursor: "pointer", borderRadius: 4, background: subSomeSelected ? COLORS.accentDim + "22" : "transparent" }}>
+                                    <input type="checkbox" checked={subAllSelected} onChange={() => toggleKbSubsection(sub.entries)}
+                                      style={{ accentColor: COLORS.accent, cursor: "pointer" }}
+                                      ref={el => { if (el) el.indeterminate = !subAllSelected && subSomeSelected; }} />
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: COLORS.textMuted, flex: 1 }}>{sub.name}</span>
+                                    <span style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>{sub.entries.length}</span>
+                                  </div>
+                                  {sub.entries.map(e => (
+                                    <div key={e.kb_id} onClick={() => toggleKbEntry(e.kb_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 32px", cursor: "pointer", borderRadius: 4, background: kbSelected.has(e.kb_id) ? COLORS.accentDim + "33" : "transparent" }}>
+                                      <input type="checkbox" checked={kbSelected.has(e.kb_id)} onChange={() => toggleKbEntry(e.kb_id)} style={{ accentColor: COLORS.accent, cursor: "pointer" }} onClick={ev => ev.stopPropagation()} />
+                                      <span style={{ fontSize: 12, color: COLORS.text, flex: 1 }}>{e.title}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "10px 16px", borderTop: `1px solid ${COLORS.border}`, display: "flex", justifyContent: "flex-end" }}>
+              <Button small onClick={() => setKbDrawerOpen(false)}>Done</Button>
+            </div>
+          </div>
         </>
       )}
     </div>
