@@ -9,6 +9,7 @@ import { DashboardView } from "./components/DashboardView";
 import { RequirementsView } from "./components/RequirementsView";
 import { TestCasesWrapper } from "./components/TestCasesWrapper";
 import { KbView } from "./components/KbView";
+import { SeedingView } from "./views/SeedingView";
 import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
 import { MoonlightView } from "./components/MoonlightView";
