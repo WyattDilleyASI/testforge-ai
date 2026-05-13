@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, Input, Select, ErrorBanner, AutoResizeTextarea } from "./shared";
+import { SeedingView } from "../views/SeedingView";
 
 // ─── localStorage helpers for collapse state ────────────────────────────────
 const COLLAPSE_KEY = "testforge_kb_collapsed";
@@ -17,8 +18,12 @@ function saveCollapsed(obj) {
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export const KbView = ({ kbEntries, requirements, refresh }) => {
+export const KbView = ({ kbEntries, requirements, refresh, currentUser }) => {
   const COLORS = useTheme();
+
+  // Top-level tab — 'browse' for the KB browser, 'seeding' for the bulk-extract wizard
+  const [tab, setTab] = useState("browse");
+  const isManager = currentUser?.role === "QA Manager" || currentUser?.role === "Admin";
 
   // Section hierarchy state
   const [sections, setSections] = useState([]);
@@ -821,24 +826,59 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
         </p>
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        {!dragMode && !isSearching && sections.length > 0 && (
+        {tab === "browse" && !dragMode && !isSearching && sections.length > 0 && (
           <Button variant="secondary" small onClick={toggleAll}>{allAreCollapsed ? "Expand All" : "Collapse All"}</Button>
         )}
-        {!dragMode && kbEntries.length > 0 && (
+        {tab === "browse" && !dragMode && kbEntries.length > 0 && (
           <Button variant="secondary" small onClick={() => api.exportKbJson()}>Export JSON</Button>
         )}
-        {!dragMode && (
+        {tab === "browse" && !dragMode && (
           <Button variant="secondary" small onClick={() => importFileRef.current?.click()}>Import JSON</Button>
         )}
-        {!dragMode && kbEntries.length > 0 && (
+        {tab === "browse" && !dragMode && kbEntries.length > 0 && (
           <Button variant="secondary" small onClick={() => { setDragMode(true); setAddingEntryTo(null); resetForm(); cancelEdit(); }}>Rearrange</Button>
         )}
-        {dragMode && (
+        {tab === "browse" && dragMode && (
           <Button small onClick={exitDragMode} style={{ background: COLORS.accent }}>Done Rearranging</Button>
         )}
       </div>
     </div>
 
+    {/* ─── Top-level tabs: Browse the KB, or run the Seeding wizard ─────────── */}
+    <div style={{ display: "flex", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 20 }}>
+      <button
+        onClick={() => setTab("browse")}
+        style={{
+          padding: "10px 20px", fontSize: 13,
+          fontWeight: tab === "browse" ? 600 : 400,
+          color: tab === "browse" ? COLORS.textBright : COLORS.textMuted,
+          background: "transparent", border: "none",
+          borderBottom: tab === "browse" ? `2px solid ${COLORS.accent}` : "2px solid transparent",
+          marginBottom: -1, cursor: "pointer", fontFamily: mono, letterSpacing: "0.02em",
+        }}
+      >
+        Browse
+      </button>
+      {isManager && (
+        <button
+          onClick={() => setTab("seeding")}
+          style={{
+            padding: "10px 20px", fontSize: 13,
+            fontWeight: tab === "seeding" ? 600 : 400,
+            color: tab === "seeding" ? COLORS.textBright : COLORS.textMuted,
+            background: "transparent", border: "none",
+            borderBottom: tab === "seeding" ? `2px solid ${COLORS.accent}` : "2px solid transparent",
+            marginBottom: -1, cursor: "pointer", fontFamily: mono, letterSpacing: "0.02em",
+          }}
+        >
+          Seeding
+        </button>
+      )}
+    </div>
+
+    {tab === "seeding" && <SeedingView currentUser={currentUser} embedded={true} />}
+
+    {tab === "browse" && <>
     <input
       ref={importFileRef}
       type="file"
@@ -940,5 +980,6 @@ export const KbView = ({ kbEntries, requirements, refresh }) => {
         <div style={{ textAlign: "center", color: "#fff", marginTop: 8, fontSize: 13 }}>{previewImg.name}</div>
       </div>
     </div>}
+    </>}
   </div>;
 };
