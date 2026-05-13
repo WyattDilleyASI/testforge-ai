@@ -541,7 +541,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
 
       {/* Claude.ai manual workflow — collapsed header strip, desktop only */}
       {!isMobile && (
-        <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33`, padding: claudeCardOpen ? undefined : "8px 14px" }}>
+        <Card style={{ marginBottom: 24, border: `1px solid ${COLORS.purple}33`, padding: claudeCardOpen ? "12px 20px" : "8px 14px" }}>
           <div
             onClick={() => setClaudeCardOpen(o => !o)}
             style={{
