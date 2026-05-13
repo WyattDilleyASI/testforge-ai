@@ -819,6 +819,26 @@ router.put("/:tcId/status", requireMobileAuth, (req, res) => {
           testType: tc.type,
         });
 
+        // ── AL: KB Review — bump counters when edits hit KB-informed fields ──
+        // For approved_with_edits, attribute the edits to the KB entries that
+        // were used to generate this TC. The counter logic decides whether
+        // a (kb_id, field) pair has accumulated enough signal to warrant a
+        // Claude-generated suggestion.
+        if (eventType === "approved_with_edits" && diff?.fields_changed?.length > 0) {
+          try {
+            const kbIds = JSON.parse(updatedTc.kb_references || "[]");
+            if (Array.isArray(kbIds) && kbIds.length > 0) {
+              al.recordEditAgainstKbs({
+                tcId: req.params.tcId,
+                kbIds,
+                fieldsChanged: diff.fields_changed,
+              });
+            }
+          } catch (kbErr) {
+            console.warn("⚠ KB Review counter bump failed:", kbErr.message);
+          }
+        }
+
         // ── AL: Auto-promote to exemplar pool if approved unchanged ──
         // A TC approved without edits is a strong positive signal —
         // the AI got it right. Add it to the exemplar pool as a

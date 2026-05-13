@@ -385,4 +385,97 @@ router.post("/aggregate", requireRole("Admin"), async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// KB REVIEW — Phase 1+2 (Detection + Claude synthesis)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /api/analytics/kb-review/counters
+// Read counter state for diagnostics. Returns ready-for-synthesis counters
+// plus per-status totals.
+router.get("/kb-review/counters", requireAuth, (req, res) => {
+  try {
+    res.json({
+      ready: al.getReadyCounters(),
+      stats: al.getCounterStats(),
+      threshold: al.KB_REVIEW_THRESHOLD,
+      tracked_fields: al.KB_TRACKED_FIELDS,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/analytics/kb-review/suggestions[?status=pending|approved|rejected]
+// List KB suggestions. Default returns all.
+router.get("/kb-review/suggestions", requireAuth, (req, res) => {
+  try {
+    const status = req.query.status || null;
+    res.json(al.listKbSuggestions(status));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/analytics/kb-review/suggestions/:id
+router.get("/kb-review/suggestions/:id", requireAuth, (req, res) => {
+  try {
+    const s = al.getKbSuggestion(parseInt(req.params.id));
+    if (!s) return res.status(404).json({ error: "Suggestion not found" });
+    res.json(s);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/analytics/kb-review/synthesize
+// Run synthesis on all counters that have hit threshold. Admin or QA Manager.
+// Calls Claude per ready counter — can be slow + costs tokens. Returns a
+// per-counter result array.
+router.post("/kb-review/synthesize", requireRole("Admin", "QA Manager"), async (req, res) => {
+  try {
+    const results = await al.synthesizePending();
+    logAudit(
+      req.session.name,
+      "KB_REVIEW_SYNTHESIS",
+      `Synthesized ${results.filter(r => r.ok).length} of ${results.length} candidates`
+    );
+    res.json({ ok: true, results });
+  } catch (err) {
+    console.error("KB synthesis error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/analytics/kb-review/suggestions/:id/approve
+// Apply the suggestion to the KB entry. Admin or QA Manager.
+router.post("/kb-review/suggestions/:id/approve", requireRole("Admin", "QA Manager"), (req, res) => {
+  try {
+    const result = al.approveKbSuggestion(
+      parseInt(req.params.id),
+      req.session.name,
+      req.body?.note || null
+    );
+    logAudit(req.session.name, "KB_REVIEW_APPROVE", `Approved KB suggestion ${req.params.id} for ${result.kb_id}`);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/analytics/kb-review/suggestions/:id/reject
+// Reject the suggestion without applying. Admin or QA Manager.
+router.post("/kb-review/suggestions/:id/reject", requireRole("Admin", "QA Manager"), (req, res) => {
+  try {
+    al.rejectKbSuggestion(
+      parseInt(req.params.id),
+      req.session.name,
+      req.body?.note || null
+    );
+    logAudit(req.session.name, "KB_REVIEW_REJECT", `Rejected KB suggestion ${req.params.id}`);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = router;

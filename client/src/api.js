@@ -136,6 +136,7 @@ export const api = {
   updateKbEntry: (kbId, data) => request(`/kb/${kbId}`, { method: "PUT", body: data }),
   pinKbEntry: (kbId) => request(`/kb/${kbId}/pin`, { method: "PUT" }),
   deleteKbEntries: (kbIds) => request("/kb", { method: "DELETE", body: { kbIds } }),
+  clearAllKb: () => request("/kb/all", { method: "DELETE" }),
 
   // Product Context
   getProductContext: () => request("/product-context"),
@@ -196,6 +197,14 @@ export const api = {
   runMaintenance: (opts) => request("/analytics/maintenance", { method: "POST", body: opts || {} }),
   resetModelVersion: () => request("/analytics/model-reset", { method: "POST" }),
   runAggregation: (opts) => request("/analytics/aggregate", { method: "POST", body: opts || {} }),
+
+  // KB Review (Phase 1+2) — counters + Claude-synthesized suggestions for KB content gaps
+  getKbReviewCounters: () => request("/analytics/kb-review/counters"),
+  getKbSuggestions: (status) => request(`/analytics/kb-review/suggestions${status ? `?status=${status}` : ""}`),
+  getKbSuggestion: (id) => request(`/analytics/kb-review/suggestions/${id}`),
+  runKbReviewSynthesis: () => request("/analytics/kb-review/synthesize", { method: "POST" }),
+  approveKbSuggestion: (id, note) => request(`/analytics/kb-review/suggestions/${id}/approve`, { method: "POST", body: { note } }),
+  rejectKbSuggestion: (id, note) => request(`/analytics/kb-review/suggestions/${id}/reject`, { method: "POST", body: { note } }),
 
   // Whiteboard (shared drawing)
   getWhiteboardStrokes: () => request("/whiteboard"),

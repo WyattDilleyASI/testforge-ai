@@ -20,6 +20,7 @@ const rules       = require("./rules");
 const exemplars   = require("./exemplars");
 const maintenance = require("./maintenance");
 const aggregation = require("./aggregation");
+const kbReview    = require("./kb_review");
 
 module.exports = {
 
@@ -89,6 +90,21 @@ module.exports = {
   // Admin
   getAllExemplars:     exemplars.getAllExemplars,
   getExemplarStats:   exemplars.getExemplarStats,
+
+  // ── KB Review (Phase 1+2) ──────────────────────────────────────────
+  KB_TRACKED_FIELDS:        kbReview.KB_TRACKED_FIELDS,
+  KB_REVIEW_THRESHOLD:      kbReview.THRESHOLD,
+  recordEditAgainstKbs:     kbReview.recordEditAgainstKbs,
+  resetCountersForKb:       kbReview.resetCountersForKb,
+  invalidateStaleCounters:  kbReview.invalidateStaleCounters,
+  getReadyCounters:         kbReview.getReadyCounters,
+  getCounterStats:          kbReview.getCounterStats,
+  synthesizeSuggestion:     kbReview.synthesizeSuggestion,
+  synthesizePending:        kbReview.synthesizePending,
+  listKbSuggestions:        kbReview.listSuggestions,
+  getKbSuggestion:          kbReview.getSuggestion,
+  approveKbSuggestion:      kbReview.approveSuggestion,
+  rejectKbSuggestion:       kbReview.rejectSuggestion,
 
   // ── Maintenance ────────────────────────────────────────────────────
   // Individual tasks
