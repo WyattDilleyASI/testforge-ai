@@ -42,8 +42,8 @@ export const UserManagementView = ({ currentUser, refreshAll }) => {
       <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.green, marginBottom: 10 }}>One-Time Password Generated</div>
       <div style={{ fontSize: 12, color: COLORS.text, marginBottom: 8 }}>Provide these credentials to <span style={{ fontWeight: 600, color: COLORS.textBright }}>{lastOtp.name}</span>:</div>
       <div style={{ padding: "12px 16px", background: COLORS.surface, borderRadius: 6, display: "flex", gap: 24 }}>
-        <div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase" }}>Username</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: COLORS.accent, marginTop: 2 }}>{lastOtp.username}</div></div>
-        <div><div style={{ fontSize: 9, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase" }}>One-Time Password</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: COLORS.amber, marginTop: 2 }}>{lastOtp.otp}</div></div>
+        <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Username</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: COLORS.accent, marginTop: 2 }}>{lastOtp.username}</div></div>
+        <div><div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>One-Time Password</div><div style={{ fontSize: 15, fontWeight: 700, fontFamily: mono, color: COLORS.amber, marginTop: 2 }}>{lastOtp.otp}</div></div>
       </div>
       <div style={{ marginTop: 8, fontSize: 10, color: COLORS.textMuted, fontFamily: mono }}>This password will not be shown again.</div>
       <Button small variant="secondary" onClick={() => setLastOtp(null)} style={{ marginTop: 10 }}>Dismiss</Button>

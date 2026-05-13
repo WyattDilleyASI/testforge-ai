@@ -150,7 +150,7 @@ export const TestLinkImportView = ({ refresh }) => {
   // Shared KB selector — rendered in Step 3 and Step 4
   const renderKbSelector = () => (
     <div>
-      <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Knowledge Base Context</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Knowledge Base Context</div>
       {tlKbSections.length === 0
         ? <div style={{ fontSize: 11, color: COLORS.textMuted }}>No KB sections found.</div>
         : (
@@ -253,7 +253,7 @@ export const TestLinkImportView = ({ refresh }) => {
         {/* Step 1 — upload */}
         {!tlParsed && (
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Step 1 — Upload XML</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Step 1 — Upload XML</div>
             <div style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 12 }}>Choose a TestLink XML export file to begin. Each test case will be reviewed and enhanced individually.</div>
             <label style={{ display: "inline-block", cursor: tlParsing ? "not-allowed" : "pointer" }}>
               <input type="file" accept=".xml" onChange={doTlParse} disabled={tlParsing} style={{ display: "none" }} />
@@ -268,7 +268,7 @@ export const TestLinkImportView = ({ refresh }) => {
         {/* Step 2 — list of parsed TCs */}
         {tlParsed && !tlSelected && (
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Step 2 — Select a Test Case</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Step 2 — Select a Test Case</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div style={{ fontSize: 12, color: COLORS.textMuted }}>{tlParsed.length} test case{tlParsed.length !== 1 ? "s" : ""} found — click one to review</div>
               <label style={{ cursor: "pointer" }}>
@@ -300,13 +300,13 @@ export const TestLinkImportView = ({ refresh }) => {
         {/* Step 3 — single TC review + KB selector + enhance (before first save) */}
         {tlSelected && !tlCurrentTcId && (
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", marginBottom: 6 }}>Step 3 — Enhance &amp; Import</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Step 3 — Enhance &amp; Import</div>
             <button onClick={() => setTlSelected(null)} style={{ background: "none", border: "none", color: COLORS.accent, cursor: "pointer", fontSize: 11, fontFamily: mono, marginBottom: 12, padding: 0 }}>← Back to list</button>
 
             <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
               {/* Left — original TC */}
               <div style={{ flex: 1, minWidth: 280 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 8 }}>Original (TestLink)</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Original (TestLink)</div>
                 {renderOriginalTc()}
               </div>
 
@@ -329,7 +329,7 @@ export const TestLinkImportView = ({ refresh }) => {
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 600, fontFamily: mono, textTransform: "uppercase", color: edit.isEditing(tlCurrentTcId) ? COLORS.accent : COLORS.green }}>
+                <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: edit.isEditing(tlCurrentTcId) ? COLORS.accent : COLORS.green }}>
                   {edit.isEditing(tlCurrentTcId) ? "Editing" : `Saved as Draft — ${tlCurrentTcId}`}
                 </div>
               </div>
@@ -352,7 +352,7 @@ export const TestLinkImportView = ({ refresh }) => {
 
             {/* Re-enhance section (full width) */}
             <div style={{ marginBottom: 20, padding: "12px 16px", background: COLORS.surface, borderRadius: 6, border: `1px solid ${COLORS.border}` }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 10 }}>Re-enhance with AI</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>Re-enhance with AI</div>
               {renderKbSelector()}
               <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
                 <Button variant="secondary" onClick={doTlReEnhance} disabled={tlEnhancing || edit.isEditing(tlCurrentTcId)}>
@@ -368,24 +368,24 @@ export const TestLinkImportView = ({ refresh }) => {
             <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 20 }}>
               {/* Left — original TC for cross-reference */}
               <div style={{ flex: 1, minWidth: 280 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", marginBottom: 8 }}>Original (TestLink)</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Original (TestLink)</div>
                 {renderOriginalTc()}
               </div>
 
               {/* Right — enhanced TC view or edit form */}
               <div style={{ flex: 1, minWidth: 280 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: edit.isEditing(tlCurrentTcId) ? COLORS.accent : COLORS.green, fontFamily: mono, textTransform: "uppercase", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: edit.isEditing(tlCurrentTcId) ? COLORS.accent : COLORS.green, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                   {edit.isEditing(tlCurrentTcId) ? "Editing Enhanced" : "Enhanced"}
                 </div>
                 <div style={{ padding: 12, background: COLORS.surface, borderRadius: 6, border: `1px solid ${edit.isEditing(tlCurrentTcId) ? COLORS.accent + "44" : COLORS.green + "33"}`, fontSize: 12, color: COLORS.text }}>
                   {edit.isEditing(tlCurrentTcId) ? (() => {
                     const f = edit.editForm;
-                    const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", fontFamily: mono, letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
+                    const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
                     const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
                     const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
                     const arrVal = (arr) => (arr || []).join("\n");
                     const arrHint = <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>One item per line</div>;
-                    const section = (label) => <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 16, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${COLORS.border}` }}>{label}</div>;
+                    const section = (label) => <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em", letterSpacing: "0.06em", marginTop: 16, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${COLORS.border}` }}>{label}</div>;
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
@@ -456,7 +456,7 @@ export const TestLinkImportView = ({ refresh }) => {
                     );
                   })()
                   : (() => {
-                    const SL = ({ children }) => <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>;
+                    const SL = ({ children }) => <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>;
                     const BL = ({ items }) => items?.length > 0 ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul> : null;
                     const tc = tlCurrentTcData;
                     return (

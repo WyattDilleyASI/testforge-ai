@@ -230,7 +230,7 @@ export const McpServerConfigView = ({ currentUser }) => {
                 onClick={e => e.stopPropagation()}>
                 <div style={{
                   fontSize: 11, fontWeight: 600, color: COLORS.accent, marginBottom: 12,
-                  fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em",
+                  textTransform: "uppercase", letterSpacing: "0.06em",
                 }}>Editing</div>
                 {renderForm(edit.editForm, edit.setEditForm)}
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
@@ -255,7 +255,7 @@ export const McpServerConfigView = ({ currentUser }) => {
 
       {/* Role permissions reference */}
       <Card style={{ marginTop: 24, padding: "14px 16px" }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, fontFamily: mono, marginBottom: 8, textTransform: "uppercase" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Access Control
         </div>
         <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.8 }}>

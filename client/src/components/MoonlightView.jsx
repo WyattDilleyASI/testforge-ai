@@ -788,8 +788,8 @@ function Stat({ label, value, COLORS, useMono }) {
   return (
     <div>
       <div style={{
-        fontSize: 10, fontWeight: 600, color: COLORS.textMuted,
-        textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: mono,
+        fontSize: 11, fontWeight: 600, color: COLORS.textMuted,
+        textTransform: "uppercase", letterSpacing: "0.06em",
       }}>{label}</div>
       <div style={{
         fontSize: 14, fontWeight: 700, color: COLORS.textBright,
@@ -810,7 +810,7 @@ function RoleBadge({ COLORS, role, name }) {
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
             You are {name && `· ${name}`}
           </div>
           <div style={{ fontSize: 18, fontWeight: 800, color, marginTop: 2 }}>
@@ -863,7 +863,7 @@ function HumanInputCard({ COLORS, pendingInput, onSubmit }) {
   return (
     <Card style={{ marginBottom: 14, borderColor: COLORS.accent }}>
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Your turn · day {pendingInput.day} · {pendingInput.phase}
         </div>
         <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.accent, marginTop: 2 }}>

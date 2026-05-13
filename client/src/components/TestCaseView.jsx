@@ -233,7 +233,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
     : 0;
 
   const SL = ({ children }) => (
-    <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>
+    <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6, marginTop: 14 }}>{children}</div>
   );
   const BL = ({ items }) => items?.length > 0
     ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul>
@@ -293,7 +293,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
           <Card style={{ marginBottom: 16, padding: "10px 14px" }}>
             <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Generator</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em" }}>Generator</span>
                 {req && <ReqIdTag id={req.req_id} />}
                 {req?.title && <span style={{ fontSize: 12, color: COLORS.textBright, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : 280 }}>{req.title}</span>}
                 <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>· {depthLabel}</span>
@@ -311,7 +311,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
         );
       })() : <Card glow style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase" }}>Generate TC Drafts</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em" }}>Generate TC Drafts</div>
           {sessionTcIds !== null && (
             <span onClick={() => setGeneratorExpanded(false)} style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, cursor: "pointer", userSelect: "none" }} title="Collapse">▴</span>
           )}
@@ -481,8 +481,8 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                 fontSize: 12, color: COLORS.text, lineHeight: 1.6,
               }}>
                 <span style={{
-                  fontSize: 10, fontWeight: 700, color: COLORS.accent,
-                  fontFamily: mono, textTransform: "uppercase",
+                  fontSize: 11, fontWeight: 700, color: COLORS.accent,
+                  textTransform: "uppercase",
                   letterSpacing: "0.06em",
                 }}>
                   Generation History
@@ -550,7 +550,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, fontFamily: mono, textTransform: "uppercase" }}>No API Key? Use Claude.ai Manually</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: COLORS.purple, textTransform: "uppercase", letterSpacing: "0.06em" }}>No API Key? Use Claude.ai Manually</span>
               {!claudeCardOpen && <span style={{ fontSize: 11, color: COLORS.textMuted }}>Copy prompt · paste response</span>}
             </div>
             <span style={{ fontSize: 12, color: COLORS.textMuted }}>{claudeCardOpen ? "▴" : "▾"}</span>
@@ -703,7 +703,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                       )}
 
                       {edit.isEditing(selectedTc.tc_id) && edit.editForm ? (() => {
-                        const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", fontFamily: mono, letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
+                        const lbl = (text) => <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{text}</label>;
                         const inp = (val, onChange) => <input value={val} onChange={onChange} style={{ width: "100%", boxSizing: "border-box", background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 4, color: COLORS.textBright, fontSize: 13, padding: "6px 10px", outline: "none" }} />;
                         const ta = (val, onChange, rows = 3) => <AutoResizeTextarea value={val} onChange={onChange} rows={rows} />;
                         const arrVal = (arr) => (arr || []).join("\n");
@@ -718,7 +718,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
                           });
                         };
                         const arrHint = <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: mono, marginBottom: 4 }}>One item per line</div>;
-                        const section = (label) => <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 16, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${COLORS.border}` }}>{label}</div>;
+                        const section = (label) => <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 16, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${COLORS.border}` }}>{label}</div>;
                         return (
                           <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
                             <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
@@ -822,7 +822,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
               display: "flex", alignItems: "center", justifyContent: "space-between",
             }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.06em" }}>Knowledge Base Context</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.06em" }}>Knowledge Base Context</div>
                 <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
                   {kbSelected.size > 0 ? `${kbSelected.size} selected` : "Pick entries to include in the prompt"}
                 </div>

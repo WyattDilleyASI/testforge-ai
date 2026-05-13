@@ -21,10 +21,10 @@ export const JamaView = ({ testCases, requirements, currentUser }) => {
   };
 
   const SL = ({ children }) => (
-    <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.textMuted, fontFamily: mono, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, marginTop: 14 }}>{children}</div>
+    <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6, marginTop: 14 }}>{children}</div>
   );
   const BL = ({ items }) => items?.length > 0
-    ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul>
+    ? <ul style={{ margin: "0 0 4px 0", paddingLeft: 18 }}>{items.map((item, i) => <li key={i} style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6 }}>{item}</li>)}</ul>
     : null;
 
   return <div>

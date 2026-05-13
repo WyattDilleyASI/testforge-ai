@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
-import { Card, Badge, ReqIdTag } from "./shared";
+import { Card, Badge, ReqIdTag, SectionLabel, SectionSubLabel } from "./shared";
 
 export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, currentUser }) => {
   const COLORS = useTheme();
@@ -59,7 +59,7 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
 
   const Stat = ({ label, value, color, sub, reqId }) => (
     <Card style={{ flex: 1, minWidth: 160 }}>
-      <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, display: "flex", justifyContent: "space-between" }}><span>{label}</span>{reqId && <span style={{ color: COLORS.accent, opacity: 0.6 }}>{reqId}</span>}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", justifyContent: "space-between" }}><span>{label}</span>{reqId && <span style={{ color: COLORS.accent, opacity: 0.6, fontFamily: mono }}>{reqId}</span>}</div>
       <div style={{ fontSize: 32, fontWeight: 800, color: COLORS[color] || COLORS.textBright, fontFamily: mono }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 4 }}>{sub}</div>}
     </Card>
@@ -118,9 +118,7 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
             )}
             {gapInsight.gaps?.length > 0 ? (
               <>
-                <div style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Top ready-to-test requirements
-                </div>
+                <SectionLabel style={{ marginBottom: 10 }}>Top ready-to-test requirements</SectionLabel>
                 {gapInsight.gaps.map((gap, idx) => {
                   const isExpanded = expandedGaps.has(gap.req_id);
                   const fullReq = requirements.find(r => r.req_id === gap.req_id);
@@ -146,15 +144,15 @@ export const DashboardView = ({ requirements, testCases, kbEntries, tokenUsage, 
                         <div style={{ paddingLeft: 38, paddingBottom: 14, display: "flex", flexDirection: "column", gap: 10 }}>
                           {fullReq?.description && (
                             <div>
-                              <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Description</div>
-                              <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{fullReq.description}</div>
+                              <SectionSubLabel>Description</SectionSubLabel>
+                              <div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.6 }}>{fullReq.description}</div>
                             </div>
                           )}
                           {acItems.length > 0 && (
                             <div>
-                              <div style={{ fontSize: 10, fontFamily: mono, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Acceptance Criteria</div>
+                              <SectionSubLabel>Acceptance Criteria</SectionSubLabel>
                               {acItems.map((ac, i) => (
-                                <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>
+                                <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: COLORS.text, lineHeight: 1.6 }}>
                                   <span style={{ color: COLORS.accent, flexShrink: 0 }}>·</span>
                                   <span>{ac}</span>
                                 </div>

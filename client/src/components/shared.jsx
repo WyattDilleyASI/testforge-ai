@@ -191,6 +191,38 @@ export const Select = ({ label, value, onChange, options, style, disabled }) => 
 
 export const ReqIdTag = ({ id }) => { const T = useTheme(); return <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: T.accent, background: T.accentDim, padding: "2px 8px", borderRadius: 4, border: `1px solid ${T.accent}33` }}>{id}</span>; };
 
+// ── SECTION LABEL ────────────────────────────────────────────────────────────
+// The small uppercase header that sits above a section of fields/content.
+// Sans (not mono) for readability, with subtle letter-spacing to keep the
+// "label" feel. Use SectionLabel for top-level section headers and
+// SectionSubLabel for nested sub-headings inside a section.
+export const SectionLabel = ({ children, color, style }) => {
+  const T = useTheme();
+  return (
+    <div style={{
+      fontSize: 11, fontWeight: 600,
+      color: color || T.textMuted,
+      textTransform: "uppercase", letterSpacing: "0.06em",
+      marginBottom: 6,
+      ...style,
+    }}>{children}</div>
+  );
+};
+
+export const SectionSubLabel = ({ children, color, style }) => {
+  const T = useTheme();
+  return (
+    <div style={{
+      fontSize: 10, fontWeight: 600,
+      color: color || T.textMuted,
+      textTransform: "uppercase", letterSpacing: "0.06em",
+      marginBottom: 4,
+      ...style,
+    }}>{children}</div>
+  );
+};
+
+
 export const Spinner = () => { const T = useTheme(); return <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.accent }}><div style={{ width: 18, height: 18, border: `2px solid ${T.border}`, borderTopColor: T.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontFamily: mono }}>Generating drafts via Claude API...</span><style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style></div>; };
 
 export const EmptyState = ({ icon, title, subtitle }) => { const T = useTheme(); return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60, color: T.textMuted, textAlign: "center" }}><span style={{ fontSize: 36, marginBottom: 12, opacity: 0.4 }}>{icon}</span><span style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 4 }}>{title}</span><span style={{ fontSize: 13 }}>{subtitle}</span></div>; };
