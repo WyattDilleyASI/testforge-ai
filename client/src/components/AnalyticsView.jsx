@@ -987,6 +987,13 @@ export const AnalyticsView = ({ currentUser }) => {
     const statusColor = s.status === "approved" ? "green" : s.status === "rejected" ? "red" : "amber";
     const fieldLabel = s.edit_field === "steps" ? "Test Steps" : s.edit_field === "preconditions" ? "Setup" : s.edit_field;
 
+    // Virtual KBs (Product Context, Key Terms) come back from the API with a
+    // synthetic kb_id like __PRODUCT_CONTEXT__. Display a friendly label and
+    // a distinct visual treatment so the reviewer knows these aren't kb_entries.
+    const virtualKbs = kbCounters?.virtual_kbs || {};
+    const isVirtual = !!virtualKbs[s.kb_id];
+    const kbLabel = isVirtual ? virtualKbs[s.kb_id].label : s.kb_id;
+
     return (
       <Card key={s.id} style={{ padding: 0, overflow: "hidden" }}>
         {/* Header strip */}
@@ -995,7 +1002,13 @@ export const AnalyticsView = ({ currentUser }) => {
           borderBottom: `1px solid ${COLORS.border}`,
           display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
         }}>
-          <span style={{ fontFamily: mono, fontSize: 11, fontWeight: 700, color: COLORS.purple, background: COLORS.purpleDim, padding: "2px 8px", borderRadius: 4 }}>{s.kb_id}</span>
+          <span style={{
+            fontFamily: mono, fontSize: 11, fontWeight: 700,
+            color: isVirtual ? COLORS.amber : COLORS.purple,
+            background: isVirtual ? COLORS.amberDim : COLORS.purpleDim,
+            padding: "2px 8px", borderRadius: 4,
+          }}>{kbLabel}</span>
+          {isVirtual && <Badge color="amber">Global Context</Badge>}
           <Badge color="accent">{fieldLabel} edits</Badge>
           <Badge color={statusColor}>{s.status}</Badge>
           <span style={{ flex: 1 }} />
@@ -1056,7 +1069,9 @@ export const AnalyticsView = ({ currentUser }) => {
                 ✗ Reject
               </Button>
               <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
-                Approving writes proposed content to {s.kb_id} and resets its counters.
+                {isVirtual
+                  ? `Approving writes proposed content to the ${kbLabel} setting and resets its counters.`
+                  : `Approving writes proposed content to ${s.kb_id} and resets its counters.`}
               </span>
             </div>
           ) : (
