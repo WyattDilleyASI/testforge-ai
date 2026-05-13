@@ -14,6 +14,8 @@
 //   - text/markdown (.md, .markdown)
 //   - text/html (.html, .htm)        — Confluence exports, web pages
 //   - DOCX (.docx)                   — Word documents (requires `mammoth`)
+//   - Images (.png, .jpg, .jpeg, .webp) — described via Claude vision in
+//                                     image-extraction.js, not chunked here
 //
 // PDF support is intentionally deferred — adds another library, and most
 // source material can be exported to one of the above formats.
@@ -162,20 +164,46 @@ function detectSourceType(file) {
       name.endsWith(".docx")) {
     return "docx";
   }
+  if (mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg" ||
+      mime === "image/webp" ||
+      name.endsWith(".png") || name.endsWith(".jpg") ||
+      name.endsWith(".jpeg") || name.endsWith(".webp")) {
+    return "image";
+  }
   if (mime.startsWith("text/") || name.endsWith(".txt")) {
     return "text";
   }
   return null;
 }
 
+// Resolve the canonical MIME type for an image file. Returns null for
+// non-image uploads. Multer can hand back 'application/octet-stream' or
+// non-standard 'image/jpg' depending on the browser, so we normalize
+// based on extension when needed. Claude vision accepts image/png,
+// image/jpeg, and image/webp — those are the three we emit.
+function imageMediaType(file) {
+  const mime = (file.mimetype || "").toLowerCase();
+  const name = (file.originalname || "").toLowerCase();
+  if (mime === "image/png" || name.endsWith(".png")) return "image/png";
+  if (mime === "image/jpeg" || mime === "image/jpg" ||
+      name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (mime === "image/webp" || name.endsWith(".webp")) return "image/webp";
+  return null;
+}
+
 // ─── parseInputFile (exported) ──────────────────────────────────────────────
 
 /**
- * Parse an uploaded file into normalized text.
+ * Parse an uploaded file into a normalized representation. The return
+ * shape depends on source_type:
+ *
+ *   text / markdown / html / docx → { text, source_type }
+ *   image                         → { buffer, source_type: 'image',
+ *                                     media_type, original_name }
  *
  * @param {{ originalname: string, mimetype: string, buffer: Buffer }} file
  *   A Multer file object from `upload.array("files")`.
- * @returns {Promise<{ text: string, source_type: 'text'|'markdown'|'html'|'docx' }>}
+ * @returns {Promise<object>}
  * @throws  Error if the file type is unsupported or parsing fails.
  */
 async function parseInputFile(file) {
@@ -201,6 +229,20 @@ async function parseInputFile(file) {
   }
   if (sourceType === "docx") {
     return { text: await docxToText(file.buffer), source_type: "docx" };
+  }
+  if (sourceType === "image") {
+    const mediaType = imageMediaType(file);
+    if (!mediaType) {
+      throw new Error(
+        `Unsupported image type: ${file.originalname} (${file.mimetype || "no mimetype"})`
+      );
+    }
+    return {
+      buffer: file.buffer,
+      source_type: "image",
+      media_type: mediaType,
+      original_name: file.originalname,
+    };
   }
 
   // Unreachable given the check above, but defensive

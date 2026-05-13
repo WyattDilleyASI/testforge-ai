@@ -131,6 +131,14 @@ export const seedingApi = {
     return request(`/candidates/${encodeURIComponent(candId)}`);
   },
 
+  // GET /jobs/:jobId/candidates/:candId/image — returns a URL string
+  // (no fetch). Intended for use as the src of an <img> tag during
+  // candidate review.
+  candidateImageUrl(jobId, candId) {
+    return `${BASE}/jobs/${encodeURIComponent(jobId)}` +
+           `/candidates/${encodeURIComponent(candId)}/image`;
+  },
+
   // PATCH /candidates/:candId
   // updates: { title?, type?, content?, suggested_tags?, subsection_id?, pinned?, related_reqs? }
   updateCandidate(candId, updates) {
