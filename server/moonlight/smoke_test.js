@@ -16,6 +16,13 @@ const {
 const { GameState, Phase, SeededRng } = require("./game_state");
 const { HumanWaiter } = require("./human_waiter");
 const { HybridClient } = require("./hybrid_client");
+const {
+  createRoom,
+  getRoom,
+  validateRoomName,
+  sanitizePlayerName,
+  _clearAllRooms,
+} = require("./lobby");
 
 function deepEq(a, b) {
   if (a === b) return true;
@@ -498,11 +505,411 @@ async function testCancelAll() {
   assertEq(bRejected, true, "cancelAll() rejects waiter B's pending promise");
 }
 
+// ── Async test: AI takeover on disconnect ────────────────────────────────
+//
+// When a human player drops mid-game, the HybridClient.demoteToAi(player)
+// path should:
+//   - Flip player.isHuman to false so future turns route to AI
+//   - Remove the waiter from its map
+//   - If the player was mid-turn (waiter pending), synthesize an AI
+//     response and resolve the waiter so the orchestrator's awaited
+//     call() returns cleanly instead of hanging forever
+//   - Be idempotent: re-demoting an already-demoted player is a no-op
+
+async function testAiTakeover() {
+  section("AI takeover on disconnect");
+
+  // ── Case 1: demote while NOT pending ────────────────────────────────
+  const state1 = GameState.fromConfig({
+    playerNames: ["AI1", "Alice", "AI2", "AI3", "AI4", "AI5", "AI6"],
+    humanSeats: ["Alice"],
+    rng: new SeededRng(33),
+  });
+  const stubAi1 = makeStubAiClient();
+  const hc1 = new HybridClient({ aiClient: stubAi1 });
+  const waiterAlice = new HumanWaiter("s", "Alice");
+  hc1.registerWaiter("Alice", waiterAlice);
+  hc1.setEmit(() => {});
+
+  const alice = state1.getPlayer("Alice");
+  assertEq(alice.isHuman, true, "Alice starts flagged as human");
+  assertEq(waiterAlice.isWaiting(), false,
+    "Alice's waiter is not pending (no turn in progress)");
+
+  await hc1.demoteToAi(alice);
+
+  assertEq(alice.isHuman, false,
+    "demoteToAi flips isHuman to false");
+  assertEq(hc1.waiters.has("Alice"), false,
+    "demoteToAi removes the waiter from the map");
+
+  // Subsequent calls for Alice route to AI.
+  await hc1.call(alice, state1, "vote");
+  assertEq(stubAi1.calls.length, 1,
+    "Post-demote calls route to AI");
+  assertEq(stubAi1.calls[0].player, "Alice",
+    "AI was called on Alice's behalf");
+
+  // ── Case 2: idempotent demote ───────────────────────────────────────
+  await hc1.demoteToAi(alice);   // already demoted — no-op
+  assertEq(stubAi1.calls.length, 1,
+    "Re-demoting an already-demoted player is a silent no-op");
+
+  // ── Case 3: demoting a player who was never human is a no-op ────────
+  const ai1 = state1.getPlayer("AI1");
+  await hc1.demoteToAi(ai1);
+  assertEq(stubAi1.calls.length, 1,
+    "Demoting a player who was never human is a silent no-op");
+
+  // ── Case 4: demote WHILE pending — AI resolves the pending turn ─────
+  const state2 = GameState.fromConfig({
+    playerNames: ["AI1", "Bob", "AI2", "AI3", "AI4", "AI5", "AI6"],
+    humanSeats: ["Bob"],
+    rng: new SeededRng(34),
+  });
+  const stubAi2 = makeStubAiClient();
+  const hc2 = new HybridClient({ aiClient: stubAi2 });
+  const waiterBob = new HumanWaiter("s", "Bob");
+  hc2.registerWaiter("Bob", waiterBob);
+  hc2.setEmit(() => {});
+
+  const bob = state2.getPlayer("Bob");
+  // Kick off Bob's turn but don't await — waiter goes pending.
+  const bobCall = hc2.call(bob, state2, "vote");
+  assertEq(waiterBob.isWaiting(), true,
+    "Bob's waiter is pending after call() (mid-turn)");
+
+  // Bob disconnects right now. The pending promise must resolve, not hang.
+  await hc2.demoteToAi(bob);
+
+  const bobResult = await bobCall;
+  assertEq(bobResult.reasoning, "stub",
+    "Pending call resolves with the AI's response, not a rejection");
+  assertEq(bob.isHuman, false,
+    "demoteToAi (while pending) also flipped isHuman");
+  assertEq(stubAi2.calls.length, 1,
+    "AI was called once to satisfy the pending turn");
+  assertEq(stubAi2.calls[0].player, "Bob",
+    "AI was called for the demoted player, not someone else");
+  assertEq(hc2.waiters.has("Bob"), false,
+    "demoteToAi (while pending) also removed the waiter from the map");
+}
+
+// ── Async test: lobby module ─────────────────────────────────────────────
+//
+// Exercises RoomState lifecycle (lobby → running → finished), the
+// registry (create / lookup / dedup / auto-cleanup), name validators,
+// and event emission. No HTTP, no real Claude — pure state-and-behavior.
+
+async function testLobby() {
+  // ─── Room name validation ────────────────────────────────────────────
+  section("Lobby — room name validation");
+
+  assertEq(validateRoomName("wyatts-game"), "wyatts-game",
+    "Simple valid name passes through");
+  assertEq(validateRoomName("Wyatts-Game"), "wyatts-game",
+    "Names are lowercased");
+  assertEq(validateRoomName("wyatt's game"), "wyatts-game",
+    "Apostrophe stripped, space becomes hyphen");
+  assertEq(validateRoomName("  tuesday night  "), "tuesday-night",
+    "Whitespace trimmed and normalized");
+  assertEq(validateRoomName("game--007"), "game-007",
+    "Repeated hyphens collapsed");
+
+  assertRaises(() => validateRoomName("ab"),
+    "Names shorter than 3 chars throw");
+  assertRaises(() => validateRoomName("a".repeat(31)),
+    "Names longer than 30 chars throw");
+  assertRaises(() => validateRoomName(""),
+    "Empty name throws");
+  assertRaises(() => validateRoomName("!!!"),
+    "All-special-character name throws");
+
+  // ─── Player name sanitization ────────────────────────────────────────
+  section("Lobby — player name sanitization");
+
+  assertEq(sanitizePlayerName("Wyatt"), "Wyatt",
+    "Valid player name unchanged");
+  assertEq(sanitizePlayerName("  Sarah  "), "Sarah",
+    "Trims surrounding whitespace");
+  assertEq(sanitizePlayerName("My  Name"), "My Name",
+    "Collapses internal whitespace");
+  assertEq(sanitizePlayerName("Bob!@#"), "Bob",
+    "Strips disallowed characters");
+  assertEq(sanitizePlayerName("X".repeat(30)), "X".repeat(20),
+    "Caps at 20 characters");
+
+  assertRaises(() => sanitizePlayerName(""),
+    "Empty player name throws");
+  assertRaises(() => sanitizePlayerName("!!!"),
+    "All-special player name throws");
+
+  // ─── Room creation and registry ──────────────────────────────────────
+  section("Lobby — room creation and registry");
+  _clearAllRooms();
+
+  const room1 = createRoom({
+    rawName: "test-room-1",
+    rawHostName: "Wyatt",
+    config: { players: 7, rounds: 2 },
+  });
+  assertEq(room1.name, "test-room-1", "Room stores normalized name");
+  assertEq(room1.host, "Wyatt", "Host name stored");
+  assertEq(room1.status, "lobby", "Starts in lobby status");
+  assertEq(room1.roster, ["Wyatt"], "Host is first player on the roster");
+  assertEq(room1.config.players, 7, "Config seat count stored");
+  assertEq(room1.config.rounds, 2, "Config rounds stored");
+
+  assertEq(getRoom("test-room-1"), room1, "Registry returns the room by name");
+  assertEq(getRoom("does-not-exist"), null, "Unknown rooms return null");
+
+  assertRaises(
+    () => createRoom({
+      rawName: "test-room-1",
+      rawHostName: "Other",
+      config: { players: 7, rounds: 2 },
+    }),
+    "Duplicate room name throws",
+  );
+
+  assertRaises(
+    () => createRoom({
+      rawName: "x",   // too short
+      rawHostName: "Other",
+      config: { players: 7, rounds: 2 },
+    }),
+    "Invalid room name throws",
+  );
+
+  assertRaises(
+    () => createRoom({
+      rawName: "valid-name",
+      rawHostName: "Alice",   // pool name
+      config: { players: 7, rounds: 2 },
+    }),
+    "Host name colliding with NAME_POOL throws",
+  );
+
+  _clearAllRooms();
+
+  // ─── Joining players ────────────────────────────────────────────────
+  section("Lobby — joining players");
+
+  const room2 = createRoom({
+    rawName: "join-test",
+    rawHostName: "Host",
+    config: { players: 7, rounds: 2 },
+  });
+
+  let rosterEvent = null;
+  room2.on("roster_changed", (ev) => { rosterEvent = ev; });
+
+  room2.addPlayer("Friend1");
+  assertEq(room2.roster, ["Host", "Friend1"], "Player added to roster");
+  assertEq(rosterEvent?.joined, "Friend1",
+    "roster_changed fires with joined name");
+
+  room2.addPlayer("Friend2");
+  assertEq(room2.roster.length, 3, "Multiple players accumulate");
+
+  assertRaises(
+    () => room2.addPlayer("Friend1"),
+    "Duplicate player name throws",
+  );
+
+  assertRaises(
+    () => room2.addPlayer("Alice"),
+    "Pool-collision player name throws",
+  );
+
+  // Fill to capacity (5 more, total 7).
+  room2.addPlayer("P4");
+  room2.addPlayer("P5");
+  room2.addPlayer("P6");
+  room2.addPlayer("P7");
+  assertEq(room2.roster.length, 7, "Roster fills to seat count");
+
+  assertRaises(
+    () => room2.addPlayer("P8"),
+    "Joining a full room throws",
+  );
+
+  _clearAllRooms();
+
+  // ─── Removing players in lobby phase ────────────────────────────────
+  section("Lobby — removing players in lobby phase");
+
+  const room3 = createRoom({
+    rawName: "remove-test",
+    rawHostName: "Host",
+    config: { players: 8, rounds: 2 },
+  });
+  room3.addPlayer("Friend1");
+  room3.addPlayer("Friend2");
+
+  rosterEvent = null;
+  room3.on("roster_changed", (ev) => { rosterEvent = ev; });
+  room3.removePlayer("Friend1");
+  assertEq(room3.roster, ["Host", "Friend2"],
+    "Non-host removal updates roster");
+  assertEq(rosterEvent?.left, "Friend1",
+    "roster_changed fires with left name");
+
+  rosterEvent = null;
+  room3.removePlayer("Nobody");
+  assertEq(rosterEvent, null,
+    "Removing an unknown player is a silent no-op");
+
+  // Host leaving the lobby terminates the room.
+  let terminatedReason = null;
+  room3.on("terminated", (ev) => { terminatedReason = ev.reason; });
+  room3.removePlayer("Host");
+  assertEq(room3.status, "finished",
+    "Host removal transitions to finished");
+  assertEq(terminatedReason !== null, true,
+    "terminated event fires with a reason");
+  assertEq(getRoom("remove-test"), null,
+    "Terminated room is removed from the registry");
+
+  _clearAllRooms();
+
+  // ─── Starting a game ─────────────────────────────────────────────────
+  section("Lobby — starting a game");
+
+  const room4 = createRoom({
+    rawName: "start-test",
+    rawHostName: "Host",
+    config: { players: 7, rounds: 1 },
+  });
+  room4.addPlayer("Friend1");
+  room4.addPlayer("Friend2");
+
+  let startedEvent = null;
+  room4.on("game_started", (ev) => { startedEvent = ev; });
+
+  const stubCostTracker = { summary: () => ({}) };
+  const stubAi4 = makeStubAiClient();
+
+  room4.start({ costTracker: stubCostTracker, aiClient: stubAi4 });
+
+  assertEq(room4.status, "running",
+    "Status transitions to running after start()");
+  assertEq(startedEvent !== null, true,
+    "game_started event fires");
+  assertEq(room4.gameState !== null, true,
+    "GameState is built and attached");
+  assertEq(room4.hybridClient !== null, true,
+    "HybridClient is built and attached");
+  assertEq(room4.gameState.players.length, 7,
+    "GameState has full seat count (7), not roster count (3)");
+
+  const humansInGame = room4.gameState.players.filter(p => p.isHuman);
+  assertEq(humansInGame.length, 3,
+    "Three players flagged as human in GameState");
+  const humanNamesSorted = humansInGame.map(p => p.name).sort();
+  assertEq(humanNamesSorted, ["Friend1", "Friend2", "Host"],
+    "Human seat names match the lobby roster");
+
+  assertEq(room4.waiters.size, 3,
+    "One HumanWaiter registered per human seat");
+
+  assertRaises(
+    () => room4.start({ costTracker: stubCostTracker, aiClient: stubAi4 }),
+    "Starting an already-running room throws",
+  );
+
+  assertRaises(
+    () => room4.addPlayer("Latecomer"),
+    "Joining after start() throws",
+  );
+
+  _clearAllRooms();
+
+  // ─── Mid-game demotion ───────────────────────────────────────────────
+  section("Lobby — mid-game demotion");
+
+  const room5 = createRoom({
+    rawName: "demote-test",
+    rawHostName: "Host",
+    config: { players: 7, rounds: 1 },
+  });
+  room5.addPlayer("Friend");
+  const stubAi5 = makeStubAiClient();
+  room5.start({ costTracker: stubCostTracker, aiClient: stubAi5 });
+
+  let demoteEvent = null;
+  room5.on("player_demoted", (ev) => { demoteEvent = ev; });
+
+  room5.demote("Friend");
+  await Promise.resolve();   // let any async tails settle
+
+  assertEq(demoteEvent?.name, "Friend",
+    "player_demoted event fires with the demoted player's name");
+  const friendInGame = room5.gameState.getPlayer("Friend");
+  assertEq(friendInGame.isHuman, false,
+    "Demoted player's isHuman is flipped via HybridClient.demoteToAi");
+
+  // Demote on unknown name is a no-op (race-safe).
+  room5.demote("NotAPlayer");
+  assertEq(room5.status, "running",
+    "Demoting an unknown name doesn't change status");
+
+  // Host disconnect mid-game terminates the room.
+  let hostTerminate = null;
+  room5.on("terminated", (ev) => { hostTerminate = ev; });
+  room5.demote("Host");
+  assertEq(room5.status, "finished",
+    "Host disconnect mid-game transitions to finished");
+  assertEq(hostTerminate !== null, true,
+    "terminated event fires when host disconnects mid-game");
+
+  _clearAllRooms();
+
+  // ─── Finish and termination ──────────────────────────────────────────
+  section("Lobby — finish and termination");
+
+  const room6 = createRoom({
+    rawName: "finish-test",
+    rawHostName: "Host",
+    config: { players: 7, rounds: 1 },
+  });
+  const stubAi6 = makeStubAiClient();
+  room6.start({ costTracker: stubCostTracker, aiClient: stubAi6 });
+
+  let finishedEvent = null;
+  let terminatedEvent = null;
+  room6.on("game_finished", (ev) => { finishedEvent = ev; });
+  room6.on("terminated", (ev) => { terminatedEvent = ev; });
+
+  room6.finish({ winner: "village", finalDay: 3 });
+
+  assertEq(finishedEvent?.winner, "village",
+    "game_finished fires with winner");
+  assertEq(finishedEvent?.finalDay, 3,
+    "game_finished fires with finalDay");
+  assertEq(terminatedEvent !== null, true,
+    "terminated also fires after game_finished");
+  assertEq(room6.status, "finished",
+    "Status is finished after game completion");
+  assertEq(getRoom("finish-test"), null,
+    "Finished room is removed from the registry");
+
+  // Idempotent — calling finish again is silent.
+  finishedEvent = null;
+  room6.finish({ winner: "wolves", finalDay: 99 });
+  assertEq(finishedEvent, null,
+    "finish() on already-finished room is a no-op");
+
+  _clearAllRooms();
+}
+
 // ── Done ───────────────────────────────────────────────────────────────────
 
 (async () => {
   await testHybridRouting();
   await testCancelAll();
+  await testAiTakeover();
+  await testLobby();
 
   console.log("\n" + "=".repeat(50));
   console.log("✓ All smoke tests passed.");

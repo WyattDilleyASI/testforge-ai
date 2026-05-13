@@ -209,6 +209,16 @@ export const api = {
 
   // Moonlight (hidden feature)
   runMoonlightGame: (config) => request("/moonlight/run", { method: "POST", body: config }),
-  respondToMoonlight: (sessionId, playerName, response) =>
-    request("/moonlight/respond", { method: "POST", body: { sessionId, playerName, response } }),
+  // Lobby — Phase B multiplayer
+  createMoonlightRoom: (name, hostName, config) =>
+    request("/moonlight/rooms", { method: "POST", body: { name, hostName, config } }),
+  getMoonlightRoom: (name) =>
+    request(`/moonlight/rooms/${encodeURIComponent(name)}`),
+  listMoonlightRooms: () => request("/moonlight/rooms"),
+  joinMoonlightRoom: (name, playerName) =>
+    request(`/moonlight/rooms/${encodeURIComponent(name)}/join`, { method: "POST", body: { playerName } }),
+  startMoonlightRoom: (name, hostName) =>
+    request(`/moonlight/rooms/${encodeURIComponent(name)}/start`, { method: "POST", body: { hostName } }),
+  respondToMoonlight: (roomName, playerName, response) =>
+    request(`/moonlight/rooms/${encodeURIComponent(roomName)}/respond`, { method: "POST", body: { playerName, response } }),
 };

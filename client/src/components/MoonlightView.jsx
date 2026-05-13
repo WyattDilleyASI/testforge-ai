@@ -1,37 +1,48 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// MoonlightView.jsx — Multi-Agent Simulation Run (Pass B: human play)
+// MoonlightView.jsx — Multi-Agent Simulation Run (Phase B: named-room lobby)
 //
-// Three modes of play:
-//   - "fake"  — /api/moonlight/run, replayed with delays. AI-only.
-//   - "real" spectate — /api/moonlight/stream, AI-only, watch real Claude play.
-//   - "real" + "I'm playing" — /api/moonlight/stream with human=true. Server
-//     randomly assigns the human a seat. The orchestrator pauses on that
-//     player's turns, emitting human_input_needed events; the UI renders
-//     the appropriate input widget; the human's response goes back via
-//     POST /api/moonlight/respond.
+// Modes of play:
+//   - "fake"  — /api/moonlight/run, replayed with delays. AI-only, free.
+//   - "real"  — lobby-based multiplayer. Create or join a named room, host
+//               clicks start, AI fills empty seats. Mid-game disconnects
+//               fall back to AI silently.
 //
-// Speech protocol (real mode)
+// Phase state machine:
+//   configure   — initial; pick mode + preset
+//   lobby-entry — real-Claude path: create/join form
+//   in-lobby    — waiting for host to start (host or joiner view)
+//   running     — game is live; orchestrator events fanning in via SSE
+//   done        — game over, show summary
+//
+// SSE events (Phase B, per-player room stream):
+//   config           — { name, host, status, config, roster, playerName, isHost }
+//   roster_changed   — { roster, joined?|left? }
+//   game_started     — { seed, roster }
+//   game_event:<k>   — every orchestrator event (game_start, speech, etc)
+//   you_are          — { name, role }                  (private to this player)
+//   human_input_needed — { speaker, task, day, ... }   (private)
+//   player_demoted   — { name }
+//   game_finished    — { winner, finalDay }
+//   terminated       — { reason }
+//   done             — {}                              (last event; close SSE)
+//
+// Speech protocol (real mode, unchanged from Phase A):
 //   speech_start  { speaker }
 //   speech_chunk  { speaker, delta }
 //   speech        { speaker, text }
 //
-// Human-only events (real + playing)
-//   you_are            { name, role }     — once after game_start
-//   human_input_needed { task, ... }      — every time the human must act
-//
-// Visibility (lazy, client-side)
+// Visibility (client-side filtering, unchanged from Phase A):
 //   When humanRole is set, the renderer skips/redacts events that the
-//   human's role wouldn't have access to in a real game (other players'
-//   night_actions, wolves_decided for non-wolves, the seer-result fields
-//   on night_resolution for non-seers). A dev-tools peeker can see the
-//   raw events in the network tab; this is documented and intentional
-//   for v1.
+//   human's role wouldn't have access to. (human_input_needed is server-
+//   side filtered in Phase B; the other private events are still
+//   client-filtered.)
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme, font, mono } from "../theme";
 import { Card, Button, Select } from "./shared";
 import { api } from "../api";
+import { MoonlightLobbyView } from "./MoonlightLobbyView";
 
 // ─── Presets ───────────────────────────────────────────────────────────────
 
@@ -74,33 +85,29 @@ function delayFor(kind, delays) {
   return delays.beat;
 }
 
-// Decide whether to render an event in the human's transcript view, and
-// whether to redact any private fields. Returns null to skip, or a
-// (possibly redacted) event to render.
 function filterEventForHuman(ev, humanRole, humanName) {
-  if (!humanRole) return ev;  // spectator mode
-
+  if (!humanRole) return ev;
   switch (ev.kind) {
     case "wolves_decided":
       return humanRole === "werewolf" ? ev : null;
-
     case "night_action":
-      // The human only sees their OWN night action.
       return ev.data?.actor === humanName ? ev : null;
-
     case "validator_correction":
       return ev.data?.actor === humanName ? ev : null;
-
     case "night_resolution":
-      // Strip seer-private fields if the human isn't the seer.
       if (humanRole !== "seer" && (ev.data?.seerTarget || ev.data?.seerResult)) {
         return { ...ev, data: { ...ev.data, seerTarget: null, seerResult: null } };
       }
       return ev;
-
     default:
       return ev;
   }
+}
+
+// Pre-fill display name from currentUser (cleaned), or fall back to "".
+function defaultDisplayName(currentUser) {
+  const raw = currentUser?.display_name || currentUser?.name || "";
+  return String(raw).replace(/[^A-Za-z0-9 ]/g, "").trim().slice(0, 20);
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────
@@ -112,8 +119,8 @@ export const MoonlightView = ({ currentUser }) => {
   const [presetKey, setPresetKey] = useState("standard");
   const [speed, setSpeed] = useState("normal");
   const [seed, setSeed] = useState("");
-  const [playAsHuman, setPlayAsHuman] = useState(false);
 
+  // Phase: configure → (fake → running) | (lobby-entry → in-lobby → running) → done
   const [phase, setPhase] = useState("configure");
   const [error, setError] = useState("");
   const [allEvents, setAllEvents] = useState([]);
@@ -121,19 +128,23 @@ export const MoonlightView = ({ currentUser }) => {
   const [runMeta, setRunMeta] = useState(null);
   const [paused, setPaused] = useState(false);
   const [budget, setBudget] = useState(null);
-
-  // Streaming speech buffer. { speaker, text } | null.
   const [streamingSpeech, setStreamingSpeech] = useState(null);
 
-  // Human play state. Set when you_are event arrives.
+  // Human play state — populated by the you_are event during the game.
   const [humanRole, setHumanRole] = useState(null);
   const [humanName, setHumanName] = useState(null);
-  // Refs let SSE event closures read the latest values without going stale.
   const humanRoleRef = useRef(null);
   const humanNameRef = useRef(null);
-  const sessionIdRef = useRef(null);
 
-  // Pending input request. The human_input_needed payload, or null.
+  // Lobby state — populated by config + roster_changed events.
+  const [roomName, setRoomName] = useState(null);
+  const [isHost, setIsHost] = useState(false);
+  const [roster, setRoster] = useState([]);
+  const [roomConfig, setRoomConfig] = useState(null);
+  const [lobbySubmitting, setLobbySubmitting] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const roomNameRef = useRef(null);
+
   const [pendingInput, setPendingInput] = useState(null);
 
   const streamTimerRef = useRef(null);
@@ -190,15 +201,23 @@ export const MoonlightView = ({ currentUser }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused, mode]);
 
-  // Reset all human-play state. Called on begin/cancel/run-again.
-  const resetHumanState = () => {
+  // Reset every kind of transient state. Called on begin/cancel/run-again.
+  const resetAll = () => {
     setHumanRole(null);
     setHumanName(null);
     setPendingInput(null);
     humanRoleRef.current = null;
     humanNameRef.current = null;
-    sessionIdRef.current = null;
+    setRoomName(null);
+    setIsHost(false);
+    setRoster([]);
+    setRoomConfig(null);
+    roomNameRef.current = null;
+    setLobbySubmitting(false);
+    setStarting(false);
   };
+
+  // ── Fake demo path ────────────────────────────────────────────────────
 
   const handleBeginFake = async () => {
     const preset = PRESETS.find(p => p.key === presetKey) || PRESETS[1];
@@ -212,7 +231,7 @@ export const MoonlightView = ({ currentUser }) => {
     setRunMeta(null);
     setPaused(false);
     setStreamingSpeech(null);
-    resetHumanState();
+    resetAll();
     setPhase("running");
 
     try {
@@ -230,55 +249,106 @@ export const MoonlightView = ({ currentUser }) => {
     }
   };
 
+  // ── Real-Claude path: lobby flow ──────────────────────────────────────
+
+  // Step 1: clicking Begin in real mode transitions to the create/join form.
   const handleBeginReal = () => {
-    const preset = PRESETS.find(p => p.key === presetKey) || PRESETS[1];
-    const params = new URLSearchParams();
-    params.set("players", String(preset.players));
-    params.set("rounds", String(preset.rounds));
-    const seedNum = parseInt(seed, 10);
-    if (!Number.isNaN(seedNum)) params.set("seed", String(seedNum));
-
-    if (playAsHuman) {
-      params.set("human", "true");
-      const playerName = (currentUser?.display_name || currentUser?.name || "You")
-        .replace(/[^A-Za-z0-9 ]/g, "")
-        .trim()
-        .slice(0, 20) || "You";
-      params.set("playerName", playerName);
-    }
-
     setError("");
     setAllEvents([]);
     setShownEvents([]);
     setRunMeta(null);
     setPaused(false);
     setStreamingSpeech(null);
-    resetHumanState();
-    setPhase("running");
+    resetAll();
+    setPhase("lobby-entry");
+  };
+
+  // Open the per-player SSE stream for a room. Shared by Create and Join.
+  const openRoomStream = useCallback((rmName, plName) => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
     cancelledRef.current = false;
 
-    const url = `/api/moonlight/stream?${params.toString()}`;
+    const params = new URLSearchParams({ playerName: plName });
+    const url = `/api/moonlight/rooms/${encodeURIComponent(rmName)}/stream?${params.toString()}`;
     const es = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = es;
+
+    // ── Lobby events ────────────────────────────────────────────────
 
     es.addEventListener("config", (e) => {
       try {
         const d = JSON.parse(e.data);
+        setRoomName(d.name);
+        roomNameRef.current = d.name;
+        setHumanName(d.playerName);
+        humanNameRef.current = d.playerName;
+        setIsHost(!!d.isHost);
+        setRoster(d.roster || []);
+        setRoomConfig(d.config || null);
         setRunMeta({
-          seed: d.seed, players: d.players, rounds: d.rounds,
-          model: d.model, mode: "real",
-          // playingAs is always an array (Phase A: 0 or 1 entries; Phase B: N).
-          playingAs: Array.isArray(d.playingAs) ? d.playingAs : [],
+          seed: d.config?.seed,
+          players: d.config?.players,
+          rounds: d.config?.rounds,
+          mode: "real",
+          playingAs: [d.playerName],
         });
-        if (d.sessionId) sessionIdRef.current = d.sessionId;
+        // Phase reflects the room's current status.
+        if (d.status === "lobby") setPhase("in-lobby");
+        else if (d.status === "running") setPhase("running");
+        else if (d.status === "finished") setPhase("done");
       } catch {}
     });
+
+    es.addEventListener("roster_changed", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (Array.isArray(d.roster)) setRoster(d.roster);
+      } catch {}
+    });
+
+    es.addEventListener("game_started", () => {
+      // Host clicked start. Move the UI into running phase; the orchestrator
+      // events will flow shortly via game_event:<kind>.
+      setAllEvents([]);
+      setShownEvents([]);
+      setStreamingSpeech(null);
+      setPhase("running");
+    });
+
+    es.addEventListener("player_demoted", () => {
+      // No visible UI in Phase B (Phase C could add a transcript banner).
+    });
+
+    es.addEventListener("game_finished", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        setRunMeta(prev => prev
+          ? { ...prev, winner: d.winner, finalDay: d.finalDay }
+          : { winner: d.winner, finalDay: d.finalDay, mode: "real" });
+      } catch {}
+    });
+
+    es.addEventListener("terminated", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        // "Game completed" is normal; anything else is worth surfacing.
+        if (d.reason && d.reason !== "Game completed") {
+          setError(`Room closed: ${d.reason}`);
+        }
+      } catch {}
+    });
+
+    // ── Budget ──────────────────────────────────────────────────────
 
     es.addEventListener("budget", (e) => {
       try { setBudget(JSON.parse(e.data)); } catch {}
     });
 
-    // The human's role assignment. Sent once, just after game_start.
+    // ── Private events ──────────────────────────────────────────────
+
     es.addEventListener("you_are", (e) => {
       try {
         const d = JSON.parse(e.data);
@@ -289,7 +359,6 @@ export const MoonlightView = ({ currentUser }) => {
       } catch {}
     });
 
-    // Human input request. Renders the input card.
     es.addEventListener("human_input_needed", (e) => {
       try {
         const ev = JSON.parse(e.data);
@@ -297,11 +366,8 @@ export const MoonlightView = ({ currentUser }) => {
       } catch {}
     });
 
-    // Game event router. Most events go straight into the transcript.
-    // The three speech-stream events are special:
-    //   speech_start: open an in-progress bubble (NOT added to events)
-    //   speech_chunk: append delta to the bubble (NOT added to events)
-    //   speech:       clear the bubble, record the canonical event
+    // ── Game events ─────────────────────────────────────────────────
+
     const handleGameEvent = (ev, kind) => {
       if (kind === "speech_start") {
         setStreamingSpeech({ speaker: ev.data?.speaker || "", text: "" });
@@ -321,7 +387,6 @@ export const MoonlightView = ({ currentUser }) => {
         setStreamingSpeech(null);
       }
 
-      // Apply human-role visibility filter (if playing).
       const filtered = filterEventForHuman(ev, humanRoleRef.current, humanNameRef.current);
       if (!filtered) return;
 
@@ -354,6 +419,8 @@ export const MoonlightView = ({ currentUser }) => {
       });
     }
 
+    // ── Error & done ────────────────────────────────────────────────
+
     es.addEventListener("error", (e) => {
       try {
         const d = e.data ? JSON.parse(e.data) : null;
@@ -371,34 +438,90 @@ export const MoonlightView = ({ currentUser }) => {
       setPendingInput(null);
       setPhase("done");
     });
+  }, []);
+
+  // Create a new room (host's create+join action).
+  const handleCreateRoom = async (rmName, displayName) => {
+    setError("");
+    setLobbySubmitting(true);
+    try {
+      const preset = PRESETS.find(p => p.key === presetKey) || PRESETS[1];
+      const config = { players: preset.players, rounds: preset.rounds };
+      const seedNum = parseInt(seed, 10);
+      if (!Number.isNaN(seedNum)) config.seed = seedNum;
+
+      const result = await api.createMoonlightRoom(rmName, displayName, config);
+      // Server returns the sanitized room/seat names; use them.
+      const seatedName = result.room?.host || displayName;
+      const finalRoomName = result.room?.name || rmName;
+      openRoomStream(finalRoomName, seatedName);
+    } catch (err) {
+      setError(err.message || "Failed to create room");
+      setLobbySubmitting(false);
+    }
   };
 
-  const handleBegin = () => (mode === "real" ? handleBeginReal() : handleBeginFake());
+  // Join an existing room.
+  const handleJoinRoom = async (rmName, displayName) => {
+    setError("");
+    setLobbySubmitting(true);
+    try {
+      const result = await api.joinMoonlightRoom(rmName, displayName);
+      const seatedName = result.playerName || displayName;
+      const finalRoomName = result.room?.name || rmName;
+      openRoomStream(finalRoomName, seatedName);
+    } catch (err) {
+      setError(err.message || "Failed to join room");
+      setLobbySubmitting(false);
+    }
+  };
 
-  // POST the human's response to /respond. Clears pendingInput on success.
-  // playerName names which seat this response is for — required by the
-  // server so multi-human sessions can route the response to the right
-  // waiter. In Phase A there's only one human per session, so it's always
-  // humanNameRef.current.
+  // Reset submitting flag once the config event lands (we're in the lobby now).
+  useEffect(() => {
+    if (phase === "in-lobby" || phase === "running") {
+      setLobbySubmitting(false);
+    }
+  }, [phase]);
+
+  // Host clicks Start in the waiting room.
+  const handleStartLobbyGame = async () => {
+    if (!roomNameRef.current || !humanNameRef.current) return;
+    setError("");
+    setStarting(true);
+    try {
+      await api.startMoonlightRoom(roomNameRef.current, humanNameRef.current);
+      // Phase transition happens when the game_started SSE event arrives.
+    } catch (err) {
+      setError(err.message || "Failed to start game");
+      setStarting(false);
+    }
+  };
+
+  // ── Human-input submission (running game) ─────────────────────────────
+
   const handleHumanSubmit = async (response) => {
-    const sessionId = sessionIdRef.current;
-    const playerName = humanNameRef.current;
-    if (!sessionId || !playerName) {
+    const rmName = roomNameRef.current;
+    const plName = humanNameRef.current;
+    if (!rmName || !plName) {
       setError("No active session. Try starting a new game.");
       return;
     }
     try {
-      await api.respondToMoonlight(sessionId, playerName, response);
+      await api.respondToMoonlight(rmName, plName, response);
       setPendingInput(null);
     } catch (err) {
       setError(`Failed to submit input: ${err.message}`);
     }
   };
 
+  // ── Cancel / leave / run again ────────────────────────────────────────
+
   const handleCancel = () => {
     cancelledRef.current = true;
     if (streamTimerRef.current) clearTimeout(streamTimerRef.current);
     if (eventSourceRef.current) {
+      // Closing the SSE triggers room.demote() server-side: lobby phase
+      // removes us from the roster; running phase swaps us out for AI.
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
@@ -407,7 +530,7 @@ export const MoonlightView = ({ currentUser }) => {
     setAllEvents([]);
     setRunMeta(null);
     setStreamingSpeech(null);
-    resetHumanState();
+    resetAll();
   };
 
   const handleRunAgain = () => {
@@ -416,47 +539,83 @@ export const MoonlightView = ({ currentUser }) => {
     setAllEvents([]);
     setRunMeta(null);
     setStreamingSpeech(null);
-    resetHumanState();
+    resetAll();
     setError("");
   };
 
+  // ── Begin button dispatcher ──────────────────────────────────────────
+
+  const handleBegin = () => (mode === "real" ? handleBeginReal() : handleBeginFake());
+
+  // ── Render ───────────────────────────────────────────────────────────
+
+  const currentPreset = PRESETS.find(p => p.key === presetKey) || PRESETS[1];
+
   return (
     <div>
-      <div style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
+      <div style={{
+        marginBottom: 24, display: "flex",
+        justifyContent: "space-between", alignItems: "flex-end",
+        flexWrap: "wrap", gap: 12,
+      }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: COLORS.textBright, margin: 0 }}>
             Multi-Agent Simulation Run
           </h2>
           <p style={{ fontSize: 12, color: COLORS.textMuted, margin: "4px 0 0", fontFamily: mono }}>
-            Internal · v0.3
+            Internal · v0.4
           </p>
         </div>
         {budget && <BudgetStrip COLORS={COLORS} budget={budget} />}
       </div>
 
-      {error && (
-        <Card style={{ marginBottom: 16, borderColor: COLORS.red }}>
-          <div style={{ fontSize: 12, color: COLORS.red, fontFamily: mono }}>{error}</div>
-        </Card>
+      {/* Configure phase: choose mode/preset/speed/seed */}
+      {phase === "configure" && (
+        <>
+          {error && (
+            <Card style={{ marginBottom: 16, borderColor: COLORS.red }}>
+              <div style={{ fontSize: 12, color: COLORS.red, fontFamily: mono }}>{error}</div>
+            </Card>
+          )}
+          <ConfigCard
+            COLORS={COLORS}
+            mode={mode} setMode={setMode}
+            presetKey={presetKey} setPresetKey={setPresetKey}
+            speed={speed} setSpeed={setSpeed}
+            seed={seed} setSeed={setSeed}
+            onBegin={handleBegin}
+            beginLabel={
+              mode === "real" ? "Continue to lobby" : "Begin run"
+            }
+          />
+        </>
       )}
 
-      {phase !== "running" && (
-        <ConfigCard
+      {/* Lobby phases (entry form + waiting room) */}
+      {(phase === "lobby-entry" || phase === "in-lobby") && (
+        <MoonlightLobbyView
           COLORS={COLORS}
-          mode={mode} setMode={setMode}
-          presetKey={presetKey} setPresetKey={setPresetKey}
-          speed={speed} setSpeed={setSpeed}
-          seed={seed} setSeed={setSeed}
-          playAsHuman={playAsHuman} setPlayAsHuman={setPlayAsHuman}
-          onBegin={phase === "done" ? handleRunAgain : handleBegin}
-          beginLabel={
-            phase === "done" ? "Run again" :
-            mode === "real" ? (playAsHuman ? "Begin run (you're playing)" : "Begin run (real Claude)") :
-            "Begin run"
-          }
+          view={phase === "lobby-entry" ? "entry" : "in-lobby"}
+          defaultName={defaultDisplayName(currentUser)}
+          preset={currentPreset}
+          seed={seed}
+          onCreate={handleCreateRoom}
+          onJoin={handleJoinRoom}
+          onCancel={handleCancel}
+          submitting={lobbySubmitting}
+          roomName={roomName}
+          playerName={humanName}
+          isHost={isHost}
+          roster={roster}
+          roomConfig={roomConfig}
+          onStart={handleStartLobbyGame}
+          onLeave={handleCancel}
+          starting={starting}
+          error={error}
         />
       )}
 
+      {/* Running phase: live game */}
       {phase === "running" && (
         <RunControlsCard
           COLORS={COLORS} mode={mode}
@@ -467,15 +626,32 @@ export const MoonlightView = ({ currentUser }) => {
         />
       )}
 
+      {/* Done phase: summary */}
       {phase === "done" && runMeta && (
         <SummaryCard COLORS={COLORS} meta={runMeta} eventCount={allEvents.length} humanRole={humanRole} />
       )}
+      {phase === "done" && (
+        <Card style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button onClick={handleRunAgain}>Run again</Button>
+          </div>
+        </Card>
+      )}
 
-      {humanRole && phase !== "configure" && (
+      {/* Role badge — visible whenever the player has been assigned a role */}
+      {humanRole && (phase === "running" || phase === "done") && (
         <RoleBadge COLORS={COLORS} role={humanRole} name={humanName} />
       )}
 
-      {pendingInput && (
+      {/* In-game error banner (separate from configure-phase error) */}
+      {error && phase === "running" && (
+        <Card style={{ marginBottom: 16, borderColor: COLORS.red }}>
+          <div style={{ fontSize: 12, color: COLORS.red, fontFamily: mono }}>{error}</div>
+        </Card>
+      )}
+
+      {/* Pending input card */}
+      {pendingInput && phase === "running" && (
         <HumanInputCard
           COLORS={COLORS}
           pendingInput={pendingInput}
@@ -483,9 +659,14 @@ export const MoonlightView = ({ currentUser }) => {
         />
       )}
 
+      {/* Transcript — visible during running and done phases */}
       {(phase === "running" || phase === "done") && (
         <Card style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright, marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{
+            fontSize: 13, fontWeight: 600, color: COLORS.textBright,
+            marginBottom: 12, display: "flex",
+            justifyContent: "space-between", alignItems: "center",
+          }}>
             <span>Transcript</span>
             <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: mono }}>
               {shownEvents.length}{allEvents.length > 0 && mode === "fake" ? ` / ${allEvents.length}` : ""} events
@@ -554,8 +735,7 @@ function BudgetStrip({ COLORS, budget }) {
   );
 }
 
-function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, setSpeed, seed, setSeed, playAsHuman, setPlayAsHuman, onBegin, beginLabel }) {
-  const humanPlayAvailable = mode === "real";
+function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, setSpeed, seed, setSeed, onBegin, beginLabel }) {
   return (
     <Card style={{ marginBottom: 14 }}>
       <div style={{
@@ -585,37 +765,6 @@ function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, set
             </button>
           );
         })}
-      </div>
-
-      {/* I'm playing — only for real mode */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={{
-          display: "flex", alignItems: "center", gap: 10,
-          padding: "10px 12px", borderRadius: 7,
-          border: `1px solid ${playAsHuman && humanPlayAvailable ? COLORS.accent : COLORS.border}`,
-          background: playAsHuman && humanPlayAvailable ? COLORS.accentDim : COLORS.surface,
-          cursor: humanPlayAvailable ? "pointer" : "not-allowed",
-          opacity: humanPlayAvailable ? 1 : 0.5,
-          fontFamily: font,
-        }}>
-          <input
-            type="checkbox"
-            checked={playAsHuman && humanPlayAvailable}
-            disabled={!humanPlayAvailable}
-            onChange={e => setPlayAsHuman(e.target.checked)}
-            style={{ accentColor: COLORS.accent }}
-          />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.textBright }}>
-              I'll play in this seat
-            </div>
-            <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
-              {humanPlayAvailable
-                ? "Random role. The other seats are real Claude agents."
-                : "Available in Real Claude mode only."}
-            </div>
-          </div>
-        </label>
       </div>
 
       <div style={{
@@ -697,14 +846,13 @@ function ConfigCard({ COLORS, mode, setMode, presetKey, setPresetKey, speed, set
 
       {mode === "real" && (
         <div style={{
-          padding: "10px 12px", marginBottom: 14,
-          background: COLORS.amberDim || (COLORS.amber + "18"),
+          padding: "10px 12px", marginBottom: 16,
+          background: COLORS.amber + "15",
           border: `1px solid ${COLORS.amber}55`,
           borderRadius: 6,
           fontSize: 11, color: COLORS.amber, fontFamily: mono, lineHeight: 1.5,
         }}>
-          ⚠ Real Claude mode uses your ANTHROPIC_API_KEY. A typical Standard game costs $0.30-$1.50 in tokens. The server enforces a $3 per-game and $20 daily cap.
-          {playAsHuman && " · You're playing as one of the seats. Take your time on each turn — there's no timer."}
+          ⚠ Real Claude mode uses your ANTHROPIC_API_KEY. A typical Standard game costs $0.30–$1.50 in tokens. The server enforces a $3 per-game and $20 daily cap. You'll create or join a room next.
         </div>
       )}
 

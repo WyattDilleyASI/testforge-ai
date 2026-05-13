@@ -21,9 +21,10 @@
 const { Channel } = require("./roles");
 
 class HumanWaiter {
-  constructor(sessionId) {
+  constructor(sessionId, playerName = null) {
     this.sessionId = sessionId;
-    this.pending = null;       // { resolve, reject, task } | null
+    this.playerName = playerName;   // optional, for log/error messages
+    this.pending = null;            // { resolve, reject, task, player, state } | null
     this.cancelled = false;
   }
 
@@ -33,6 +34,11 @@ class HumanWaiter {
   // emit is the orchestrator's transcript emitter — using it means
   // human_input_needed events appear in the same SSE stream as game
   // events, in the right order.
+  //
+  // We capture player and state on this.pending so HybridClient.demoteToAi
+  // can synthesize an AI response without needing them passed back in —
+  // disconnect handling happens far from the original call site, so
+  // having the args available here keeps the takeover API clean.
   async wait(player, state, task, emit) {
     if (this.cancelled) {
       throw new Error("Session was cancelled before human input could be collected");
@@ -42,7 +48,7 @@ class HumanWaiter {
     }
 
     return new Promise((resolve, reject) => {
-      this.pending = { resolve, reject, task };
+      this.pending = { resolve, reject, task, player, state };
 
       const payload = this._buildPayload(player, state, task);
       emit("human_input_needed", payload);
@@ -79,6 +85,18 @@ class HumanWaiter {
 
   pendingTask() {
     return this.pending?.task || null;
+  }
+
+  // The player and state args that were passed to wait() when this waiter
+  // went pending. Read by HybridClient.demoteToAi when a human disconnects
+  // mid-turn — we need their player object and the current game state to
+  // synthesize an AI response on their behalf.
+  pendingPlayer() {
+    return this.pending?.player || null;
+  }
+
+  pendingState() {
+    return this.pending?.state || null;
   }
 
   // Builds the payload for the human_input_needed event. Includes
