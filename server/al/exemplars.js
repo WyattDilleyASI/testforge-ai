@@ -262,7 +262,7 @@ function getAllExemplars() {
       SELECT
         e.id, e.tc_id, e.req_type, e.test_type, e.depth,
         e.selected_by, e.curated_at,
-        t.title, t.type AS tc_type, t.status
+        t.title, t.type AS tc_type, t.status, t.is_seeded
       FROM exemplar_test_cases e
       LEFT JOIN test_cases t ON t.tc_id = e.tc_id
       ORDER BY e.curated_at DESC

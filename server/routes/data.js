@@ -762,7 +762,12 @@ router.post("/jama/export", requireRole("Admin", "QA Manager"), (req, res) => {
   const reqDb = getReqDb();
 
   // JM-004: Pre-export validation — check for orphaned TCs
-  const allTcs = tcDb.prepare("SELECT * FROM test_cases").all();
+  //
+  // Seeded baseline TCs are excluded from Jama export. They ship with status
+  // 'Reviewed' so the AL Engine treats them as approved few-shot quality, but
+  // they're system content and must never reach Jama. Defense-in-depth on top
+  // of the /api/testcases filter — this catches direct API calls to /jama/export.
+  const allTcs = tcDb.prepare("SELECT * FROM test_cases WHERE is_seeded = 0 OR is_seeded IS NULL").all();
   const allReqIds = reqDb.prepare("SELECT req_id FROM requirements").all().map(r => r.req_id);
 
   const hasReqLink = (tc) => {

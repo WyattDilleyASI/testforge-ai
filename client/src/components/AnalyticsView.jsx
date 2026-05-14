@@ -766,6 +766,7 @@ export const AnalyticsView = ({ currentUser }) => {
                       <span style={{ fontSize: 11, fontFamily: mono, fontWeight: 700, color: COLORS.accent }}>{rule.rule_id}</span>
                       <Badge color="purple">{rule.category}</Badge>
                       {rule.scope !== "all" && <Badge color="amber">{rule.scope}</Badge>}
+                      {rule.model_version === "baseline-v1" && <Badge color="textMuted">SEEDED</Badge>}
                     </div>
                     <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{rule.rule_text}</div>
                     <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>
@@ -862,7 +863,10 @@ export const AnalyticsView = ({ currentUser }) => {
                 <tbody>
                   {exemplars.map((e, i) => (
                     <tr key={i} style={{ borderBottom: `1px solid ${COLORS.border}22` }}>
-                      <td style={{ padding: "8px 10px", color: COLORS.accent, fontWeight: 600 }}>{e.tc_id}</td>
+                      <td style={{ padding: "8px 10px", color: COLORS.accent, fontWeight: 600 }}>
+                        {e.tc_id}
+                        {e.is_seeded === 1 && <Badge color="textMuted" style={{ marginLeft: 8 }}>SEEDED</Badge>}
+                      </td>
                       <td style={{ padding: "8px 10px", color: COLORS.textBright }}>{e.title || "—"}</td>
                       <td style={{ padding: "8px 10px" }}><Badge color="purple">{e.tc_type || e.test_type || "—"}</Badge></td>
                       <td style={{ padding: "8px 10px", color: COLORS.text }}>{e.depth}</td>

@@ -300,7 +300,9 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
     },
     async ({ req_id, status }) => {
       const db = getTcDb();
-      let rows = db.prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+      // Exclude seeded baseline TCs — they're system content, not user-managed
+      // test cases that MCP callers should be operating on.
+      let rows = db.prepare("SELECT * FROM test_cases WHERE is_seeded = 0 OR is_seeded IS NULL ORDER BY rowid").all();
 
       if (req_id) {
         rows = rows.filter(tc => JSON.parse(tc.linked_req_ids || "[]").includes(req_id));
@@ -747,7 +749,9 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
     {},
     async () => {
       const reqs = getReqDb().prepare("SELECT * FROM requirements ORDER BY rowid").all();
-      const tcs = getTcDb().prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+      // Exclude seeded baseline TCs from coverage stats — they have no linked
+      // requirements anyway, but excluding here keeps total_test_cases honest.
+      const tcs = getTcDb().prepare("SELECT * FROM test_cases WHERE is_seeded = 0 OR is_seeded IS NULL ORDER BY rowid").all();
 
       const coverage = reqs.map(r => {
         const linked = tcs.filter(tc =>
