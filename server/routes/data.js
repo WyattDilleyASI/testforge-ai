@@ -683,6 +683,54 @@ router.delete("/kb/all", requireRole("Admin", "QA Manager"), (req, res) => {
   res.json({ ok: true, deleted: result.changes });
 });
 
+// POST /api/kb/migrate-req-tags — one-shot data migration. Historically some
+// flows stored req_id strings inside kb_entries.tags (the conventional
+// "tagged to a requirement" pattern). The canonical link column is
+// kb_entries.related_reqs. This endpoint scans every KB entry and moves any
+// tag that matches a real req_id (from the requirements table) into
+// related_reqs, deduping along the way. Real topical tags are left intact.
+//
+// Idempotent: running it twice has no effect after the first pass.
+router.post("/kb/migrate-req-tags", requireRole("Admin", "QA Manager"), (req, res) => {
+  const kbDb = getKbDb();
+  const reqIds = new Set(getReqDb().prepare("SELECT req_id FROM requirements").all().map(r => r.req_id));
+  if (reqIds.size === 0) {
+    return res.json({ ok: true, scanned: 0, updated: 0, tagsMoved: 0, message: "No requirements in DB; nothing to migrate against." });
+  }
+
+  const entries = kbDb.prepare("SELECT kb_id, tags, related_reqs FROM kb_entries").all();
+  let updated = 0;
+  let tagsMoved = 0;
+  const perEntry = [];
+
+  const updateStmt = kbDb.prepare("UPDATE kb_entries SET tags = ?, related_reqs = ? WHERE kb_id = ?");
+  const txn = kbDb.transaction(() => {
+    for (const e of entries) {
+      let tags;
+      let rel;
+      try { tags = JSON.parse(e.tags || "[]"); } catch { tags = []; }
+      try { rel = JSON.parse(e.related_reqs || "[]"); } catch { rel = []; }
+      if (!Array.isArray(tags)) tags = [];
+      if (!Array.isArray(rel)) rel = [];
+
+      const toMove = tags.filter(t => typeof t === "string" && reqIds.has(t));
+      if (toMove.length === 0) continue;
+
+      const keptTags = tags.filter(t => !(typeof t === "string" && reqIds.has(t)));
+      const mergedRel = Array.from(new Set([...rel, ...toMove]));
+
+      updateStmt.run(JSON.stringify(keptTags), JSON.stringify(mergedRel), e.kb_id);
+      updated++;
+      tagsMoved += toMove.length;
+      perEntry.push({ kb_id: e.kb_id, moved: toMove });
+    }
+  });
+  txn();
+
+  logAudit(req.session.name, "KB_MIGRATE_REQ_TAGS", `Moved ${tagsMoved} req_id tag(s) into related_reqs across ${updated} KB entries`);
+  res.json({ ok: true, scanned: entries.length, updated, tagsMoved, perEntry });
+});
+
 // DELETE /api/kb — delete selected KB entries
 router.delete("/kb", requireAuth, (req, res) => {
   const { kbIds } = req.body;
