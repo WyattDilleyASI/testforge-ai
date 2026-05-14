@@ -1,0 +1,84 @@
+{
+  "version": "baseline-v1",
+  "description": "Hand-curated, domain-agnostic adaptive rules shipped with TestForge to give new deployments useful generation guidance on day one. These rules start at lower confidence (0.6) and decay faster (21-day half-life) than learned rules, so they retire naturally as feedback-derived rules accumulate.",
+  "defaults": {
+    "base_confidence": 0.6,
+    "half_life_days": 21,
+    "observation_count": 1,
+    "model_version": "baseline-v1"
+  },
+  "rules": [
+    {
+      "rule_id": "AR-SEED-001",
+      "rule_text": "Every test step must specify an observable, measurable expected result. Avoid vague outcomes like \"works correctly.\"",
+      "category": "expected_results",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-002",
+      "rule_text": "Each test case should verify one logical behavior. Split cases with multiple unrelated pass/fail conditions.",
+      "category": "general",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-003",
+      "rule_text": "List preconditions as concrete, verifiable states (e.g., \"User is logged in as non-admin\"), not as setup actions to perform.",
+      "category": "preconditions",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-004",
+      "rule_text": "Each step should describe one user action and its expected result. Don't combine multiple actions into one step.",
+      "category": "steps",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-005",
+      "rule_text": "When a test creates, modifies, or deletes data, include a cleanup step that returns the system to its pre-test state.",
+      "category": "steps",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-006",
+      "rule_text": "For requirements with numeric limits or ranges, include boundary tests on both sides of each limit: at the limit, one below, and one above.",
+      "category": "boundary",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-007",
+      "rule_text": "When a requirement defines accepted input formats, include at least one negative case with malformed input and verify the specific error handling.",
+      "category": "negative",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-008",
+      "rule_text": "Include test cases for empty, null, and absent inputs whenever a field, parameter, or collection is involved.",
+      "category": "edge_case",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-009",
+      "rule_text": "Generated sets should include at least one happy-path, one negative, and one boundary case unless the requirement has no failure or boundary conditions.",
+      "category": "coverage",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-010",
+      "rule_text": "Expected results must be verifiable by direct observation, not by interpretation (\"Toast displays text X\" not \"User is informed of success\").",
+      "category": "expected_results",
+      "scope": "all"
+    },
+    {
+      "rule_id": "AR-SEED-011",
+      "rule_text": "For authentication-related requirements, include a session expiry test verifying behavior when a session is invalidated mid-operation.",
+      "category": "edge_case",
+      "scope": "authentication"
+    },
+    {
+      "rule_id": "AR-SEED-012",
+      "rule_text": "For API validation requirements, every failure-path test must verify response status code, error body structure, and absence of partial state mutation.",
+      "category": "negative",
+      "scope": "api_validation"
+    }
+  ]
+}

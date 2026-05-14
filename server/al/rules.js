@@ -66,11 +66,14 @@ const RULE_SCOPES = [
 // ─── ID Generator ───────────────────────────────────────────────────
 
 function nextRuleId() {
+  // Only consider learned rules in standard AR-NNN format. Seeded baseline
+  // rules use AR-SEED-NNN and must not influence the learned-rule sequence,
+  // otherwise parseInt() returns NaN and rule generation breaks.
   const last = getCoreDb()
-    .prepare("SELECT rule_id FROM adaptive_rules ORDER BY rowid DESC LIMIT 1")
+    .prepare("SELECT rule_id FROM adaptive_rules WHERE rule_id GLOB 'AR-[0-9][0-9][0-9]' ORDER BY rowid DESC LIMIT 1")
     .get();
   if (!last) return "AR-001";
-  const num = parseInt(last.rule_id.replace("AR-", "")) + 1;
+  const num = parseInt(last.rule_id.replace("AR-", ""), 10) + 1;
   return `AR-${String(num).padStart(3, "0")}`;
 }
 

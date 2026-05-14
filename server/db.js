@@ -292,6 +292,7 @@ function initialize() {
   if (!tcCols.includes("project_id")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN project_id TEXT");
   if (!tcCols.includes("upstream_relationship")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN upstream_relationship TEXT DEFAULT '[]'");
   if (!tcCols.includes("testlink_requirements")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN testlink_requirements TEXT DEFAULT '[]'");
+  if (!tcCols.includes("is_seeded")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN is_seeded INTEGER NOT NULL DEFAULT 0");
   if (tcCols.includes("pass_fail_criteria")) tcDb.exec("ALTER TABLE test_cases RENAME COLUMN pass_fail_criteria TO description");
 
   // ── Knowledge Base DB ──
@@ -471,6 +472,9 @@ function initialize() {
 
   // ── Adaptive Learning Engine ──
   require("./al/schema").initializeAL();
+
+  // ── Baseline Seed (idempotent — version-gated) ──
+  require("./seeds/runSeed").runBaselineSeed();
 
   console.log("✓ Databases initialized:");
   console.log("  Core:         ", DB_PATHS.core);

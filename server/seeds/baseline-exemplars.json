@@ -1,0 +1,436 @@
+{
+  "version": "baseline-v1",
+  "description": "Hand-curated, domain-agnostic exemplar test cases shipped with TestForge for few-shot prompt injection on fresh deployments. Each is a full TC stored in test_cases (flagged is_seeded=1) with a matching reference in exemplar_test_cases.",
+  "defaults": {
+    "status": "Reviewed",
+    "generated_by": "System (baseline seed)",
+    "selected_by": "system"
+  },
+  "exemplars": [
+    {
+      "tc_id": "TC-SEED-001",
+      "title": "User signs in with valid credentials",
+      "type": "Happy Path",
+      "depth": "basic",
+      "req_type": "authentication",
+      "description": {
+        "objective": "Verify that a registered user can sign in with valid credentials and reach the authenticated landing page.",
+        "scope": ["Standard credential-based authentication flow"],
+        "assumptions": ["User account exists and is active", "Authentication endpoint is reachable"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "Test user 'qa.user@example.com' exists with status Active",
+          "No active session exists for the test user (cleared cookies or incognito)"
+        ],
+        "environment": [
+          "Browser at standard test viewport",
+          "Application reachable at the test environment base URL"
+        ],
+        "equipment": [],
+        "testData": [
+          "Username: qa.user@example.com",
+          "Password: known-valid-password"
+        ]
+      },
+      "steps": [
+        {
+          "step": "Navigate to the application sign-in page",
+          "expectedResult": "Sign-in form is displayed with Username and Password fields and a Sign In button"
+        },
+        {
+          "step": "Enter valid username and password and click Sign In",
+          "expectedResult": "User is redirected to the authenticated landing page within 5 seconds"
+        },
+        {
+          "step": "Confirm authenticated state",
+          "expectedResult": "User's display name appears in the page header; a session cookie is present in browser storage"
+        }
+      ]
+    },
+    {
+      "tc_id": "TC-SEED-002",
+      "title": "User creates a new record and verifies it persists",
+      "type": "Happy Path",
+      "depth": "standard",
+      "req_type": "data_processing",
+      "description": {
+        "objective": "Verify that a user can create a new record through the standard creation form, the record persists, and is retrievable after navigation.",
+        "scope": ["Single-record create flow with persistence verification"],
+        "assumptions": ["User has Create permission for the record type", "Creation endpoint accepts the schema defined for the record type"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "User is signed in with Create permission for the target record type",
+          "No existing record matches the test name",
+          "Test environment data store is reachable"
+        ],
+        "environment": [
+          "Application reachable at the test environment base URL",
+          "Browser at standard test viewport"
+        ],
+        "equipment": [],
+        "testData": [
+          "Record name: 'Baseline-Test-Record-{timestamp}'",
+          "Valid values for all required fields per the record schema"
+        ]
+      },
+      "steps": [
+        {
+          "step": "Navigate to the record list view",
+          "expectedResult": "List view displays without errors; 'Create New' action is visible and enabled"
+        },
+        {
+          "step": "Click 'Create New'",
+          "expectedResult": "Creation form opens with all required fields shown and marked as required"
+        },
+        {
+          "step": "Fill all required fields with valid data and click Save",
+          "expectedResult": "Form submits without validation errors; confirmation 'Record created' is displayed; user returns to the list view"
+        },
+        {
+          "step": "Locate the new record in the list view",
+          "expectedResult": "Record with the test name is visible in the list with creation timestamp within the last 10 seconds"
+        },
+        {
+          "step": "Refresh the page",
+          "expectedResult": "Record with the test name is still present in the list, confirming persistence"
+        },
+        {
+          "step": "Delete the test record via the row delete action",
+          "expectedResult": "Record is removed from the list view; confirmation 'Record deleted' is displayed"
+        }
+      ]
+    },
+    {
+      "tc_id": "TC-SEED-003",
+      "title": "API rejects malformed request body with specific error and no partial state change",
+      "type": "Negative",
+      "depth": "standard",
+      "req_type": "api_validation",
+      "description": {
+        "objective": "Verify that the API returns a structured error response when the request body fails validation, and that no record is created or modified in the database.",
+        "scope": ["Single endpoint with input validation", "Error response structure"],
+        "assumptions": ["Endpoint requires authentication and accepts JSON request bodies", "Validation rules for the endpoint are documented"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "Valid API token for a user with permission to call the endpoint",
+          "Pre-test row count for the target table is recorded"
+        ],
+        "environment": [
+          "API base URL reachable from test environment",
+          "Network logging available to capture request/response"
+        ],
+        "equipment": [
+          "API client capable of sending raw JSON (curl, Postman, or equivalent)"
+        ],
+        "testData": [
+          "Malformed body: required field 'name' omitted; field 'priority' set to a non-numeric value"
+        ]
+      },
+      "steps": [
+        {
+          "step": "Record the current row count for the target database table",
+          "expectedResult": "Row count is captured for post-test comparison"
+        },
+        {
+          "step": "Send POST to the endpoint with the malformed body and valid auth token",
+          "expectedResult": "Server returns within 5 seconds with HTTP status 400 (Bad Request)"
+        },
+        {
+          "step": "Inspect the response body",
+          "expectedResult": "Response body is JSON with fields 'error' (string) and 'details' (array); 'details' contains at least one entry referencing the omitted 'name' field and one referencing the invalid 'priority' value"
+        },
+        {
+          "step": "Verify the row count for the target table is unchanged",
+          "expectedResult": "Row count matches the pre-test value, confirming no partial state mutation"
+        },
+        {
+          "step": "Verify no audit log entry was created for a successful creation",
+          "expectedResult": "Audit log contains no 'created' event for the test user within the test time window"
+        }
+      ]
+    },
+    {
+      "tc_id": "TC-SEED-004",
+      "title": "Unauthorized user is denied access to a restricted resource and the attempt is logged",
+      "type": "Negative",
+      "depth": "standard",
+      "req_type": "authentication",
+      "description": {
+        "objective": "Verify that a user without the required role is denied access to a restricted resource, receives an appropriate error response, and the denial event is captured in the audit log.",
+        "scope": ["Role-based access control on a specific resource"],
+        "assumptions": ["Resource is protected by a role check", "Audit logging is enabled for access denials"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "Test user 'qa.user@example.com' exists with role 'QA Engineer' (not 'Admin')",
+          "Restricted resource is configured to require role 'Admin'",
+          "Audit log is queryable for the test time window"
+        ],
+        "environment": [
+          "Application is reachable",
+          "Database access available for audit log verification"
+        ],
+        "equipment": [],
+        "testData": [
+          "Test user credentials",
+          "URL of the restricted resource"
+        ]
+      },
+      "steps": [
+        {
+          "step": "Sign in as the test user (non-Admin role)",
+          "expectedResult": "Sign-in succeeds; user reaches the authenticated landing page"
+        },
+        {
+          "step": "Attempt to navigate to the restricted resource URL",
+          "expectedResult": "Navigation is intercepted; user is shown a 403 / 'Access Denied' page (not a generic 404)"
+        },
+        {
+          "step": "Verify the response status code or page indicator",
+          "expectedResult": "HTTP response status is 403, OR the page displays the standard 'Access Denied' template with a request ID"
+        },
+        {
+          "step": "Query the audit log for the test user within the test time window",
+          "expectedResult": "Audit log contains one 'ACCESS_DENIED' entry with the test user's ID, the restricted resource path, and a timestamp within the last minute"
+        },
+        {
+          "step": "Sign out",
+          "expectedResult": "Session is terminated; subsequent navigation to any authenticated route returns the sign-in page"
+        }
+      ]
+    },
+    {
+      "tc_id": "TC-SEED-005",
+      "title": "Numeric input field enforces minimum and maximum bounds at edges",
+      "type": "Boundary",
+      "depth": "standard",
+      "req_type": "ui_ux",
+      "description": {
+        "objective": "Verify that a numeric input field accepts values at the documented minimum and maximum, and rejects values outside the range with appropriate error feedback.",
+        "scope": ["Single numeric input field with documented min and max"],
+        "assumptions": ["Field min is 1 and max is 100 per this exemplar (substitute actual values when applied)"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "User is signed in with permission to use the form containing the numeric field",
+          "Form is in its initial empty state"
+        ],
+        "environment": [
+          "Browser at standard test viewport"
+        ],
+        "equipment": [],
+        "testData": [
+          "Boundary values: 0 (one below min), 1 (at min), 100 (at max), 101 (one above max)"
+        ]
+      },
+      "steps": [
+        {
+          "step": "Enter value 0 (one below minimum) and attempt to submit the form",
+          "expectedResult": "Form does not submit; field-level error 'Value must be between 1 and 100' is displayed adjacent to the field"
+        },
+        {
+          "step": "Clear the field, enter value 1 (at minimum), and submit",
+          "expectedResult": "Form submits successfully; no validation error is shown for this field"
+        },
+        {
+          "step": "Return to the form, clear the field, enter value 100 (at maximum), and submit",
+          "expectedResult": "Form submits successfully; no validation error is shown for this field"
+        },
+        {
+          "step": "Return to the form, clear the field, enter value 101 (one above maximum), and submit",
+          "expectedResult": "Form does not submit; the same field-level error is displayed"
+        },
+        {
+          "step": "Clear the form to restore the initial state",
+          "expectedResult": "Field is empty; no error messages remain visible"
+        }
+      ]
+    },
+    {
+      "tc_id": "TC-SEED-006",
+      "title": "Text field enforces minimum and maximum character length at all boundaries with proper error handling",
+      "type": "Boundary",
+      "depth": "comprehensive",
+      "req_type": "ui_ux",
+      "description": {
+        "objective": "Verify that a text input field enforces both minimum and maximum character length at the boundary values, displays the correct error messages, handles whitespace-only input, and prevents typing past the maximum on both the client and server.",
+        "scope": ["Text input field with documented min and max length", "Client-side and server-side validation"],
+        "assumptions": ["Min length is 3 characters and max length is 50 characters per this exemplar"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "User is signed in with form access",
+          "Form is opened in a clean state with the field empty"
+        ],
+        "environment": [
+          "Browser at standard test viewport",
+          "Network logging available to confirm server-side rejection"
+        ],
+        "equipment": [],
+        "testData": [
+          "2-character string (below min)",
+          "3-character string (at min)",
+          "50-character string (at max)",
+          "51-character string (above max)",
+          "Whitespace-only string of valid length"
+        ]
+      },
+      "steps": [
+        {
+          "step": "Enter a 2-character value (below minimum) and attempt to submit",
+          "expectedResult": "Form rejects submission; error 'Must be at least 3 characters' is shown below the field"
+        },
+        {
+          "step": "Clear the field, enter a 3-character value (at minimum), and submit",
+          "expectedResult": "Form accepts the input; no length error shown; submission succeeds"
+        },
+        {
+          "step": "Return to a clean form, enter a 50-character value (at maximum), and submit",
+          "expectedResult": "Form accepts the input; no length error shown; submission succeeds"
+        },
+        {
+          "step": "Return to a clean form and attempt to type 51 characters into the field",
+          "expectedResult": "Field accepts only the first 50 characters; the 51st keystroke is ignored; if a character counter is present it shows '50/50'"
+        },
+        {
+          "step": "Attempt to paste a 51-character value into the field",
+          "expectedResult": "Field truncates pasted content to 50 characters OR displays error 'Maximum length is 50 characters' — behavior matches documented design"
+        },
+        {
+          "step": "Clear the field, enter 5 space characters (whitespace-only within valid length), and submit",
+          "expectedResult": "Form rejects with 'Field cannot be only whitespace' if trim validation is documented; otherwise document the actual behavior as a separate finding"
+        },
+        {
+          "step": "Bypass client-side validation (direct API call) and send a 51-character value to the server",
+          "expectedResult": "Server returns HTTP 400 with an error indicating length violation; no record is created in the data store"
+        },
+        {
+          "step": "Verify no record was persisted from the API-level rejection",
+          "expectedResult": "Data store row count for the test user is unchanged from the pre-test baseline"
+        },
+        {
+          "step": "Clear the form to restore the initial state",
+          "expectedResult": "Field is empty; no error messages or character-count warnings remain visible"
+        }
+      ]
+    },
+    {
+      "tc_id": "TC-SEED-007",
+      "title": "System handles empty input collection gracefully and returns expected empty-state response",
+      "type": "Edge Case",
+      "depth": "standard",
+      "req_type": "data_processing",
+      "description": {
+        "objective": "Verify that a feature accepting a collection of items handles an empty collection without errors, and that the response or UI clearly communicates the empty state rather than appearing broken.",
+        "scope": ["Endpoint or UI feature that processes a list of items"],
+        "assumptions": ["The feature documents that an empty collection is a valid input", "Documented behavior for empty selection is known (button disabled vs. enabled with guard)"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "User is signed in with access to the feature",
+          "No items selected for the operation"
+        ],
+        "environment": [
+          "Application reachable",
+          "Network logging available"
+        ],
+        "equipment": [],
+        "testData": [
+          "Empty list / empty selection / no items checked"
+        ]
+      },
+      "steps": [
+        {
+          "step": "Open the feature view in its initial state with no items selected",
+          "expectedResult": "Feature view displays; the action button for the bulk operation is visible and its state matches the documented behavior (disabled OR enabled with a clear indicator)"
+        },
+        {
+          "step": "If the action button is enabled, trigger the operation with no items selected",
+          "expectedResult": "System does not throw an error; user is shown a clear empty-state message such as 'No items selected — choose at least one item to continue'; no state change occurs"
+        },
+        {
+          "step": "If the operation is an API call, inspect the response",
+          "expectedResult": "Response status is 200 with a structured empty result (e.g., {items: [], count: 0}) OR 400 with a validation message — matches documented behavior, not an unhandled 500"
+        },
+        {
+          "step": "Verify no audit log entry was written for a state change",
+          "expectedResult": "Audit log contains no entry for the test user attributable to this operation in the test time window"
+        },
+        {
+          "step": "Confirm the UI returns to a usable state",
+          "expectedResult": "No frozen spinners, no stack traces, no orphaned modals; user can navigate away or retry"
+        }
+      ]
+    },
+    {
+      "tc_id": "TC-SEED-008",
+      "title": "Concurrent updates to a shared record resolve deterministically without data corruption",
+      "type": "Edge Case",
+      "depth": "comprehensive",
+      "req_type": "integration",
+      "description": {
+        "objective": "Verify that when two users update the same record simultaneously, the system applies a deterministic conflict-resolution strategy (last-write-wins, optimistic locking, or merge) and no data is silently lost or corrupted.",
+        "scope": ["Single shared record under concurrent edit", "Conflict resolution strategy"],
+        "assumptions": ["Record has at least two editable fields", "System documents its conflict-resolution strategy"]
+      },
+      "preconditions": {
+        "preconditions": [
+          "Two distinct user accounts (User A and User B) both have edit permission on the test record",
+          "Test record exists with known initial field values: field1='initial-A', field2='initial-B'",
+          "Both users can open the record edit form simultaneously"
+        ],
+        "environment": [
+          "Two browser sessions or two API clients capable of issuing simultaneous requests",
+          "Network logging available",
+          "Database access for verifying final state"
+        ],
+        "equipment": [],
+        "testData": [
+          "User A update: field1='updated-by-A'",
+          "User B update: field2='updated-by-B'"
+        ]
+      },
+      "steps": [
+        {
+          "step": "User A opens the record for editing",
+          "expectedResult": "Edit form displays with field1='initial-A' and field2='initial-B'; a version token or timestamp is captured in form state"
+        },
+        {
+          "step": "User B opens the same record for editing before User A has saved",
+          "expectedResult": "Edit form displays the same initial values; User B's session captures the same version token"
+        },
+        {
+          "step": "User A sets field1='updated-by-A' and saves",
+          "expectedResult": "User A's save succeeds; record version increments; database reflects field1='updated-by-A', field2='initial-B'"
+        },
+        {
+          "step": "User B sets field2='updated-by-B' and attempts to save with the stale version token",
+          "expectedResult": "Response matches the documented strategy: optimistic lock returns 409 Conflict with 'record was modified'; last-write-wins accepts the save; merge produces a combined record"
+        },
+        {
+          "step": "Inspect the final database row state",
+          "expectedResult": "Final state matches the documented strategy (optimistic lock: field2 remains 'initial-B'; LWW: field2='updated-by-B' and field1 may revert; merge: both updates applied)"
+        },
+        {
+          "step": "If a conflict response was returned to User B, verify the response includes the current server-side values",
+          "expectedResult": "Response body contains the current record state so User B can resolve the conflict and retry"
+        },
+        {
+          "step": "Verify the audit log contains separate entries for User A's save and User B's attempt",
+          "expectedResult": "Audit log has two entries with distinct timestamps, user IDs, and outcome statuses (success/conflict)"
+        },
+        {
+          "step": "If User B retries with the latest version token and the original field2 update, verify the retry succeeds",
+          "expectedResult": "Second save succeeds; final record reflects both User A's field1 update and User B's field2 update"
+        },
+        {
+          "step": "Restore the record to its original state (field1='initial-A', field2='initial-B')",
+          "expectedResult": "Record is reset; both users' sessions can re-run the test from a clean state"
+        }
+      ]
+    }
+  ]
+}
