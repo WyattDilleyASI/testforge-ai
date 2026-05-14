@@ -68,7 +68,10 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
   // Selection operates on the current session TCs
   const { selectedIds: selectedTcIds, toggle: toggleTcSelect, toggleAll: selectAllTcs, clear: clearTcSelection, allSelected: allTcsSelected } = useSelection(sessionTcs, tc => tc.tc_id);
 
-  // Load KB on mount
+  // Load KB on mount AND whenever the user picks a different requirement.
+  // The refetch-on-req-change keeps the auto-select effect from going stale
+  // when a KB was linked elsewhere (KbView, JAMA import, or MCP link tool)
+  // after this view first loaded.
   useEffect(() => {
     Promise.all([api.getKbSections(), api.getKbEntries()]).then(([sections, entries]) => {
       setAllKbEntries(entries);
@@ -81,7 +84,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
         })),
       })));
     }).catch(() => {});
-  }, []);
+  }, [selectedReqId]);
 
   // Pre-select tag-matched KB entries when requirement changes
   useEffect(() => {
@@ -108,7 +111,7 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
         })
         .map(sec => sec.section_id)
     ));
-  }, [selectedReqId, allKbEntries]);
+  }, [selectedReqId, allKbEntries, kbSections]);
 
   // ── AL: Fetch contextual hints when requirement changes ──
   useEffect(() => {
