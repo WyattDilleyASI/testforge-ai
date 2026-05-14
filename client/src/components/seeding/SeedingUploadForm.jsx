@@ -14,6 +14,7 @@ import { api } from "../../api";
 
 const MAX_TOTAL_CHARS = 1024 * 1024; // mirrors server-side cap (text only)
 const ACCEPTED_EXTENSIONS = ".txt,.md,.markdown,.html,.htm,.docx,.png,.jpg,.jpeg,.webp";
+const MAX_URLS = 20; // mirrors server-side MAX_URLS_PER_JOB
 
 const isImageFile = (file) => {
   if (!file) return false;
@@ -41,6 +42,7 @@ export const SeedingUploadForm = ({ onCancel, onCreated }) => {
   const [tab, setTab] = useState("paste");
   const [content, setContent] = useState("");
   const [files, setFiles] = useState([]);
+  const [urls, setUrls] = useState("");
   const [sectionTree, setSectionTree] = useState([]);
   const [defaultSubsectionId, setDefaultSubsectionId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -67,8 +69,21 @@ export const SeedingUploadForm = ({ onCancel, onCreated }) => {
     .reduce((sum, f) => sum + f.size, 0);
   const imageCount = files.filter(isImageFile).length;
   const overLimit = totalTextChars > MAX_TOTAL_CHARS;
-  const canSubmit = !submitting && !overLimit &&
-    (content.trim().length > 0 || files.length > 0);
+
+  // URL list: one per line, stripped + non-empty. Validity is a syntactic
+  // prefix check only — the server does real DNS / SSRF / content-type checks.
+  const urlLines = urls
+    .split(/[\r\n]+/)
+    .map(u => u.trim())
+    .filter(u => u.length > 0);
+  const validUrls = urlLines.filter(u => /^https?:\/\//i.test(u));
+  const invalidUrlCount = urlLines.length - validUrls.length;
+  const overUrlLimit = validUrls.length > MAX_URLS;
+
+  const canSubmit = !submitting && !overLimit && !overUrlLimit &&
+    (content.trim().length > 0 ||
+     files.length > 0 ||
+     validUrls.length > 0);
 
   const handleFiles = (incoming) => {
     const added = Array.from(incoming || []);
@@ -84,8 +99,9 @@ export const SeedingUploadForm = ({ onCancel, onCreated }) => {
     setError(null);
     try {
       const result = await seedingApi.createJob({
-        content: tab === "paste" ? content : undefined,
-        files:   tab === "upload" ? files : undefined,
+        content: tab === "paste"  ? content   : undefined,
+        files:   tab === "upload" ? files     : undefined,
+        urls:    tab === "urls"   ? validUrls : undefined,
         defaultSubsectionId: defaultSubsectionId || undefined,
       });
       onCreated(result.job_id);
@@ -125,6 +141,9 @@ export const SeedingUploadForm = ({ onCancel, onCreated }) => {
           </TabButton>
           <TabButton active={tab === "upload"} onClick={() => setTab("upload")} COLORS={COLORS}>
             Upload files {files.length > 0 && `(${files.length})`}
+          </TabButton>
+          <TabButton active={tab === "urls"} onClick={() => setTab("urls")} COLORS={COLORS}>
+            Add URLs {validUrls.length > 0 && `(${validUrls.length})`}
           </TabButton>
         </div>
 
@@ -226,6 +245,44 @@ Claude will extract candidate KB entries and cross-reference them against your e
                   })}
                 </div>
               )}
+            </>
+          )}
+
+          {tab === "urls" && (
+            <>
+              <SectionLabel COLORS={COLORS}>URLs to fetch (one per line)</SectionLabel>
+              <textarea
+                value={urls}
+                onChange={(e) => setUrls(e.target.value)}
+                placeholder={`https://confluence.example.com/x/AbCdEf
+https://docs.example.com/api/auth
+https://wiki.example.com/known-issues
+
+URLs are fetched server-side. Public HTML/text pages only — no PDFs, no authenticated pages, no internal addresses.`}
+                disabled={submitting}
+                style={{
+                  width: "100%", minHeight: 220, fontSize: 13, lineHeight: 1.55,
+                  fontFamily: mono, padding: 12, background: COLORS.surface,
+                  color: COLORS.text, border: `1px solid ${COLORS.border}`,
+                  borderRadius: 6, resize: "vertical", boxSizing: "border-box", outline: "none",
+                }}
+              />
+              <div style={{
+                marginTop: 6, fontSize: 11, fontFamily: mono,
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
+              }}>
+                <div style={{ color: COLORS.textMuted }}>
+                  {invalidUrlCount > 0 && (
+                    <span style={{ color: "#E2A04B" }}>
+                      {invalidUrlCount} line{invalidUrlCount === 1 ? "" : "s"} without http(s):// — will be skipped
+                    </span>
+                  )}
+                </div>
+                <div style={{ color: overUrlLimit ? "#E24B4A" : COLORS.textMuted }}>
+                  {validUrls.length} of {MAX_URLS} URLs
+                  {overUrlLimit && " — exceeds limit"}
+                </div>
+              </div>
             </>
           )}
         </div>

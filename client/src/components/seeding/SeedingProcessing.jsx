@@ -9,6 +9,7 @@
 
 import { useTheme, mono } from "../../theme";
 import { Card, Button } from "../shared";
+import { UrlErrorsBanner } from "./UrlErrorsBanner";
 
 export const SeedingProcessing = ({ job, onCancel, onBack }) => {
   const COLORS = useTheme();
@@ -65,6 +66,8 @@ export const SeedingProcessing = ({ job, onCancel, onBack }) => {
         </div>
         <Button onClick={onCancel}>Cancel job</Button>
       </div>
+
+      <UrlErrorsBanner job={job} />
 
       <Card style={{ padding: 20, marginBottom: 16 }}>
         <SectionLabel COLORS={COLORS}>Input summary</SectionLabel>

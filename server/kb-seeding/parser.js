@@ -354,4 +354,5 @@ function splitByWords(text, maxChars) {
 module.exports = {
   parseInputFile,
   chunkText,
+  htmlToText,
 };

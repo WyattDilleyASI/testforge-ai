@@ -12,6 +12,7 @@ import { useTheme, mono } from "../../theme";
 import { Card, Button } from "../shared";
 import { seedingApi, KB_TYPE_CODES, KB_TYPE_COLORS } from "../../api-seeding";
 import { CandidateCard } from "./CandidateCard";
+import { UrlErrorsBanner } from "./UrlErrorsBanner";
 
 const KB_TYPES = [
   "Defect History",
@@ -281,6 +282,8 @@ export const SeedingReview = ({ job, onRefreshJob, onBack }) => {
           <div style={{ fontSize: 12, color: "#E24B4A" }}>{error}</div>
         </Card>
       )}
+
+      <UrlErrorsBanner job={job} />
 
       {/* Filter tabs */}
       <Card style={{ padding: "8px 12px", marginBottom: 16 }}>
