@@ -63,8 +63,20 @@ function buildBudgetWarning(budgetCheck) {
 }
 
 // GET /api/testcases
+//
+// Seeded baseline TCs (is_seeded=1) are filtered out by default so they don't
+// pollute the Library, Session views, Coverage Dashboard, or SysML overlay.
+// Admins can pass ?include_seeded=true to bypass the filter when inspecting
+// baseline content directly.
 router.get("/", requireMobileAuth, (req, res) => {
-  const rows = getTcDb().prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+  const role = req.mobileUser?.role || req.session?.role;
+  const includeSeeded = req.query.include_seeded === "true" && role === "Admin";
+
+  const query = includeSeeded
+    ? "SELECT * FROM test_cases ORDER BY rowid"
+    : "SELECT * FROM test_cases WHERE is_seeded = 0 OR is_seeded IS NULL ORDER BY rowid";
+
+  const rows = getTcDb().prepare(query).all();
   res.json(rows.map(tc => ({
     ...tc,
     linked_req_ids: JSON.parse(tc.linked_req_ids || "[]"),
@@ -913,7 +925,9 @@ router.get("/export/xlsx", requireAuth, (req, res) => {
     const placeholders = ids.map(() => "?").join(",");
     testCases = db.prepare(`SELECT * FROM test_cases WHERE tc_id IN (${placeholders}) ORDER BY rowid`).all(...ids);
   } else {
-    testCases = db.prepare("SELECT * FROM test_cases ORDER BY rowid").all();
+    // Exclude seeded baseline TCs from "export all" — they're internal training
+    // content, not deliverable test cases. Selected-ID export above is unaffected.
+    testCases = db.prepare("SELECT * FROM test_cases WHERE is_seeded = 0 OR is_seeded IS NULL ORDER BY rowid").all();
   }
   const requirements = getReqDb().prepare("SELECT * FROM requirements").all();
   const reqMap = {};
