@@ -30,6 +30,7 @@ const { requireAuth, requireRole } = require("../auth");
 
 const { parseInputFile, chunkText } = require("../kb-seeding/parser");
 const { getBatchStatus } = require("../kb-seeding/batch");
+const { fetchUrlAsText } = require("../kb-seeding/url-fetch");
 const {
   submitExtractionBatch,
   ingestExtractionResults,
@@ -47,6 +48,7 @@ const router = express.Router();
 const MAX_TOTAL_CHARS = 1024 * 1024;  // 1MB extracted text per job
 const CHUNK_CHARS = 120000;           // ~30K input tokens per extraction chunk
 const MAX_FILE_SIZE = 10 * 1024 * 1024;  // 10 MB — accommodates images
+const MAX_URLS_PER_JOB = 20;          // hard cap to bound POST handler latency
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -334,8 +336,69 @@ router.post(
         }
       }
 
+      // ─── URL handling ────────────────────────────────────────────────
+      // Accept either repeated form fields (urls=a&urls=b) or a single
+      // newline-separated string. Per-URL fetch failures are non-fatal —
+      // successful URLs proceed; failures are returned to the client.
+      let urlsList = [];
+      if (Array.isArray(req.body.urls)) {
+        urlsList = req.body.urls;
+      } else if (typeof req.body.urls === "string" && req.body.urls.trim()) {
+        urlsList = req.body.urls.split(/[\r\n]+/);
+      }
+      urlsList = urlsList
+        .map(u => (typeof u === "string" ? u.trim() : ""))
+        .filter(u => u.length > 0);
+
+      if (urlsList.length > MAX_URLS_PER_JOB) {
+        return res.status(400).json({
+          error: `Too many URLs (${urlsList.length}). Maximum is ${MAX_URLS_PER_JOB} per job.`,
+        });
+      }
+
+      const urlErrors = [];
+      if (urlsList.length > 0) {
+        const fetchResults = await Promise.allSettled(
+          urlsList.map(u => fetchUrlAsText(u))
+        );
+        for (let i = 0; i < fetchResults.length; i++) {
+          const r = fetchResults[i];
+          if (r.status === "fulfilled") {
+            const fetched = r.value;
+            if (fetched.text && fetched.text.trim()) {
+              textInputs.push({
+                source: "url",
+                name: fetched.title
+                  ? `${fetched.title} (${fetched.url})`
+                  : fetched.url,
+                text: fetched.text,
+                source_type: "url",
+                source_url: fetched.url,
+              });
+            } else {
+              urlErrors.push({
+                url: urlsList[i],
+                error: "Page contained no extractable text",
+              });
+            }
+          } else {
+            urlErrors.push({
+              url: urlsList[i],
+              error: r.reason?.message || String(r.reason),
+            });
+          }
+        }
+      }
+
       if (textInputs.length === 0 && imageInputs.length === 0) {
-        return res.status(400).json({ error: "No content provided" });
+        const message = urlsList.length > 0 &&
+                        urlErrors.length === urlsList.length
+          ? "All URLs failed to fetch"
+          : "No content provided";
+        return res.status(400).json({
+          error: message,
+          url_errors: urlErrors.length > 0 ? urlErrors : undefined,
+        });
       }
 
       // Text size cap (images don't contribute to this)
@@ -354,11 +417,14 @@ router.post(
           ...(imageInputs.length > 0 ? ["image"] : []),
         ]),
       ];
+      const urlSuccessCount = textInputs.filter(i => i.source_type === "url").length;
       const inputSummary = {
         file_count: req.files ? req.files.length : 0,
         pasted_chars: content ? content.length : 0,
         total_chars: totalChars,
         image_count: imageInputs.length,
+        url_count: urlSuccessCount,
+        url_errors: urlErrors.length > 0 ? urlErrors : undefined,
         source_types: sourceTypes,
       };
 
@@ -412,7 +478,7 @@ router.post(
               text: chunk,
               source_name: input.name,
               chunk_index: idx,
-              source_url: null,
+              source_url: input.source_url || null,
             });
           });
         }
@@ -454,7 +520,8 @@ router.post(
         "KB_SEEDING_JOB_CREATED",
         `Created seeding job ${jobId} ` +
           `(${chunkCount} text chunks, ${totalChars} chars, ` +
-          `${imageInputs.length} images → ${imageResult.candidates} candidates)`
+          `${imageInputs.length} images → ${imageResult.candidates} candidates, ` +
+          `${urlSuccessCount} URLs fetched, ${urlErrors.length} URL errors)`
       );
 
       // Read final status — image-only jobs may have advanced past 'extracting'
@@ -469,6 +536,8 @@ router.post(
         total_chars: totalChars,
         image_candidates: imageResult.candidates,
         image_errors: imageResult.errors,
+        url_fetches: urlSuccessCount,
+        url_errors: urlErrors,
       });
     } catch (err) {
       console.error("Seeding job creation error:", err);

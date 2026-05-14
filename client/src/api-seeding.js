@@ -64,8 +64,8 @@ export const seedingApi = {
   // ─── Job management ──────────────────────────────────────────────────────
 
   // POST /jobs  (multipart, async — returns 202 immediately)
-  // params: { content?: string, files?: File[], defaultSubsectionId?: string }
-  async createJob({ content, files, defaultSubsectionId } = {}) {
+  // params: { content?: string, files?: File[], urls?: string[], defaultSubsectionId?: string }
+  async createJob({ content, files, urls, defaultSubsectionId } = {}) {
     const formData = new FormData();
     if (content && content.trim()) formData.append("content", content);
     if (defaultSubsectionId) {
@@ -73,6 +73,9 @@ export const seedingApi = {
     }
     for (const file of files || []) {
       formData.append("files", file, file.name);
+    }
+    for (const url of urls || []) {
+      formData.append("urls", url);
     }
     return multipartRequest("/jobs", formData);
   },
