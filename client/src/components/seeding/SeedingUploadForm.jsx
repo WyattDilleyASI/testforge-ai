@@ -10,9 +10,6 @@ import { useState, useEffect, useRef } from "react";
 import { useTheme, mono } from "../../theme";
 import { Card, Button } from "../shared";
 import { seedingApi } from "../../api-seeding";
-
-// If your existing api.js exposes a different name for fetching KB
-// subsections, swap this import (or pass subsections in as a prop).
 import { api } from "../../api";
 
 const MAX_TOTAL_CHARS = 1024 * 1024; // mirrors server-side cap (text only)
@@ -44,28 +41,22 @@ export const SeedingUploadForm = ({ onCancel, onCreated }) => {
   const [tab, setTab] = useState("paste");
   const [content, setContent] = useState("");
   const [files, setFiles] = useState([]);
-  const [subsections, setSubsections] = useState([]);
+  const [sectionTree, setSectionTree] = useState([]);
   const [defaultSubsectionId, setDefaultSubsectionId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (typeof api?.getKbSubsections === "function") {
-      api.getKbSubsections().then(setSubsections).catch(() => setSubsections([]));
-    } else if (typeof api?.getKbSections === "function") {
-      api.getKbSections()
-        .then((sections) => {
-          const flat = [];
-          for (const s of sections || []) {
-            for (const sub of s.subsections || []) {
-              flat.push({ ...sub, section_title: s.title });
-            }
-          }
-          setSubsections(flat);
-        })
-        .catch(() => setSubsections([]));
-    }
+    api.getKbSections()
+      .then((sections) => {
+        // Keep only sections that have at least one subsection — bare
+        // sections aren't valid destinations (entries must live in a
+        // subsection or in Uncategorized, which "— No default —" covers).
+        const tree = (sections || []).filter(s => (s.subsections || []).length > 0);
+        setSectionTree(tree);
+      })
+      .catch(() => setSectionTree([]));
   }, []);
 
   // Text-like files contribute to the text char budget; images don't
@@ -257,10 +248,14 @@ Claude will extract candidate KB entries and cross-reference them against your e
           }}
         >
           <option value="">— No default —</option>
-          {subsections.map((sub) => (
-            <option key={sub.subsection_id} value={sub.subsection_id}>
-              {sub.section_title ? `${sub.section_title} › ` : ""}{sub.title}
-            </option>
+          {sectionTree.map((sec) => (
+            <optgroup key={sec.section_id} label={sec.name}>
+              {sec.subsections.map((sub) => (
+                <option key={sub.subsection_id} value={sub.subsection_id}>
+                  {sub.name}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </Card>
