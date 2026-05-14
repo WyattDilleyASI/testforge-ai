@@ -441,13 +441,7 @@ const AboutPanel = () => {
       role: "Systems Engineer",
       detail: "SysML architect, Jama requirement guide",
       icon: "◈",
-    },
-    {
-      name: "Mike Wardrop",
-      role: "Github Guru",
-      detail: "Github merge conflict resolutionist, PDP consultant",
-      icon: "◈",
-    },    
+    },   
     {
       name: "Claude — Anthropic",
       role: "AI Development Partner",
