@@ -740,6 +740,99 @@ IMPORTANT: You must call get_requirement first to understand the requirement and
   );
 
   // ════════════════════════════════════════════════════════════════════════
+  // TOOL: link_kb_to_requirement
+  //
+  // Attaches a KB entry to a requirement so the KB is auto-included as
+  // context whenever test cases are generated for that requirement.
+  //
+  // Storage note: the linkage lives on the KB side, in kb_entries.related_reqs
+  // (an array of req_ids). This tool is additive — it appends to the existing
+  // array rather than replacing it, so Claude can attach KBs one-at-a-time
+  // without fetching the current list first. For bulk/exact replacement, use
+  // update_kb_entry's related_reqs field.
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "link_kb_to_requirement",
+    "Attach a knowledge base entry to a requirement so it's auto-included as context when generating test cases for that requirement. Additive: existing links on the KB are preserved. Use this when you identify (e.g. during KB review) that a specific KB should have informed a specific requirement.",
+    {
+      req_id: z.string().describe("The requirement ID, e.g. RS-001"),
+      kb_id: z.string().describe("The KB entry ID, e.g. KB-E001"),
+    },
+    async ({ req_id, kb_id }) => {
+      const reqDb = getReqDb();
+      const kbDb = getKbDb();
+
+      const req = reqDb.prepare("SELECT req_id, title FROM requirements WHERE req_id = ?").get(req_id);
+      if (!req) {
+        return { content: [{ type: "text", text: `Requirement '${req_id}' not found.` }] };
+      }
+
+      const kb = kbDb.prepare("SELECT kb_id, title, related_reqs FROM kb_entries WHERE kb_id = ?").get(kb_id);
+      if (!kb) {
+        return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
+      }
+
+      let existing;
+      try { existing = JSON.parse(kb.related_reqs || "[]"); } catch { existing = []; }
+      if (!Array.isArray(existing)) existing = [];
+
+      if (existing.includes(req_id)) {
+        return { content: [{ type: "text", text: `${kb_id} is already linked to ${req_id}.` }] };
+      }
+
+      existing.push(req_id);
+      kbDb.prepare("UPDATE kb_entries SET related_reqs = ? WHERE kb_id = ?")
+        .run(JSON.stringify(existing), kb_id);
+
+      logAudit(user.name, "KB_LINKED_MCP", `Linked ${kb_id} → ${req_id} (via MCP)`);
+
+      return {
+        content: [{ type: "text", text: `✓ Linked ${kb_id} ("${kb.title}") to ${req_id} ("${req.title}"). It will now be included in future test case generations for that requirement.` }],
+      };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
+  // TOOL: unlink_kb_from_requirement
+  //
+  // Removes a single KB↔requirement link without touching other links.
+  // Symmetric counterpart to link_kb_to_requirement.
+  // ════════════════════════════════════════════════════════════════════════
+
+  server.tool(
+    "unlink_kb_from_requirement",
+    "Remove the link between a knowledge base entry and a requirement. Only removes this one link — other links on the KB are preserved. Use this if a KB was attached in error or is no longer relevant.",
+    {
+      req_id: z.string().describe("The requirement ID, e.g. RS-001"),
+      kb_id: z.string().describe("The KB entry ID, e.g. KB-E001"),
+    },
+    async ({ req_id, kb_id }) => {
+      const kbDb = getKbDb();
+      const kb = kbDb.prepare("SELECT kb_id, title, related_reqs FROM kb_entries WHERE kb_id = ?").get(kb_id);
+      if (!kb) {
+        return { content: [{ type: "text", text: `KB entry '${kb_id}' not found.` }] };
+      }
+
+      let existing;
+      try { existing = JSON.parse(kb.related_reqs || "[]"); } catch { existing = []; }
+      if (!Array.isArray(existing) || !existing.includes(req_id)) {
+        return { content: [{ type: "text", text: `${kb_id} is not currently linked to ${req_id}.` }] };
+      }
+
+      const updated = existing.filter(r => r !== req_id);
+      kbDb.prepare("UPDATE kb_entries SET related_reqs = ? WHERE kb_id = ?")
+        .run(JSON.stringify(updated), kb_id);
+
+      logAudit(user.name, "KB_UNLINKED_MCP", `Unlinked ${kb_id} ↛ ${req_id} (via MCP)`);
+
+      return {
+        content: [{ type: "text", text: `✓ Unlinked ${kb_id} from ${req_id}.` }],
+      };
+    }
+  );
+
+  // ════════════════════════════════════════════════════════════════════════
   // TOOL: get_coverage_summary
   // ════════════════════════════════════════════════════════════════════════
 
