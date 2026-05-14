@@ -90,17 +90,29 @@ export const TestCaseView = ({ requirements, testCases, refresh, initialReqId })
   useEffect(() => {
     if (!selectedReqId) { setKbSelected(new Set()); return; }
     const req = requirements.find(r => r.req_id === selectedReqId);
-    if (!req) return;
+    if (!req) {
+      console.warn("[KB preselect] requirement not found in props:", selectedReqId, "— available:", requirements.length);
+      return;
+    }
     const reqTags = Array.isArray(req.tags) ? req.tags : JSON.parse(req.tags || "[]");
-    const matched = new Set(
-      allKbEntries
-        .filter(kb => {
-          const kbTags = Array.isArray(kb.tags) ? kb.tags : JSON.parse(kb.tags || "[]");
-          const kbRelReqs = Array.isArray(kb.related_reqs) ? kb.related_reqs : JSON.parse(kb.related_reqs || "[]");
-          return kbTags.some(t => reqTags.includes(t)) || kbRelReqs.includes(selectedReqId);
-        })
-        .map(kb => kb.kb_id)
-    );
+    // Diagnostic: surface why each KB matched or didn't, so a missed
+    // preselection can be traced to a tag/related_reqs format mismatch.
+    const debug = [];
+    const matchedArr = allKbEntries.filter(kb => {
+      const kbTags = Array.isArray(kb.tags) ? kb.tags : JSON.parse(kb.tags || "[]");
+      const kbRelReqs = Array.isArray(kb.related_reqs) ? kb.related_reqs : JSON.parse(kb.related_reqs || "[]");
+      const tagMatch = kbTags.some(t => reqTags.includes(t));
+      const reqMatch = kbRelReqs.includes(selectedReqId);
+      if (tagMatch || reqMatch) {
+        debug.push({ kb_id: kb.kb_id, tagMatch, reqMatch, kbTags, kbRelReqs });
+      } else if (kbRelReqs.length > 0) {
+        // Useful when the user expected a match — shows the actual stored values
+        debug.push({ kb_id: kb.kb_id, tagMatch: false, reqMatch: false, kbRelReqs, expected: selectedReqId });
+      }
+      return tagMatch || reqMatch;
+    });
+    console.log("[KB preselect]", { selectedReqId, reqTags, totalKbs: allKbEntries.length, matched: matchedArr.length, details: debug });
+    const matched = new Set(matchedArr.map(kb => kb.kb_id));
     setKbSelected(matched);
     // Auto-expand sections that have matched entries
     setKbExpanded(new Set(

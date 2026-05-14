@@ -118,10 +118,16 @@ async function createMcpServer(user) {
         return { content: [{ type: "text", text: `Requirement '${req_id}' not found.` }] };
       }
 
+      // KB↔Requirement linkage canonically lives in kb_entries.related_reqs.
+      // We also still match KBs whose tags include the req_id literally (legacy
+      // convention, pre-migration data) so this tool keeps working on un-
+      // migrated databases.
       const allKb = getKbDb().prepare("SELECT * FROM kb_entries").all();
       const relatedKb = allKb.filter(kb => {
-        const tags = JSON.parse(kb.tags || "[]");
-        return tags.includes(req_id);
+        let related; try { related = JSON.parse(kb.related_reqs || "[]"); } catch { related = []; }
+        let tags; try { tags = JSON.parse(kb.tags || "[]"); } catch { tags = []; }
+        return (Array.isArray(related) && related.includes(req_id))
+          || (Array.isArray(tags) && tags.includes(req_id));
       });
 
       const allTcs = getTcDb().prepare("SELECT tc_id, title, status, type, description FROM test_cases").all();

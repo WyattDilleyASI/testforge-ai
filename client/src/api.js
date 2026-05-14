@@ -137,6 +137,7 @@ export const api = {
   pinKbEntry: (kbId) => request(`/kb/${kbId}/pin`, { method: "PUT" }),
   deleteKbEntries: (kbIds) => request("/kb", { method: "DELETE", body: { kbIds } }),
   clearAllKb: () => request("/kb/all", { method: "DELETE" }),
+  migrateKbTagsToRelatedReqs: () => request("/kb/migrate-req-tags", { method: "POST" }),
 
   // Product Context
   getProductContext: () => request("/product-context"),
