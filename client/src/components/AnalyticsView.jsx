@@ -48,6 +48,7 @@ export const AnalyticsView = ({ currentUser }) => {
   // Rules state
   const [rules, setRules] = useState([]);
   const [rulesMeta, setRulesMeta] = useState(null);
+  const [ruleImpacts, setRuleImpacts] = useState({ impacts: [], min_after_sessions: 10 });
   const [showAddRule, setShowAddRule] = useState(false);
   const [newRule, setNewRule] = useState({ ruleText: "", category: "general", scope: "all" });
   const [editingRule, setEditingRule] = useState(null);
@@ -102,9 +103,14 @@ export const AnalyticsView = ({ currentUser }) => {
   const loadRules = useCallback(async () => {
     if (!isManager) return;
     try {
-      const [r, m] = await Promise.all([api.getAnalyticsRules(), api.getRulesMetadata()]);
+      const [r, m, impacts] = await Promise.all([
+        api.getAnalyticsRules(),
+        api.getRulesMetadata(),
+        api.getRuleImpacts().catch(() => ({ impacts: [], min_after_sessions: 10 })),
+      ]);
       setRules(r);
       setRulesMeta(m);
+      setRuleImpacts(impacts);
     } catch (e) { console.error("Rules load error:", e); }
   }, [isManager]);
 
@@ -715,11 +721,15 @@ export const AnalyticsView = ({ currentUser }) => {
 
   const renderRules = () => (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div style={{ fontSize: 12, color: COLORS.textMuted, fontFamily: mono }}>{rules.length} / {rulesMeta?.max_rules || 25} rules</div>
         <Button small onClick={() => { setShowAddRule(!showAddRule); setEditingRule(null); setRuleError(""); }}>
           {showAddRule ? "Cancel" : "+ Add Rule"}
         </Button>
+      </div>
+      {/* Impact disclaimer — keep honest about what the impact badge means. */}
+      <div style={{ marginBottom: 16, padding: "8px 12px", borderRadius: 6, background: COLORS.surface, border: `1px solid ${COLORS.border}`, fontSize: 11, color: COLORS.textMuted, lineHeight: 1.5 }}>
+        <strong style={{ color: COLORS.textBright }}>Note on impact:</strong> the green/red <em>edit-free</em> badge measures the share of approvals that needed no human edits, before vs. after each rule's creation date. This is the signal the Adaptive Learning Engine actually tries to move — higher = AI is generating TCs that reviewers accept without changes. <strong>Rejections are deliberately excluded</strong> because they're often noise (e.g. "too many TCs generated"). It's <strong>correlation, not causation</strong> — KB edits, requirement churn, model changes, and other rules created near the same time can confound the signal. Rules with fewer than {ruleImpacts.min_after_sessions} post-creation approval events are marked <em>insufficient data</em>.
       </div>
 
       {ruleError && <div style={{ fontSize: 12, color: COLORS.red, marginBottom: 12 }}>{ruleError}</div>}
@@ -767,12 +777,36 @@ export const AnalyticsView = ({ currentUser }) => {
                       <Badge color="purple">{rule.category}</Badge>
                       {rule.scope !== "all" && <Badge color="amber">{rule.scope}</Badge>}
                       {rule.model_version === "baseline-v1" && <Badge color="textMuted">SEEDED</Badge>}
+                      {(() => {
+                        const imp = ruleImpacts.impacts.find(i => i.rule_id === rule.rule_id);
+                        if (!imp) return null;
+                        if (imp.insufficient_data) {
+                          return <Badge color="textMuted" title={imp.notes.join(" ")}>impact: insufficient data</Badge>;
+                        }
+                        const d = imp.delta_edit_free_rate;
+                        if (d === null) return <Badge color="textMuted">impact: —</Badge>;
+                        const pct = Math.round(d * 100);
+                        const color = pct >= 5 ? "green" : pct <= -5 ? "red" : "textMuted";
+                        const sign = pct > 0 ? "+" : "";
+                        const fmt = (rate) => rate !== null ? (rate * 100).toFixed(1) + "%" : "—";
+                        return (
+                          <Badge color={color} title={`Edit-free rate before rule: ${fmt(imp.before.edit_free_rate)} (${imp.before.unchanged}/${imp.before.total} approvals were unchanged) → after: ${fmt(imp.after.edit_free_rate)} (${imp.after.unchanged}/${imp.after.total} unchanged). Correlation only; not proof of causation.`}>
+                            edit-free: {sign}{pct}%
+                          </Badge>
+                        );
+                      })()}
                     </div>
                     <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6 }}>{rule.rule_text}</div>
-                    <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 10, fontFamily: mono, color: COLORS.textMuted }}>
+                    <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 10, fontFamily: mono, color: COLORS.textMuted, flexWrap: "wrap" }}>
                       <span>confidence: {rule.effective_confidence?.toFixed(3) ?? "—"}</span>
                       <span>observations: {rule.observation_count}</span>
                       <span>reinforced: {rule.last_reinforced_at?.slice(0, 10)}</span>
+                      {(() => {
+                        const imp = ruleImpacts.impacts.find(i => i.rule_id === rule.rule_id);
+                        if (!imp) return null;
+                        const fmt = (rate) => rate !== null ? (rate * 100).toFixed(0) + "%" : "—";
+                        return <span>edit-free before: {fmt(imp.before.edit_free_rate)} ({imp.before.unchanged}/{imp.before.total}) · after: {fmt(imp.after.edit_free_rate)} ({imp.after.unchanged}/{imp.after.total})</span>;
+                      })()}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>

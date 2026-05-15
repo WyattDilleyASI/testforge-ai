@@ -126,6 +126,21 @@ router.get("/rules", requireRole("Admin", "QA Manager"), (req, res) => {
   }
 });
 
+// GET /api/analytics/rules/impact
+// Returns per-rule correlation impact (before vs after the rule's created_at,
+// approval-rate-based). See server/al/analytics.js for caveats. Manager only
+// since rule curation is their responsibility.
+router.get("/rules/impact", requireRole("Admin", "QA Manager"), (req, res) => {
+  try {
+    res.json({
+      min_after_sessions: al.RULE_IMPACT_MIN_AFTER,
+      impacts: al.getAllRuleImpacts(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/analytics/rules/active
 // Returns only active rules above the confidence threshold.
 // Available to all auth users — useful for "what rules are affecting my generations?"

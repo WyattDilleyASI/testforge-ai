@@ -376,6 +376,133 @@ function getUnprocessedEventIds(limit = 500) {
     .map(r => r.id);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// RULE IMPACT MEASUREMENT
+//
+// Primary metric: edit-free rate = approved_unchanged / (approved_unchanged
+// + approved_with_edits). This is the signal the Adaptive Learning Engine
+// is actually trying to move — the AI should generate TCs that humans
+// approve WITHOUT having to change them. Higher edit-free rate after a
+// rule was created = the rule looks like it helped.
+//
+// Rejections are deliberately excluded from the primary metric. They're
+// noisy because TCs frequently get rejected for "too many generated for
+// one requirement" rather than for quality issues. Mixing them in would
+// blur the signal we actually care about.
+//
+// Honest take: this is correlation, not causation. Splitting feedback
+// events around a rule's created_at can be confounded by KB edits,
+// requirement churn, model drift, and other rules created near the same
+// time. The numbers are directional, not proof.
+//
+// Computation per rule:
+//   1. Take the rule's created_at timestamp.
+//   2. Pull every feedback_event with event_type IN ('approved_unchanged',
+//      'approved_with_edits') and bucket by created_at < rule.created_at
+//      vs >=.
+//      (v1 does NOT filter by scope — every rule is measured against ALL
+//      approvals. Off-scope events dilute the signal for scoped rules.
+//      Scope-aware filtering deferred until generation_sessions records
+//      req_type.)
+//   3. For each bucket: count unchanged + edited approvals.
+//   4. edit_free_rate = unchanged / (unchanged + edited)
+//   5. Delta = after.edit_free_rate − before.edit_free_rate
+//
+// Reliability flags:
+//   - MIN_AFTER_APPROVALS guard: if fewer than N post-rule approval events
+//     exist, return insufficient_data: true so the UI shows a neutral
+//     badge instead of a misleading number.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MIN_AFTER_APPROVALS = 10;
+
+function _approvalBucketsForRule(createdAt) {
+  // SQLite ISO-8601 timestamps support lexicographic comparison.
+  // One query, conditional sums for before vs after buckets.
+  const row = getTcDb().prepare(`
+    SELECT
+      SUM(CASE WHEN created_at <  ? AND event_type = 'approved_unchanged'  THEN 1 ELSE 0 END) AS before_unchanged,
+      SUM(CASE WHEN created_at <  ? AND event_type = 'approved_with_edits' THEN 1 ELSE 0 END) AS before_edited,
+      SUM(CASE WHEN created_at >= ? AND event_type = 'approved_unchanged'  THEN 1 ELSE 0 END) AS after_unchanged,
+      SUM(CASE WHEN created_at >= ? AND event_type = 'approved_with_edits' THEN 1 ELSE 0 END) AS after_edited
+    FROM feedback_events
+    WHERE event_type IN ('approved_unchanged', 'approved_with_edits')
+  `).get(createdAt, createdAt, createdAt, createdAt) || {};
+
+  const editFreeRate = (unchanged, edited) => {
+    const total = (unchanged || 0) + (edited || 0);
+    return total === 0 ? null : (unchanged || 0) / total;
+  };
+
+  const before = {
+    unchanged: row.before_unchanged || 0,
+    edited: row.before_edited || 0,
+    total: (row.before_unchanged || 0) + (row.before_edited || 0),
+    edit_free_rate: editFreeRate(row.before_unchanged, row.before_edited),
+  };
+  const after = {
+    unchanged: row.after_unchanged || 0,
+    edited: row.after_edited || 0,
+    total: (row.after_unchanged || 0) + (row.after_edited || 0),
+    edit_free_rate: editFreeRate(row.after_unchanged, row.after_edited),
+  };
+  return { before, after };
+}
+
+/**
+ * Compute impact for a single rule. Returns null if rule not found.
+ *
+ * @param {string} ruleId
+ * @returns {object|null} {
+ *   rule_id, created_at,
+ *   before:  { unchanged, edited, total, edit_free_rate },
+ *   after:   { unchanged, edited, total, edit_free_rate },
+ *   delta_edit_free_rate: number|null,
+ *   insufficient_data: boolean,
+ *   notes: string[]
+ * }
+ */
+function getRuleImpact(ruleId) {
+  const rule = getCoreDb()
+    .prepare("SELECT rule_id, created_at FROM adaptive_rules WHERE rule_id = ?")
+    .get(ruleId);
+  if (!rule) return null;
+
+  const { before, after } = _approvalBucketsForRule(rule.created_at);
+  const delta = (before.edit_free_rate !== null && after.edit_free_rate !== null)
+    ? after.edit_free_rate - before.edit_free_rate
+    : null;
+
+  const notes = [];
+  if (before.total === 0) notes.push("No approval events existed before this rule was created.");
+  if (after.total < MIN_AFTER_APPROVALS) notes.push(`Only ${after.total} approval event(s) since rule creation — needs at least ${MIN_AFTER_APPROVALS} for a trusted reading.`);
+
+  return {
+    rule_id: rule.rule_id,
+    created_at: rule.created_at,
+    before,
+    after,
+    delta_edit_free_rate: delta,
+    insufficient_data: after.total < MIN_AFTER_APPROVALS,
+    notes,
+  };
+}
+
+/**
+ * Compute impact for every rule. Returns array (one entry per rule).
+ *
+ * Implementation note: each rule does its own bucketed COUNT against
+ * feedback_events. With the 25-rule cap and an index on
+ * feedback_events(event_type), this is fine up to high thousands of
+ * events. Batch if it ever becomes a problem.
+ */
+function getAllRuleImpacts() {
+  const rules = getCoreDb()
+    .prepare("SELECT rule_id, created_at FROM adaptive_rules ORDER BY created_at DESC")
+    .all();
+  return rules.map(r => getRuleImpact(r.rule_id)).filter(Boolean);
+}
+
 module.exports = {
   // Session tracking
   nextSessionId,
@@ -395,4 +522,9 @@ module.exports = {
   getUnprocessedFeedbackStats,
   markFeedbackProcessed,
   getUnprocessedEventIds,
+
+  // Rule impact measurement
+  getRuleImpact,
+  getAllRuleImpacts,
+  MIN_AFTER_APPROVALS,
 };

@@ -181,6 +181,7 @@ export const api = {
 
   // Rules (Admin + QA Manager)
   getAnalyticsRules: () => request("/analytics/rules"),
+  getRuleImpacts: () => request("/analytics/rules/impact"),
   getActiveRules: (scope) => request(`/analytics/rules/active${scope ? `?scope=${scope}` : ""}`),
   getRulesMetadata: () => request("/analytics/rules/metadata"),
   getRule: (ruleId) => request(`/analytics/rules/${ruleId}`),

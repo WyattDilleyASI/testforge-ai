@@ -81,11 +81,11 @@ export const MobileWarningBanner = ({ message }) => {
   );
 };
 
-export const Badge = ({ color = "accent", children, style }) => {
+export const Badge = ({ color = "accent", children, style, title }) => {
   const T = useTheme();
   const c = T[color] || color;
   const dim = T[color + "Dim"] || "rgba(255,255,255,0.08)";
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, letterSpacing: "0.04em", textTransform: "uppercase", color: c, background: dim, border: `1px solid ${c}22`, whiteSpace: "nowrap", ...style }}>{children}</span>;
+  return <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, letterSpacing: "0.04em", textTransform: "uppercase", color: c, background: dim, border: `1px solid ${c}22`, whiteSpace: "nowrap", cursor: title ? "help" : "default", ...style }}>{children}</span>;
 };
 
 export const Button = ({ variant = "primary", children, onClick, disabled, style, small }) => {
