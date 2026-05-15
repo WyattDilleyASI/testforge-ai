@@ -729,7 +729,7 @@ export const AnalyticsView = ({ currentUser }) => {
       </div>
       {/* Impact disclaimer — keep honest about what the impact badge means. */}
       <div style={{ marginBottom: 16, padding: "8px 12px", borderRadius: 6, background: COLORS.surface, border: `1px solid ${COLORS.border}`, fontSize: 11, color: COLORS.textMuted, lineHeight: 1.5 }}>
-        <strong style={{ color: COLORS.textBright }}>Note on impact:</strong> the green/red <em>impact</em> badge compares the approval rate of generations before vs. after each rule's creation date. It's <strong>correlation, not causation</strong> — KB edits, requirement churn, model changes, and other rules created near the same time can confound the signal. Use it directionally. Rules with fewer than {ruleImpacts.min_after_sessions} post-creation sessions are marked <em>insufficient data</em>.
+        <strong style={{ color: COLORS.textBright }}>Note on impact:</strong> the green/red <em>edit-free</em> badge measures the share of approvals that needed no human edits, before vs. after each rule's creation date. This is the signal the Adaptive Learning Engine actually tries to move — higher = AI is generating TCs that reviewers accept without changes. <strong>Rejections are deliberately excluded</strong> because they're often noise (e.g. "too many TCs generated"). It's <strong>correlation, not causation</strong> — KB edits, requirement churn, model changes, and other rules created near the same time can confound the signal. Rules with fewer than {ruleImpacts.min_after_sessions} post-creation approval events are marked <em>insufficient data</em>.
       </div>
 
       {ruleError && <div style={{ fontSize: 12, color: COLORS.red, marginBottom: 12 }}>{ruleError}</div>}
@@ -783,14 +783,15 @@ export const AnalyticsView = ({ currentUser }) => {
                         if (imp.insufficient_data) {
                           return <Badge color="textMuted" title={imp.notes.join(" ")}>impact: insufficient data</Badge>;
                         }
-                        const d = imp.delta_approval_rate;
+                        const d = imp.delta_edit_free_rate;
                         if (d === null) return <Badge color="textMuted">impact: —</Badge>;
                         const pct = Math.round(d * 100);
                         const color = pct >= 5 ? "green" : pct <= -5 ? "red" : "textMuted";
                         const sign = pct > 0 ? "+" : "";
+                        const fmt = (rate) => rate !== null ? (rate * 100).toFixed(1) + "%" : "—";
                         return (
-                          <Badge color={color} title={`Approval rate before rule: ${imp.before.approval_rate !== null ? (imp.before.approval_rate * 100).toFixed(1) + "%" : "—"} (${imp.before.sessions} sessions) → after: ${imp.after.approval_rate !== null ? (imp.after.approval_rate * 100).toFixed(1) + "%" : "—"} (${imp.after.sessions} sessions). Correlation only; not proof of causation.`}>
-                            impact: {sign}{pct}% approval
+                          <Badge color={color} title={`Edit-free rate before rule: ${fmt(imp.before.edit_free_rate)} (${imp.before.unchanged}/${imp.before.total} approvals were unchanged) → after: ${fmt(imp.after.edit_free_rate)} (${imp.after.unchanged}/${imp.after.total} unchanged). Correlation only; not proof of causation.`}>
+                            edit-free: {sign}{pct}%
                           </Badge>
                         );
                       })()}
@@ -803,9 +804,8 @@ export const AnalyticsView = ({ currentUser }) => {
                       {(() => {
                         const imp = ruleImpacts.impacts.find(i => i.rule_id === rule.rule_id);
                         if (!imp) return null;
-                        const beforeRate = imp.before.approval_rate !== null ? (imp.before.approval_rate * 100).toFixed(0) + "%" : "—";
-                        const afterRate = imp.after.approval_rate !== null ? (imp.after.approval_rate * 100).toFixed(0) + "%" : "—";
-                        return <span>before: {beforeRate} ({imp.before.sessions}) · after: {afterRate} ({imp.after.sessions})</span>;
+                        const fmt = (rate) => rate !== null ? (rate * 100).toFixed(0) + "%" : "—";
+                        return <span>edit-free before: {fmt(imp.before.edit_free_rate)} ({imp.before.unchanged}/{imp.before.total}) · after: {fmt(imp.after.edit_free_rate)} ({imp.after.unchanged}/{imp.after.total})</span>;
                       })()}
                     </div>
                   </div>
