@@ -376,6 +376,126 @@ function getUnprocessedEventIds(limit = 500) {
     .map(r => r.id);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// RULE IMPACT MEASUREMENT
+//
+// Honest take: this is correlation, not causation. Splitting generation
+// outcomes around a rule's created_at can be confounded by KB edits,
+// requirement churn, model drift, and other rules created near the same
+// time. The numbers are directional — useful for "this rule looks like it
+// helped / hurt" — but should not be cited as proof.
+//
+// Computation per rule:
+//   1. Take the rule's created_at timestamp.
+//   2. Bucket every generation_session into "before" or "after" that moment.
+//      (For v1 we do NOT filter by scope; effectively we measure "did
+//      anything change around the time this rule was added?" Future v2
+//      can filter by scope when generation_sessions records req_type.)
+//   3. For each bucket: sum approved_count and rejected_count; derive
+//      approval_rate = approved / (approved + rejected).
+//   4. Edit rate = (sessions with diff_summary_agg indicating any edits)
+//      / total sessions in that bucket. Approximated as approved-with-
+//      edits / approved + rejected.
+//   5. Delta = after - before.
+//
+// Reliability flags:
+//   - MIN_AFTER_SESSIONS guard: if fewer than N post-rule sessions exist,
+//     return insufficient_data: true so the UI can show "—" instead of a
+//     misleading delta.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MIN_AFTER_SESSIONS = 10;
+
+function _bucketStatsForRule(createdAt) {
+  // Returns aggregated stats split by created_at vs the provided timestamp.
+  // SQLite stores timestamps as ISO-8601 strings; lexicographic comparison
+  // works correctly because of the format. Both buckets are computed in one
+  // query for a single table scan.
+  const row = getCoreDb().prepare(`
+    SELECT
+      SUM(CASE WHEN created_at <  ? THEN 1               ELSE 0 END) AS before_sessions,
+      SUM(CASE WHEN created_at <  ? THEN approved_count ELSE 0 END) AS before_approved,
+      SUM(CASE WHEN created_at <  ? THEN rejected_count ELSE 0 END) AS before_rejected,
+      SUM(CASE WHEN created_at >= ? THEN 1               ELSE 0 END) AS after_sessions,
+      SUM(CASE WHEN created_at >= ? THEN approved_count ELSE 0 END) AS after_approved,
+      SUM(CASE WHEN created_at >= ? THEN rejected_count ELSE 0 END) AS after_rejected
+    FROM generation_sessions
+  `).get(createdAt, createdAt, createdAt, createdAt, createdAt, createdAt) || {};
+
+  const rate = (a, r) => {
+    const total = (a || 0) + (r || 0);
+    return total === 0 ? null : (a || 0) / total;
+  };
+
+  const before = {
+    sessions: row.before_sessions || 0,
+    approved: row.before_approved || 0,
+    rejected: row.before_rejected || 0,
+    approval_rate: rate(row.before_approved, row.before_rejected),
+  };
+  const after = {
+    sessions: row.after_sessions || 0,
+    approved: row.after_approved || 0,
+    rejected: row.after_rejected || 0,
+    approval_rate: rate(row.after_approved, row.after_rejected),
+  };
+  return { before, after };
+}
+
+/**
+ * Compute impact for a single rule. Returns null if rule not found.
+ *
+ * @param {string} ruleId
+ * @returns {object|null} {
+ *   rule_id, created_at,
+ *   before:  { sessions, approved, rejected, approval_rate },
+ *   after:   { sessions, approved, rejected, approval_rate },
+ *   delta_approval_rate: number|null,
+ *   insufficient_data: boolean,
+ *   notes: string[]
+ * }
+ */
+function getRuleImpact(ruleId) {
+  const rule = getCoreDb()
+    .prepare("SELECT rule_id, created_at FROM adaptive_rules WHERE rule_id = ?")
+    .get(ruleId);
+  if (!rule) return null;
+
+  const { before, after } = _bucketStatsForRule(rule.created_at);
+  const delta = (before.approval_rate !== null && after.approval_rate !== null)
+    ? after.approval_rate - before.approval_rate
+    : null;
+
+  const notes = [];
+  if (before.sessions === 0) notes.push("No sessions existed before this rule was created.");
+  if (after.sessions < MIN_AFTER_SESSIONS) notes.push(`Only ${after.sessions} session(s) since rule creation — needs at least ${MIN_AFTER_SESSIONS} for a trusted reading.`);
+
+  return {
+    rule_id: rule.rule_id,
+    created_at: rule.created_at,
+    before,
+    after,
+    delta_approval_rate: delta,
+    insufficient_data: after.sessions < MIN_AFTER_SESSIONS,
+    notes,
+  };
+}
+
+/**
+ * Compute impact for every rule. Returns array (one entry per rule).
+ *
+ * Implementation note: each rule does its own SUM query for clarity. With
+ * the 25-rule cap and an indexed generation_sessions table, this is fine
+ * up to thousands of sessions. If perf ever becomes an issue, the queries
+ * can be batched.
+ */
+function getAllRuleImpacts() {
+  const rules = getCoreDb()
+    .prepare("SELECT rule_id, created_at FROM adaptive_rules ORDER BY created_at DESC")
+    .all();
+  return rules.map(r => getRuleImpact(r.rule_id)).filter(Boolean);
+}
+
 module.exports = {
   // Session tracking
   nextSessionId,
@@ -395,4 +515,9 @@ module.exports = {
   getUnprocessedFeedbackStats,
   markFeedbackProcessed,
   getUnprocessedEventIds,
+
+  // Rule impact measurement
+  getRuleImpact,
+  getAllRuleImpacts,
+  MIN_AFTER_SESSIONS,
 };

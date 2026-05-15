@@ -50,6 +50,11 @@ module.exports = {
   markFeedbackProcessed:       analytics.markFeedbackProcessed,
   getUnprocessedEventIds:      analytics.getUnprocessedEventIds,
 
+  // Rule impact measurement
+  getRuleImpact:               analytics.getRuleImpact,
+  getAllRuleImpacts:           analytics.getAllRuleImpacts,
+  RULE_IMPACT_MIN_AFTER:       analytics.MIN_AFTER_SESSIONS,
+
   // ── Rules (AL-004 foundation) ──────────────────────────────────────
   // Constants
   MAX_ADAPTIVE_RULES: rules.MAX_ADAPTIVE_RULES,
