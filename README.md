@@ -38,7 +38,7 @@ TestForge AI helps QA teams generate structured, traceable test cases faster. It
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/<your-org>/testforge-ai.git
+git clone https://github.com/WyattDilleyASI/testforge-ai.git
 cd testforge-ai
 cp .env.example .env        # then edit — add ANTHROPIC_API_KEY, SESSION_SECRET, SERVER_ENCRYPTION_KEY
 docker-compose up -d --build
