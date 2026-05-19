@@ -1,0 +1,36 @@
+# Phase 0 smoke-test image for Jama browser-driven import.
+#
+# This is a one-off Dockerfile used only to validate that Playwright +
+# Chromium can launch in the Testforge container environment (Azure).
+# Once that's confirmed, the changes here get merged into the main
+# Dockerfile and this file is deleted.
+#
+# Key differences from the main Dockerfile:
+#   - Base image: node:20-bookworm-slim (NOT alpine — Playwright doesn't
+#     officially support musl libc)
+#   - Adds `npx playwright install --with-deps chromium` to pull Chromium
+#     and its system libraries (~400MB)
+#   - Default CMD runs the smoke test instead of the server
+#
+# Build:  docker build -f Dockerfile.playwright -t testforge-smoke .
+# Run:    docker run --rm testforge-smoke
+# Expect: a "[smoke] PASS — Playwright works here." line and exit 0.
+
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+# Install server dependencies (includes playwright npm package)
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev
+
+# Install Chromium + its system dependencies for Playwright.
+# `--with-deps` runs apt-get under the hood to grab libnss3, fonts, etc.
+RUN npx playwright install --with-deps chromium
+
+# Copy the smoke test script (and any future server code it needs)
+COPY server/ ./server/
+
+ENV NODE_ENV=production
+
+CMD ["node", "server/scripts/playwright-smoke.js"]
