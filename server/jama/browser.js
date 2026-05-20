@@ -148,6 +148,30 @@ class JamaSession {
         timeout: 30_000,
       });
     } catch (e) {
+      // Distinguish bad-credentials from other failures (network, slow
+      // server, etc.) so we can surface a clear message instead of
+      // leaking Playwright's raw timeout text.
+      const url = this.page.url();
+      if (/\/login/i.test(url)) {
+        // Still on the login page after 30s — credentials rejected.
+        // Try to surface Jama's own error banner if it rendered one.
+        let banner = "";
+        try {
+          const errLoc = this.page
+            .getByText(/invalid|incorrect|wrong|denied|locked|disabled|failed/i)
+            .first();
+          if ((await errLoc.count()) > 0 && (await errLoc.isVisible())) {
+            banner = ((await errLoc.textContent()) || "").trim();
+          }
+        } catch (_) {}
+        if (banner) {
+          throw new LoginFailed(`Jama rejected the sign-in: "${banner}"`);
+        }
+        throw new LoginFailed(
+          "Jama did not accept the credentials. Double-check your username and password (case-sensitive)."
+        );
+      }
+      // Some other navigation issue (e.g. network blip mid-redirect).
       throw new LoginFailed(sanitizeAuthError(e?.message, username, password));
     }
     this.onLog("info", "Signed in to Jama.");
