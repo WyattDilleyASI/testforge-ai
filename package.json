@@ -9,6 +9,7 @@
     "build:client": "cd client && npm install && npm run build",
     "setup": "npm install && cd client && npm install && npm run build",
     "smoke:playwright": "node server/scripts/playwright-smoke.js",
+    "smoke:jama": "node server/scripts/jama-import-smoke.js",
     "postinstall": "echo '✓ Server dependencies installed. Run npm run build:client to build the frontend.'"
   },
   "dependencies": {

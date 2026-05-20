@@ -473,6 +473,9 @@ function initialize() {
   // ── Adaptive Learning Engine ──
   require("./al/schema").initializeAL();
 
+  // ── Jama Browser Import ──
+  require("./jama/schema").initializeJama();
+
   // ── Baseline Seed (idempotent — version-gated) ──
   require("./seeds/runSeed").runBaselineSeed();
 

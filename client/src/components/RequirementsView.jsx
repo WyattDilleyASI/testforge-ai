@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, Input, Select, ReqIdTag, ErrorBanner, JamaImportPanel, InlineConfirm, OverflowMenu, useIsMobile } from "./shared";
+import { JamaImportView } from "./JamaImportView";
 import { useAsyncAction, useExpandCollapse, useInlineEdit, useSelection } from "../hooks";
 
 export const RequirementsView = ({ requirements, refresh, currentUser }) => {
@@ -20,6 +21,7 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [showJamaHelp, setShowJamaHelp] = useState(false);
+  const [showJamaBrowserImport, setShowJamaBrowserImport] = useState(false);
   const [showPrefixConfig, setShowPrefixConfig] = useState(false);
   const [customPrefixes, setCustomPrefixes] = useState(() => {
     try {
@@ -164,7 +166,8 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
           {canDelete && requirements.length > 0 && <Button variant="secondary" small onClick={() => { enterSelectMode(); edit.cancelEdit(); }}>Select</Button>}
           <OverflowMenu
             items={[
-              { label: importing ? "Importing..." : "Import JAMA Requirements", onClick: () => { setShowJamaHelp(false); setShowPrefixConfig(v => !v); }, disabled: importing },
+              { label: "Import from Jama (browser)", onClick: () => { setShowJamaHelp(false); setShowPrefixConfig(false); setShowJamaBrowserImport(v => !v); } },
+              { label: importing ? "Importing..." : "Import JAMA Requirements", onClick: () => { setShowJamaHelp(false); setShowJamaBrowserImport(false); setShowPrefixConfig(v => !v); }, disabled: importing },
               { label: "Clear All", onClick: () => setClearAllConfirm(true), severity: "danger", hidden: !canDelete || requirements.length === 0 },
             ]}
           />
@@ -244,6 +247,15 @@ export const RequirementsView = ({ requirements, refresh, currentUser }) => {
           <Button small onClick={savePrefixesAndContinue}>Continue to File Import →</Button>
         </div>
       </Card>
+    )}
+
+    {/* Browser-driven Jama Import — runs Jama in a server-side headless browser */}
+    {showJamaBrowserImport && (
+      <JamaImportView
+        currentUser={currentUser}
+        onClose={() => setShowJamaBrowserImport(false)}
+        onImportComplete={() => { setShowJamaBrowserImport(false); refresh(); }}
+      />
     )}
 
     {/* Jama Import Help — shown when "Import JAMA Requirements" is clicked */}
