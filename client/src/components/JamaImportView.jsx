@@ -645,8 +645,11 @@ const DiscoverFormView = ({ T, form, setForm, onSave, onCancel, busy }) => (
       mono
       style={{ marginBottom: 4 }}
     />
-    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 12 }}>
-      Type the exact filter name as shown in your Jama project sidebar (including any leading <span style={{ fontFamily: mono }}>*</span>).
+    <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+      <strong style={{ color: T.amber }}>Copy this from your Jama project sidebar exactly</strong> —
+      spaces, capitalization, and the leading <span style={{ fontFamily: mono }}>*</span> all matter.
+      If the filter is <span style={{ fontFamily: mono }}>*All Requirement Types</span> in Jama, type or paste it
+      character-for-character. Typos here cause the import to time out finding the wrong row in Jama's history.
     </div>
 
     <Input
@@ -704,37 +707,57 @@ const DoneView = ({ T, status, profile, onUndo, onDone, busy }) => {
   );
 };
 
-const FailedView = ({ T, status, log, jobId, onRetry, onClose }) => (
-  <div>
-    <div style={{
-      padding: "12px", background: T.redDim, borderRadius: 6,
-      border: `1px solid ${T.red}33`, marginBottom: 12,
-    }}>
-      <div style={{ fontSize: 13, color: T.red, fontWeight: 600 }}>Import failed</div>
-      <div style={{ fontSize: 12, color: T.text, marginTop: 6, fontFamily: mono }}>
-        {status?.error_message || "Unknown error"}
-      </div>
-      {jobId && (
-        <div style={{ marginTop: 10, fontSize: 11 }}>
-          <a
-            href={`/api/jama/imports/${jobId}/screenshot`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: T.accent, textDecoration: "underline" }}
-          >View screenshot of failure page →</a>
-          <div style={{ color: T.textMuted, marginTop: 4 }}>
-            Shows what Jama looked like when the import failed. Useful for figuring out which selector broke.
-          </div>
+const FailedView = ({ T, status, log, jobId, onRetry, onClose }) => {
+  const msg = status?.error_message || "Unknown error";
+  const isCredentialError =
+    /did not accept the credentials|rejected the sign-?in|sign in to jama failed|username and password are required/i.test(msg);
+
+  return (
+    <div>
+      <div style={{
+        padding: "12px", background: T.redDim, borderRadius: 6,
+        border: `1px solid ${T.red}33`, marginBottom: 12,
+      }}>
+        <div style={{ fontSize: 13, color: T.red, fontWeight: 600 }}>
+          {isCredentialError ? "🔒 Sign-in failed" : "Import failed"}
         </div>
-      )}
+        <div style={{
+          fontSize: 12, color: T.text, marginTop: 6,
+          fontFamily: isCredentialError ? "inherit" : mono,
+        }}>
+          {msg}
+        </div>
+        {isCredentialError && (
+          <div style={{ marginTop: 10, fontSize: 11, color: T.textMuted, lineHeight: 1.5 }}>
+            Common causes: typo in the username or password (both are case-sensitive),
+            an expired password, or your account requires SSO and can't sign in with a password.
+            Click <strong style={{ color: T.text }}>Try again</strong> below to re-enter credentials.
+          </div>
+        )}
+        {!isCredentialError && jobId && (
+          <div style={{ marginTop: 10, fontSize: 11 }}>
+            <a
+              href={`/api/jama/imports/${jobId}/screenshot`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: T.accent, textDecoration: "underline" }}
+            >View screenshot of failure page →</a>
+            <div style={{ color: T.textMuted, marginTop: 4 }}>
+              Shows what Jama looked like when the import failed. Useful for figuring out which selector broke.
+            </div>
+          </div>
+        )}
+      </div>
+      <LogPane T={T} log={log} style={{ marginBottom: 12 }} />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Button variant="ghost" small onClick={onClose}>Close</Button>
+        <Button small onClick={onRetry}>
+          {isCredentialError ? "Try again with different credentials" : "Try again"}
+        </Button>
+      </div>
     </div>
-    <LogPane T={T} log={log} style={{ marginBottom: 12 }} />
-    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-      <Button variant="ghost" small onClick={onClose}>Close</Button>
-      <Button small onClick={onRetry}>Try again</Button>
-    </div>
-  </div>
-);
+  );
+};
 
 const EditProfileView = ({ T, form, setForm, onSave, onCancel, busy }) => (
   <div>
