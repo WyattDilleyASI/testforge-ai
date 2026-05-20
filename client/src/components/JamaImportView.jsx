@@ -597,7 +597,6 @@ const CredsView = ({ T, title, subtitle, credsForm, setCredsForm, onSubmit, onCa
       label="Jama username"
       value={credsForm.username}
       onChange={(v) => setCredsForm((f) => ({ ...f, username: v }))}
-      placeholder="e.g. nate.wagstaff"
       style={{ marginBottom: 10 }}
     />
     <Input
