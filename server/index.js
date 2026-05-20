@@ -51,7 +51,8 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/users", require("./routes/users"));
 app.use("/api/requirements", require("./routes/requirements"));
 app.use("/api/testcases", require("./routes/testcases"));
-app.use("/api", require("./routes/data")); // KB, audit, jama
+app.use("/api/jama", require("./routes/jama")); // browser-driven import (profiles, imports, discovery)
+app.use("/api", require("./routes/data")); // KB, audit, jama legacy (log, export)
 app.use("/api/kb/seeding", require("./routes/kb-seeding"));
 app.use("/api/mcp", require("./routes/mcp"));
 app.use("/api/analytics", require("./routes/analytics"));

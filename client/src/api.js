@@ -149,9 +149,33 @@ export const api = {
   // Audit (Admin only)
   getAuditLog: () => request("/audit"),
 
-  // Jama
+  // Jama (legacy export flow)
   getJamaLog: () => request("/jama/log"),
   exportToJama: () => request("/jama/export", { method: "POST" }),
+
+  // Jama Browser Import — Settings
+  getJamaBaseUrl: () => request("/jama/settings/base-url"),
+  setJamaBaseUrl: (base_url) =>
+    request("/jama/settings/base-url", { method: "PUT", body: { base_url } }),
+
+  // Jama Browser Import — Profiles
+  getJamaProfiles: () => request("/jama/profiles"),
+  createJamaProfile: (data) => request("/jama/profiles", { method: "POST", body: data }),
+  updateJamaProfile: (id, data) => request(`/jama/profiles/${id}`, { method: "PUT", body: data }),
+  deleteJamaProfile: (id) => request(`/jama/profiles/${id}`, { method: "DELETE" }),
+
+  // Jama Browser Import — Discovery (live Jama lookup; creds in body)
+  discoverJamaProjectByUrl: (username, password, project_url) =>
+    request("/jama/discover/project-by-url", { method: "POST", body: { username, password, project_url } }),
+
+  // Jama Browser Import — Run / Status / Rollback
+  startJamaImport: (profileId, username, password) =>
+    request(`/jama/profiles/${profileId}/import`, { method: "POST", body: { username, password } }),
+  getJamaJob: (jobId) => request(`/jama/imports/${jobId}`),
+  rollbackJamaImport: (jobId) =>
+    request(`/jama/imports/${jobId}/rollback`, { method: "POST" }),
+  // Note: live job stream uses EventSource directly:
+  //   new EventSource(`/api/jama/imports/${jobId}/stream`, { withCredentials: true })
 
   // MCP Tokens
   getMcpTokens: () => request("/mcp/tokens"),

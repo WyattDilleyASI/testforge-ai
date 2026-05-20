@@ -317,6 +317,18 @@ Available tools include: listing/searching requirements, getting requirement det
 - **MCP tokens** — AES-256-GCM at rest via `SERVER_ENCRYPTION_KEY`
 - **Audit trail** — every login, password change, role change, generation, export, and MCP config change logged
 
+#### Jama credential handling (browser-driven import)
+
+The browser-driven Jama import accepts the user's Jama username and password for the duration of a **single operation only** — one import or one profile-creation discovery. Concretely:
+
+- Credentials are POST'd in the request body and held in server memory only long enough to drive Playwright through Jama's login form. As soon as sign-in succeeds, our references are dropped (`username = null; password = null`).
+- They are **never** written to disk, the database, the audit log, the per-job log, or the job's stored error message. Job rows record what happened, not how it authenticated.
+- The Playwright browser context is created fresh per operation and disposed when the operation ends. The Jama session cookie does not survive past the request.
+- Only the username is cached in browser `localStorage` (for convenience pre-filling the form). The password is never persisted client-side beyond React component state.
+- Errors that escape the sign-in flow are **sanitized** to redact any literal occurrence of the username or password before being stored or surfaced to the UI.
+- Failure screenshots are **not** captured if the failure occurred during the authentication phase (avoids any chance of surfacing the login page in a downloadable artifact).
+- **Production must terminate TLS in front of Testforge.** Credentials traverse the network in the request body; HTTPS is required to prevent in-flight interception.
+
 ---
 
 ## API Reference
