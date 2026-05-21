@@ -7,6 +7,8 @@ import { LoginScreen, PasswordChangeScreen } from "./components/LoginScreen";
 import { Sidebar } from "./components/Sidebar";
 import { DashboardView } from "./components/DashboardView";
 import { RequirementsView } from "./components/RequirementsView";
+import { JamaImportView } from "./components/JamaImportView";
+import { JamaStalenessBanner } from "./components/JamaStalenessBanner";
 import { TestCasesWrapper } from "./components/TestCasesWrapper";
 import { KbView } from "./components/KbView";
 import { DeferredView } from "./components/DeferredView";
@@ -111,6 +113,10 @@ export default function App() {
   const [testCases, setTestCases] = useState([]);
   const [kbEntries, setKbEntries] = useState([]);
   const [tokenUsage, setTokenUsage] = useState(null);
+
+  // Jama browser import lives at app level so the staleness banner +
+  // import panel can render above any page (not just RequirementsView).
+  const [showJamaBrowserImport, setShowJamaBrowserImport] = useState(false);
 
   const [weatherData, setWeatherData] = useState(null);
 
@@ -546,8 +552,23 @@ useEffect(() => {
           display: page === "traceability" ? "flex" : "block",
           flexDirection: "column",
         }}>
+        {/* Global Jama staleness prompt — visible on every page if any
+            saved Jama profile hasn't been refreshed in a while. */}
+        {page !== "traceability" && !showJamaBrowserImport && (
+          <JamaStalenessBanner onRefresh={() => setShowJamaBrowserImport(true)} />
+        )}
+
+        {/* Global Jama import panel — openable from any page. */}
+        {page !== "traceability" && showJamaBrowserImport && (
+          <JamaImportView
+            currentUser={currentUser}
+            onClose={() => setShowJamaBrowserImport(false)}
+            onImportComplete={() => { setShowJamaBrowserImport(false); loadData(); }}
+          />
+        )}
+
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} currentUser={currentUser} />}
-        {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} />}
+        {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} openJamaImport={() => setShowJamaBrowserImport(true)} />}
         {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} initialReqId={initialReqId} />}
         {page === "traceability" && (isMobile
           ? <MobileGate icon="◈" title="SysML Traceability" description="The traceability graph requires a larger screen to navigate. Open this link on a desktop or tablet to use it." />
