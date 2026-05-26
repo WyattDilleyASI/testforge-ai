@@ -168,6 +168,42 @@ export const api = {
   discoverJamaProjectByUrl: (username, password, project_url) =>
     request("/jama/discover/project-by-url", { method: "POST", body: { username, password, project_url } }),
 
+  // Jama Browser Export — Profiles
+  // Export profiles point at a Jama project (and optionally a default
+  // destination node within the V&V subtree) for test-case export.
+  // Separate from import profiles, which are keyed on a sidebar filter.
+  getJamaExportProfiles: () => request("/jama/export-profiles"),
+  createJamaExportProfile: (data) =>
+    request("/jama/export-profiles", { method: "POST", body: data }),
+  updateJamaExportProfile: (id, data) =>
+    request(`/jama/export-profiles/${id}`, { method: "PUT", body: data }),
+  deleteJamaExportProfile: (id) =>
+    request(`/jama/export-profiles/${id}`, { method: "DELETE" }),
+
+  // Jama Browser Export — Project tree (for TC export destination picker)
+  // refresh-tree is async — returns { job_id }; poll getExportTreeJob or
+  // subscribe to /export-tree-jobs/:id/stream for SSE.
+  refreshJamaExportProjectTree: (exportProfileId, username, password) =>
+    request(`/jama/export-profiles/${exportProfileId}/refresh-tree`, {
+      method: "POST",
+      body: { username, password },
+    }),
+  getJamaExportProjectTree: (exportProfileId) =>
+    request(`/jama/export-profiles/${exportProfileId}/tree`),
+  getJamaExportTreeJob: (jobId) => request(`/jama/export-tree-jobs/${jobId}`),
+  // SSE for tree-scrape progress (use EventSource directly):
+  //   new EventSource(`/api/jama/export-tree-jobs/${jobId}/stream`, { withCredentials: true })
+
+  // Jama Browser Export — Run (push selected TCs into the profile's destination)
+  startJamaExportRun: (exportProfileId, username, password, tc_ids) =>
+    request(`/jama/export-profiles/${exportProfileId}/run`, {
+      method: "POST",
+      body: { username, password, tc_ids },
+    }),
+  getJamaExportRun: (runId) => request(`/jama/export-runs/${runId}`),
+  // SSE for export-run progress (use EventSource directly):
+  //   new EventSource(`/api/jama/export-runs/${runId}/stream`, { withCredentials: true })
+
   // Jama Browser Import — Run / Status / Rollback
   startJamaImport: (profileId, username, password) =>
     request(`/jama/profiles/${profileId}/import`, { method: "POST", body: { username, password } }),

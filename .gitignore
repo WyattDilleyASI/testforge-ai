@@ -7,6 +7,11 @@ data/
 .claude/settings.local.json
 docs/
 
+# Jama browser-export debug artifacts (created by ad-hoc recorder scripts)
+jama-trace.zip
+jama-clicks/
+.trace-extract/
+
 
 
 

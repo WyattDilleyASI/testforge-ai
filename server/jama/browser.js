@@ -91,6 +91,13 @@ class JamaSession {
       });
 
       context = await browser.newContext({ acceptDownloads: true });
+      // Grant clipboard permissions for the Jama origin so the export
+      // flow can write step text to the clipboard and paste it into
+      // the step cells via a real Ctrl+V (the only path CKEditor's
+      // inline-grid paste pipeline reliably commits to the row model).
+      try {
+        await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: baseUrl });
+      } catch (_) { /* older Playwright; safe to skip */ }
       page = await context.newPage();
 
       onLog("info", `Opening ${baseUrl}...`);

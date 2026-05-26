@@ -23,12 +23,399 @@
 
 const path = require("path");
 
+// Name of the subtree to deep-scrape. Other top-level components are
+// captured as roots-with-no-children placeholders so the tree retains
+// project context without paying the full expansion cost.
+//
+// HARDCODED for MVP — this matches the V&V container in the ASI
+// Landscaping project. To support other subtrees later, surface this
+// as a profile-level field.
+const SCRAPE_SUBTREE_NAME = "Verification & Validation";
+
 const {
   NavigationFailed,
   ReportTimeout,
   ProfileNotFound,
   ExportFailed,
 } = require("./errors");
+
+// ─── Project tree scraping (for TC export destination picker) ────────────
+
+/**
+ * Walk the Jama project Explorer sidebar and return its full tree
+ * (project root, Components, Sets, plus leaf items like Verification
+ * Test Cases) as a nested JSON structure.
+ *
+ * Used to populate the destination picker when exporting test cases to
+ * Jama — users navigate the cached tree to find the right "Verification
+ * Test Cases" set to push TCs into. The same tree is also useful for
+ * the requirement-import side, so we capture EVERYTHING (containers
+ * AND leaves), not just containers.
+ *
+ * Implementation notes (derived from real DOM):
+ *   - The tree is rendered as a VIRTUALIZED list — only ~30 visible rows
+ *     at a time, despite the inner container being thousands of px tall.
+ *     Walking the DOM at a single scroll position misses 90% of nodes.
+ *     We must scroll through programmatically and accumulate.
+ *   - Each row is a `<div role="treeitem">` with attributes:
+ *       value="p-152" or "a-N"     — Jama internal item id
+ *       data-key="String_..."      — unique key (used for deduping)
+ *       aria-level="N"             — depth in the tree (root=1)
+ *       title, aria-label          — node label
+ *     and an inner `<img class="tree-node__icon-wrapper-icon">` whose
+ *     `title` attribute names the type ("Project", "Component", "Set of
+ *     Verification Test Cases", "Verification Test Case", etc.).
+ *   - Hierarchy is implicit via aria-level, NOT via DOM nesting. We
+ *     reconstruct the nested tree from the flat list by walking in
+ *     visual order (sorted by row top position) and tracking depth.
+ *   - Containers (Project, Component, Set, …) have `aria-expanded`;
+ *     leaves don't. Toggle click target: `.rs-tree-node-toggle`.
+ */
+async function scrapeProjectTree(session, projectUrl) {
+  const { page, onLog } = session;
+  onLog("info", "Scraping project tree...");
+
+  await openProject(session, projectUrl);
+
+  // Wait for the tree to render at least one row.
+  try {
+    await page.locator('[role="treeitem"]').first().waitFor({ timeout: 30_000 });
+  } catch (_) {
+    throw new NavigationFailed("Project Explorer tree never rendered");
+  }
+
+  // Phase 1: expand all collapsed containers (handles virtualization).
+  await expandAllTreeNodes(page, onLog);
+
+  // Phase 2: scroll through and capture every visible row, deduping by
+  // data-key. Returns a FLAT list of nodes with level info.
+  const flat = await captureAllTreeRows(page, onLog);
+  onLog("info", `Captured ${flat.length} tree node(s).`);
+
+  // Phase 3: rebuild the nested tree from the flat list using aria-level.
+  const tree = buildNestedTree(flat);
+  if (!tree) {
+    throw new NavigationFailed("Captured no tree nodes — Explorer was empty?");
+  }
+
+  return { tree, nodeCount: flat.length };
+}
+
+// Expand only the descendants of one named subtree (e.g. "Verification
+// & Validation"). Scoping to a subtree dodges the "hours to expand the
+// whole project" problem — we typically only care about V&V for TC
+// export anyway. Other top-level components are left collapsed and
+// will appear in the final tree as empty-children placeholders.
+//
+// Strategy:
+//   1. Scroll through the virtualized tree to find the row whose
+//      title matches SCRAPE_SUBTREE_NAME. Record its level + data-key.
+//   2. If it's collapsed, expand it first.
+//   3. Walk forward (by topPx) from that row. Every collapsed row we
+//      encounter is a descendant *as long as* its aria-level is
+//      strictly greater than the subtree root's level. The first row
+//      we see at level <= root.level marks the end of the subtree.
+//   4. Use Playwright clicks with force+noWaitAfter for speed (same
+//      proven mechanism as before, just scoped).
+async function expandAllTreeNodes(page, onLog) {
+  // ── Phase 1: locate the target subtree by name ─────────────────
+  onLog("info", `Looking for subtree "${SCRAPE_SUBTREE_NAME}"...`);
+  await scrollTreeTo(page, 0);
+  await page.waitForTimeout(150);
+
+  let target = null;
+  for (let scrollAttempts = 0; scrollAttempts < 200; scrollAttempts++) {
+    const visible = await readVisibleRows(page);
+    target = visible.find((r) => (r.name || "").trim() === SCRAPE_SUBTREE_NAME);
+    if (target) break;
+    const moved = await scrollTreeBy(page, 400);
+    if (!moved) break;
+    await page.waitForTimeout(120);
+  }
+  if (!target) {
+    onLog("warn", `Subtree "${SCRAPE_SUBTREE_NAME}" not found — nothing to expand.`);
+    return;
+  }
+  onLog("info", `Found "${SCRAPE_SUBTREE_NAME}" at level ${target.level}. Expanding descendants only...`);
+
+  // ── Phase 2: ensure the subtree root is expanded ──────────────
+  if (target.expandable && !target.expanded) {
+    await clickExpandByKey(page, target.key);
+    await page.waitForTimeout(300);
+  }
+
+  // ── Phase 3: walk forward from target, expand descendants only ─
+  const expandedKeys = new Set();
+  const failedKeys = new Set();
+  let totalExpanded = 0;
+  let totalFailed = 0;
+  let pastSubtree = false;
+  let safety = 0;
+
+  // Scroll so the target row is near the top so we can sweep down.
+  await scrollTreeTo(page, target.topPx);
+  await page.waitForTimeout(150);
+
+  while (!pastSubtree && safety++ < 5000) {
+    const visible = (await readVisibleRows(page)).sort((a, b) => a.topPx - b.topPx);
+
+    // Find the FIRST collapsed descendant of target visible right now.
+    let nextToExpand = null;
+    let sawTarget = false;
+    for (const r of visible) {
+      if (r.key === target.key) { sawTarget = true; continue; }
+      // Skip rows above the target (could happen after scroll/reflow).
+      if (!sawTarget && r.topPx < target.topPx) continue;
+      // After target: a row at the same level or shallower means we've
+      // left the subtree. We're done.
+      if (r.topPx >= target.topPx && r.level <= target.level) {
+        pastSubtree = true;
+        break;
+      }
+      // Skip "Set of *" nodes — their children are individual items
+      // (Verification Test Cases, etc.) which we filter out at capture
+      // anyway. Skipping the expand saves time AND keeps the captured
+      // tree clean.
+      const isSetNode = (r.iconTitle || "").toLowerCase().startsWith("set of");
+      // Strict descendant + collapsed + not yet tried + not a set.
+      if (!isSetNode && r.level > target.level && r.expandable && !r.expanded &&
+          !expandedKeys.has(r.key) && !failedKeys.has(r.key)) {
+        nextToExpand = r;
+        break;
+      }
+    }
+
+    if (pastSubtree) break;
+
+    if (!nextToExpand) {
+      // Nothing actionable in current view — scroll down to bring more
+      // descendants into the virtualized window.
+      const moved = await scrollTreeBy(page, 400);
+      if (!moved) break;
+      await page.waitForTimeout(120);
+      continue;
+    }
+
+    const ok = await clickExpandByKey(page, nextToExpand.key);
+    if (ok) {
+      expandedKeys.add(nextToExpand.key);
+      totalExpanded++;
+      if (totalExpanded % 10 === 0) {
+        onLog("info", `Expanded ${totalExpanded} descendant(s) of "${SCRAPE_SUBTREE_NAME}"...`);
+      }
+    } else {
+      failedKeys.add(nextToExpand.key);
+      totalFailed++;
+    }
+    // Brief wait so Jama's lazy-load can render children before the
+    // next visible-rows query.
+    await page.waitForTimeout(150);
+  }
+
+  if (totalFailed > 0) {
+    onLog(
+      "warn",
+      `Finished expanding subtree: ${totalExpanded} succeeded, ${totalFailed} failed.`
+    );
+  } else {
+    onLog("info", `Finished expanding subtree "${SCRAPE_SUBTREE_NAME}": ${totalExpanded} descendant(s).`);
+  }
+}
+
+// Read currently-rendered tree rows with the metadata expansion + capture need.
+async function readVisibleRows(page) {
+  return await page.locator('[role="treeitem"]').evaluateAll((els) =>
+    els.map((el) => {
+      const iconImg = el.querySelector(".tree-node__icon-wrapper-icon");
+      return {
+        key: el.getAttribute("data-key") || "",
+        value: el.getAttribute("value") || "",
+        level: parseInt(el.getAttribute("aria-level") || "0", 10),
+        name: el.getAttribute("title") || "",
+        ariaLabel: el.getAttribute("aria-label") || "",
+        iconTitle: iconImg ? (iconImg.getAttribute("title") || "") : "",
+        expandable: el.hasAttribute("aria-expanded"),
+        expanded: el.getAttribute("aria-expanded") === "true",
+        topPx: parseFloat(el.style.top) || 0,
+      };
+    })
+  );
+}
+
+// Click the expand toggle for the row with the given data-key. Uses the
+// Playwright click-with-fast-options that we proved works for Jama's
+// trusted-event-checking tree framework.
+async function clickExpandByKey(page, key) {
+  try {
+    await page.locator(`[role="treeitem"][data-key="${cssEscape(key)}"]`).first()
+      .locator('[data-automation="node-expander"]').first()
+      .click({ force: true, noWaitAfter: true, timeout: 4_000 });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function cssEscape(s) {
+  // Minimal CSS attribute-value escape — data-key values are
+  // "String_p-152" / "String_a-N" so just guard against quotes.
+  return String(s).replace(/(["\\])/g, "\\$1");
+}
+
+// Scroll through the virtualized list and accumulate every row's data.
+// Deduplicates by data-key across multiple scroll positions.
+async function captureAllTreeRows(page, onLog) {
+  await scrollTreeTo(page, 0);
+  await page.waitForTimeout(150);
+
+  const seen = new Map();
+  let lastScrollTop = -1;
+
+  while (true) {
+    const rows = await page.locator('[role="treeitem"]').evaluateAll((els) =>
+      els.map((el) => {
+        const iconImg = el.querySelector(".tree-node__icon-wrapper-icon");
+        return {
+          key: el.getAttribute("data-key") || "",
+          value: el.getAttribute("value") || "",
+          level: parseInt(el.getAttribute("aria-level") || "0", 10),
+          name: el.getAttribute("title") || "",
+          ariaLabel: el.getAttribute("aria-label") || "",
+          iconTitle: iconImg ? (iconImg.getAttribute("title") || "") : "",
+          expandable: el.hasAttribute("aria-expanded"),
+          // Virtualized rows are absolutely positioned; `top` gives us
+          // a deterministic visual ordering we can sort by later.
+          topPx: parseFloat(el.style.top) || 0,
+        };
+      })
+    );
+
+    for (const r of rows) {
+      if (!r.key) continue;
+      // Keep only containers — folders/components/sets. Leaf items
+      // (individual Verification Test Cases, Requirements, etc.) are
+      // not destinations for the export picker, just data living
+      // INSIDE destinations.
+      const it = (r.iconTitle || "").toLowerCase();
+      const isContainer = it === "project" || it === "component" || it.startsWith("set of");
+      if (!isContainer) continue;
+      if (!seen.has(r.key)) seen.set(r.key, r);
+    }
+
+    const currentTop = await getTreeScrollTop(page);
+    if (currentTop === lastScrollTop) break; // can't scroll further
+    lastScrollTop = currentTop;
+
+    const moved = await scrollTreeBy(page, 400);
+    if (!moved) break;
+    await page.waitForTimeout(120);
+
+    if (seen.size > 0 && seen.size % 100 === 0) {
+      onLog("info", `Captured ${seen.size} so far...`);
+    }
+  }
+
+  // Sort visually (by topPx). The flat list is then in tree-walk order.
+  return Array.from(seen.values()).sort((a, b) => a.topPx - b.topPx);
+}
+
+// Rebuild a nested tree from the flat aria-level-tagged list. Walk in
+// visual order, maintaining a stack of "current ancestors" — when level
+// goes up, push; when it drops back, pop until we match.
+function buildNestedTree(flat) {
+  if (flat.length === 0) return null;
+
+  const toNode = (r) => ({
+    jama_id: r.value,
+    name: r.name,
+    aria_label: r.ariaLabel,
+    icon_title: r.iconTitle,
+    type: deriveType(r.iconTitle),
+    level: r.level,
+    expandable: r.expandable,
+    children: [],
+  });
+
+  const root = toNode(flat[0]);
+  const stack = [root]; // ancestors; stack[i].level === i+1
+
+  for (let i = 1; i < flat.length; i++) {
+    const node = toNode(flat[i]);
+    // Pop until the top of the stack is a strict ancestor (level < node.level)
+    while (stack.length > 0 && stack[stack.length - 1].level >= node.level) {
+      stack.pop();
+    }
+    if (stack.length === 0) {
+      // Shouldn't happen if the tree is well-formed (multiple roots).
+      // Treat as a sibling of root.
+      // (Could capture as a separate root if needed.)
+      stack.push(node);
+      continue;
+    }
+    stack[stack.length - 1].children.push(node);
+    stack.push(node);
+  }
+
+  return root;
+}
+
+// Map the icon's `title` attribute to a normalized type bucket. The
+// raw icon_title is preserved on each node for finer filtering in the UI.
+function deriveType(iconTitle) {
+  const t = (iconTitle || "").toLowerCase();
+  if (t === "project") return "project";
+  if (t === "component") return "component";
+  if (t.startsWith("set of")) return "set";
+  if (t) return "leaf";
+  return "unknown";
+}
+
+// ─── Scroll helpers (work against Jama's virtualized tree container) ────
+
+async function scrollTreeTo(page, top) {
+  await page.evaluate((scrollTop) => {
+    const anyItem = document.querySelector('[role="treeitem"]');
+    if (!anyItem) return;
+    let el = anyItem.parentElement;
+    while (el) {
+      if (el.scrollHeight > el.clientHeight) {
+        el.scrollTop = scrollTop;
+        return;
+      }
+      el = el.parentElement;
+    }
+  }, top);
+}
+
+async function scrollTreeBy(page, delta) {
+  return await page.evaluate((d) => {
+    const anyItem = document.querySelector('[role="treeitem"]');
+    if (!anyItem) return false;
+    let el = anyItem.parentElement;
+    while (el) {
+      if (el.scrollHeight > el.clientHeight) {
+        const before = el.scrollTop;
+        el.scrollTop = Math.min(el.scrollTop + d, el.scrollHeight);
+        return el.scrollTop > before;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  }, delta);
+}
+
+async function getTreeScrollTop(page) {
+  return await page.evaluate(() => {
+    const anyItem = document.querySelector('[role="treeitem"]');
+    if (!anyItem) return 0;
+    let el = anyItem.parentElement;
+    while (el) {
+      if (el.scrollHeight > el.clientHeight) return el.scrollTop;
+      el = el.parentElement;
+    }
+    return 0;
+  });
+}
 
 // ─── Profile-create discovery (URL paste) ────────────────────────────────
 
@@ -677,6 +1064,7 @@ async function tryEnsureChecked(page, label, shouldBeChecked, onLog) {
 
 module.exports = {
   discoverProjectByUrl,
+  scrapeProjectTree,
   openProject,
   clickSidebarFilter,
   runExportReport,

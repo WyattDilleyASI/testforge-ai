@@ -88,7 +88,7 @@ export const Badge = ({ color = "accent", children, style, title }) => {
   return <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: mono, letterSpacing: "0.04em", textTransform: "uppercase", color: c, background: dim, border: `1px solid ${c}22`, whiteSpace: "nowrap", cursor: title ? "help" : "default", ...style }}>{children}</span>;
 };
 
-export const Button = ({ variant = "primary", children, onClick, disabled, style, small }) => {
+export const Button = ({ variant = "primary", children, onClick, disabled, style, small, type, title }) => {
   const T = useTheme();
   const [hover, setHover] = useState(false);
   const base = { fontFamily: font, fontSize: small ? 12 : 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none", borderRadius: 6, padding: small ? "5px 12px" : "9px 20px", transition: "all 0.15s ease", opacity: disabled ? 0.4 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
@@ -107,6 +107,8 @@ export const Button = ({ variant = "primary", children, onClick, disabled, style
     ghost:     { background: `${T.accent}11`, color: T.text },
   }[variant] : {};
   return <button
+    type={type || "button"}
+    title={title}
     style={{ ...variants[variant], ...style, ...hoverStyles }}
     onClick={onClick}
     disabled={disabled}
@@ -281,13 +283,13 @@ export const AutoResizeTextarea = ({ value, onChange, rows = 2, mono: useMono, e
   );
 };
 
-export const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type }) => {
+export const Input = ({ label, value, onChange, placeholder, textarea, mono: useMono, style, disabled, type, name, autoComplete }) => {
   const T = useTheme();
   return <div style={{ display: "flex", flexDirection: "column", gap: 5, ...style }}>
     {label && <label style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>}
     {textarea
       ? <AutoResizeTextarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} mono={useMono} rows={3} style={{ fontSize: 13, padding: "10px 12px", borderRadius: 6 }} />
-      : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
+      : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} type={type || "text"} name={name} autoComplete={autoComplete} style={{ fontFamily: useMono ? mono : font, fontSize: 13, color: T.textBright, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", outline: "none", opacity: disabled ? 0.5 : 1 }} />}
   </div>;
 };
 
