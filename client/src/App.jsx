@@ -16,6 +16,7 @@ import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
 import { MoonlightView } from "./components/MoonlightView";
 import { AnalyticsView } from "./components/AnalyticsView";
+import { BackgroundExportRunsProvider } from "./contexts/backgroundExportRuns";
 import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas, RainstormCanvas,
   StarfieldParallaxCanvas,
   CampfireCanvas,
@@ -225,6 +226,31 @@ export default function App() {
   const [preEasterEggTheme, setPreEasterEggTheme] = useState(null);
   const [hotDogOverlay, setHotDogOverlay] = useState(false);
 
+  // Toast surfaced when a background Jama export run completes.
+  // null | { kind: "done"|"failed", message, runId }
+  const [exportToast, setExportToast] = useState(null);
+  const handleExportRunComplete = useCallback((payload) => {
+    const dest = payload.destinationName ? ` (${payload.destinationName})` : "";
+    if (payload.status === "done") {
+      const total = (payload.createdCount || 0) + (payload.updatedCount || 0);
+      setExportToast({
+        kind: "done",
+        runId: payload.runId,
+        message: `✓ Jama push complete${dest}: ${total} item${total === 1 ? "" : "s"} pushed.`,
+      });
+    } else {
+      const err = (payload.errorMessage || "Unknown error").slice(0, 140);
+      setExportToast({
+        kind: "failed",
+        runId: payload.runId,
+        message: `✗ Jama push failed${dest}: ${err}`,
+      });
+    }
+    // Notify anyone with stale TC data (e.g. the library list) so they
+    // can re-fetch and pick up the new jama_exported_at timestamps.
+    window.dispatchEvent(new CustomEvent("testforge:jama-export-complete", { detail: payload }));
+  }, []);
+
   const handleThemeChange = (key) => {
     setThemeName(key);
     localStorage.setItem("tf-theme", key);
@@ -415,6 +441,7 @@ useEffect(() => {
   `;
 
   return <ThemeContext.Provider value={activeTheme}>
+    <BackgroundExportRunsProvider onComplete={handleExportRunComplete}>
     <div style={{
       display: "flex",
       minHeight: "100vh",
@@ -497,6 +524,7 @@ useEffect(() => {
          activeTheme._sunshine || activeTheme._mainlyClear) && <AmbientCanvas />}
       {themeName === "weather" && <WeatherInfoCard weatherData={weatherData} />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
+      {exportToast && <EasterEggToast message={exportToast.message} onDone={() => setExportToast(null)} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");
         setPreEasterEggTheme(null);
@@ -593,5 +621,6 @@ useEffect(() => {
       </main>
       </div>{/* end mobile column wrapper */}
     </div>
+    </BackgroundExportRunsProvider>
   </ThemeContext.Provider>;
 }

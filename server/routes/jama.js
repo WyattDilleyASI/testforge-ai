@@ -799,11 +799,12 @@ router.get("/export-profiles/:id/tree", requireAuth, (req, res) => {
 // ─── Export runs (test cases → Jama) ─────────────────────────────────────
 
 // POST /api/jama/export-profiles/:id/run
-// Body: { username, password, tc_ids: [string] }
+// Body: { username, password, tc_ids: [string], destination_jama_id?, destination_name? }
 // Kicks off the export in the background, returns { run_id } immediately.
 // Any authenticated user can run an existing profile — same policy as
 // running an import. The profile's default destination must already be
-// set (the orchestrator hard-fails otherwise).
+// set, but the caller can override it for a single run (e.g. to push
+// to a different Set without changing the profile default).
 router.post("/export-profiles/:id/run", requireAuth, (req, res) => {
   const baseUrl = readBaseUrlOr400(res); if (!baseUrl) return;
   const creds = readCredsOr400(req, res); if (!creds) return;
@@ -822,15 +823,35 @@ router.post("/export-profiles/:id/run", requireAuth, (req, res) => {
     return res.status(400).json({ error: "tc_ids must be a non-empty array of test-case ids" });
   }
 
+  // Per-run destination override. If the caller supplies destination_jama_id
+  // it MUST be paired with a destination_name (we display the name in the
+  // log and the toast). We shallow-clone the profile so the override
+  // doesn't leak into other concurrent runs.
+  const overrideId = typeof req.body?.destination_jama_id === "string" ? req.body.destination_jama_id.trim() : "";
+  const overrideName = typeof req.body?.destination_name === "string" ? req.body.destination_name.trim() : "";
+  let effectiveProfile = exportProfile;
+  if (overrideId) {
+    if (!overrideName) {
+      return res.status(400).json({ error: "destination_name is required when destination_jama_id is provided" });
+    }
+    effectiveProfile = {
+      ...exportProfile,
+      default_destination_jama_id: overrideId,
+      default_destination_name: overrideName,
+    };
+  }
+
   const runId = createExportRun({
-    exportProfile,
+    exportProfile: effectiveProfile,
     userId: req.session.userId,
     tcIds,
   });
+  const isOverride = effectiveProfile !== exportProfile;
   logAudit(
     req.session.name,
     "JAMA_EXPORT_RUN_STARTED",
-    `Run ${runId} for export profile "${exportProfile.name}" — ${tcIds.length} TC(s) → ${exportProfile.default_destination_name}`
+    `Run ${runId} for export profile "${exportProfile.name}" — ${tcIds.length} TC(s) → ` +
+    `${effectiveProfile.default_destination_name}${isOverride ? " (per-run override)" : ""}`
   );
 
   // Fire and forget — runExportJob captures all errors internally and
@@ -838,7 +859,7 @@ router.post("/export-profiles/:id/run", requireAuth, (req, res) => {
   // that escapes the inner try.
   runExportJob({
     runId,
-    exportProfile,
+    exportProfile: effectiveProfile,
     userId: req.session.userId,
     username: creds.username,
     password: creds.password,

@@ -2,38 +2,32 @@
 // Jama test-case export — Playwright navigation
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Counterpart to navigate.js, but for the *write* side: open the export
-// profile's project, drive the Explorer sidebar down to the chosen Set
-// node, and create or update test-case items inside it.
+// Counterpart to navigate.js for the *write* side: open the export
+// profile's project, drive the Explorer down to the chosen Set node,
+// and drive the Data Import Wizard to upload an XLSX of test cases
+// using a per-project saved field mapping.
 //
-// Flow recorded from the Jama tenant (May 2026 walkthrough):
+// Flow (matched click-for-click against a manual user import):
 //   1. openProject(projectUrl) — same nav we use for imports
 //   2. Walk down the Explorer tree expanding each ancestor of the
 //      target Set (cached tree path comes from the orchestrator)
-//   3. Right-click the Set row → Add → New item → "Verification Test Case"
-//   4. New-item form loads at /items/new/{typeId};{projectId};{parentSetId}?tab=600
-//      Required fields: NAME, DESCRIPTION (CKEditor), SETUP (CKEditor)
-//      Optional: STEPS table (Action / Expected Result / Notes), AUTOMATED,
-//      AUTOMATION TOOL, PRIORITY, etc.
-//   5. Click "Save" (NOT "Save & done" — we need the form to stay open so
-//      we can read the assigned PROJECT ID before closing)
-//   6. Read PROJECT ID (e.g. "LFWM2-VERTC-1543") + GLOBAL ID ("GID-3644405")
-//   7. Click "Done" to dismiss
+//   3. Right-click the Set row → "Import" → opens Data Import Wizard
+//   4. Upload XLSX → wait for Jama's server-side scan
+//   5. Pick saved field mapping ("Manual_Testcases" or whatever the
+//      profile configures) → wait for mapping panel to populate
+//   6. Click Next → dismiss the "value not integer" warning (Enter key)
+//   7. Click Next twice more (Additional Options, Verify First Item)
+//   8. Click Submit on the Final Import Summary page → import runs
+//   9. Poll for "imported N items" or "Import Error" → close wizard
 //
-// The CKEditor fields are filled by toggling Source mode and injecting
-// our HTML directly — typing into the WYSIWYG would lose structure.
+// The earlier per-TC New-Item-form approach (right-click Set → Add →
+// New item → fill CKEditor step grid) hit a dead end — see
+//   memory/project_jama_step_export_dead_end.md
+// The XLSX wizard goes through Jama's official import pipeline which
+// handles step rows correctly.
 
 const { JamaError, NavigationFailed, UnexpectedPageState } = require("./errors");
 const { openProject } = require("./navigate");
-
-const NOT_IMPLEMENTED_CODE = "JAMA_EXPORT_NOT_IMPLEMENTED";
-
-// Text we click in the right-click context menu. The "configured" item
-// type for each Set under V&V in our tenant is "Verification Test Case"
-// (marked with a checkmark icon in the submenu — see screenshot 6 of
-// the walkthrough). If a future Set uses a different type, we'd need
-// to learn it at runtime from the menu's iconography.
-const ADD_TC_TYPE_LABEL = "Verification Test Case";
 
 // ─── Public API ──────────────────────────────────────────────────────────
 
@@ -1380,5 +1374,4 @@ async function snapshotVisibleLeavesDiff(page, baseline) {
 module.exports = {
   navigateToSetNode,
   importTestCasesXlsx,
-  NOT_IMPLEMENTED_CODE,
 };

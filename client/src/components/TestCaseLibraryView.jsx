@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, TestCaseEditForm, InlineConfirm, OverflowMenu, useIsMobile } from "./shared";
@@ -36,6 +36,15 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh, ope
   // Jama push flow — opened from the bulk action bar, freezes the selection
   // until the flow closes so refresh doesn't shrink the picked TC list mid-run.
   const [jamaPushTcs, setJamaPushTcs] = useState(null);
+
+  // Refresh when a background-monitored push finishes, so the TC list
+  // picks up the new jama_exported_at timestamps. App.jsx fires this
+  // event from the BackgroundExportRunsProvider's onComplete handler.
+  useEffect(() => {
+    const onJamaDone = () => { refresh?.(); };
+    window.addEventListener("testforge:jama-export-complete", onJamaDone);
+    return () => window.removeEventListener("testforge:jama-export-complete", onJamaDone);
+  }, [refresh]);
 
   const sortedTcs = [...testCases].sort((a, b) => (b.generated_at || "").localeCompare(a.generated_at || ""));
   const statusFiltered = filter === "all" ? sortedTcs : sortedTcs.filter(tc => tc.status.toLowerCase() === filter);

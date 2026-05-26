@@ -194,11 +194,18 @@ export const api = {
   // SSE for tree-scrape progress (use EventSource directly):
   //   new EventSource(`/api/jama/export-tree-jobs/${jobId}/stream`, { withCredentials: true })
 
-  // Jama Browser Export — Run (push selected TCs into the profile's destination)
-  startJamaExportRun: (exportProfileId, username, password, tc_ids) =>
+  // Jama Browser Export — Run (push selected TCs into the profile's destination).
+  // Pass destination = { jama_id, name } to override the profile default
+  // for this run only. Omit to use the profile's saved default.
+  startJamaExportRun: (exportProfileId, username, password, tc_ids, destination = null) =>
     request(`/jama/export-profiles/${exportProfileId}/run`, {
       method: "POST",
-      body: { username, password, tc_ids },
+      body: {
+        username,
+        password,
+        tc_ids,
+        ...(destination ? { destination_jama_id: destination.jama_id, destination_name: destination.name } : {}),
+      },
     }),
   getJamaExportRun: (runId) => request(`/jama/export-runs/${runId}`),
   // SSE for export-run progress (use EventSource directly):

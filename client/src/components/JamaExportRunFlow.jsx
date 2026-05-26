@@ -16,6 +16,8 @@ import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Button, ErrorBanner } from "./shared";
 import { CredsView, StatusBadge, LogPane } from "./JamaImportView";
+import { JamaTreePicker } from "./JamaTreePicker";
+import { useBackgroundExportRuns } from "../contexts/backgroundExportRuns";
 
 const LAST_USERNAME_KEY = "tf_last_jama_username";
 
@@ -25,15 +27,32 @@ export const JamaExportRunFlow = ({
   onExportComplete,
 }) => {
   const T = useTheme();
+  const { monitor: monitorBackgroundRun } = useBackgroundExportRuns();
   const tcIds = selectedTestCases.map((tc) => tc.tc_id);
 
   // mode: loading_profiles | no_profiles | pick_profile | preflight |
-  //       creds | running | done | failed
+  //       destination | creds | running | done | failed
   const [mode, setMode] = useState("loading_profiles");
   const [profiles, setProfiles] = useState([]);
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Destination override state — null until the user confirms, then either
+  // { jama_id, name } if they picked a non-default Set, or "use_default" to
+  // signal they explicitly kept the default (so we don't show "Change" again).
+  // Effective destination for display = override ?? profile default.
+  const [destinationOverride, setDestinationOverride] = useState(null);
+  const effectiveDestination = destinationOverride
+    ? { jama_id: destinationOverride.jama_id, name: destinationOverride.name }
+    : profile ? { jama_id: profile.default_destination_jama_id, name: profile.default_destination_name } : null;
+
+  // Tree picker state for the destination step.
+  const [destTree, setDestTree] = useState(null);          // V&V subtree, or null
+  const [destExpanded, setDestExpanded] = useState(new Set());
+  const [destSelected, setDestSelected] = useState(null);  // selected tree node
+  const [destLoading, setDestLoading] = useState(false);
+  const [destLoadError, setDestLoadError] = useState("");
 
   // Start both fields empty so the browser's autofill can populate
   // username AND password as a pair. Programmatically pre-filling the
@@ -114,7 +133,76 @@ export const JamaExportRunFlow = ({
 
   // ── Actions ──────────────────────────────────────────────────────────
   const pickProfile = (p) => { setProfile(p); setError(""); setMode("preflight"); };
-  const goToCreds = () => {
+
+  // Load the cached project tree for the destination picker. Pre-expands the
+  // path down to the current default destination and pre-selects it.
+  const goToDestination = async () => {
+    setError("");
+    setMode("destination");
+    if (destTree) return; // already loaded for this profile
+    setDestLoading(true);
+    setDestLoadError("");
+    try {
+      const data = await api.getJamaExportProjectTree(profile.id);
+      const vv = (data.tree.children || []).find((c) => c.name === "Verification & Validation");
+      if (!vv) {
+        setDestLoadError(
+          'This project\'s cached tree has no "Verification & Validation" component. ' +
+          "Refresh the tree from Configure Jama export and try again, or continue with the saved default."
+        );
+        return;
+      }
+      setDestTree(vv);
+      const auto = new Set([vv.jama_id]);
+      const defaultId = effectiveDestination?.jama_id;
+      if (defaultId) {
+        const found = findNodeById(vv, defaultId);
+        if (found) {
+          setDestSelected(found);
+          for (const ancestorId of (pathTo(vv, defaultId) || [])) auto.add(ancestorId);
+        }
+      }
+      setDestExpanded(auto);
+    } catch (e) {
+      if (/not cached|not yet|404/i.test(e.message)) {
+        setDestLoadError(
+          "No tree cached for this profile yet. Refresh it from Configure Jama export first, " +
+          "or continue with the saved default."
+        );
+      } else {
+        setDestLoadError(e.message);
+      }
+    } finally {
+      setDestLoading(false);
+    }
+  };
+
+  const toggleDestExpand = (jamaId) => {
+    setDestExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(jamaId)) next.delete(jamaId); else next.add(jamaId);
+      return next;
+    });
+  };
+
+  const confirmDestination = () => {
+    // If the user picked a Set that differs from the profile default, store
+    // an override. If it matches the default, clear the override (cleaner
+    // for the server's audit-log line).
+    if (destSelected && destSelected.type === "set") {
+      const isDefault = destSelected.jama_id === profile.default_destination_jama_id;
+      setDestinationOverride(isDefault ? null : { jama_id: destSelected.jama_id, name: destSelected.name });
+    } else {
+      setDestinationOverride(null);
+    }
+    setError("");
+    setCredsForm((f) => ({ ...f, password: "" }));
+    setMode("creds");
+  };
+
+  // Keeping the default without opening the picker (when tree fetch fails).
+  const skipDestinationPicker = () => {
+    setDestinationOverride(null);
     setError("");
     setCredsForm((f) => ({ ...f, password: "" }));
     setMode("creds");
@@ -129,7 +217,7 @@ export const JamaExportRunFlow = ({
     try {
       localStorage.setItem(LAST_USERNAME_KEY, credsForm.username);
       const { run_id } = await api.startJamaExportRun(
-        profile.id, credsForm.username, credsForm.password, tcIds
+        profile.id, credsForm.username, credsForm.password, tcIds, destinationOverride
       );
       // Wipe password ASAP.
       setCredsForm((f) => ({ ...f, password: "" }));
@@ -148,10 +236,22 @@ export const JamaExportRunFlow = ({
     onClose?.();
   };
 
+  // Close the dialog without cancelling the run. Hands the runId off to
+  // the background monitor so a toast fires when Jama finishes (or
+  // fails). The server-side job is already independent of the SSE
+  // stream — closing just stops our local subscription.
+  const closeKeepRunning = () => {
+    if (activeRunId) {
+      const label = effectiveDestination?.name || profile?.name || "";
+      monitorBackgroundRun(activeRunId, label);
+    }
+    onClose?.();
+  };
+
   // ── Render ───────────────────────────────────────────────────────────
   return (
     <Card style={{ marginBottom: 16, padding: 16 }}>
-      <Header T={T} mode={mode} tcCount={tcIds.length} onClose={mode !== "running" ? onClose : null} />
+      <Header T={T} mode={mode} tcCount={tcIds.length} onClose={mode === "running" ? closeKeepRunning : onClose} />
       <ErrorBanner msg={error} />
 
       {mode === "loading_profiles" && (
@@ -179,19 +279,36 @@ export const JamaExportRunFlow = ({
           profile={profile}
           tcCount={tcIds.length}
           splitCounts={splitCounts}
-          onContinue={goToCreds}
+          onContinue={goToDestination}
           onCancel={onClose}
+        />
+      )}
+
+      {mode === "destination" && profile && (
+        <DestinationView
+          T={T}
+          profile={profile}
+          tree={destTree}
+          expanded={destExpanded}
+          selected={destSelected}
+          loading={destLoading}
+          loadError={destLoadError}
+          onToggleExpand={toggleDestExpand}
+          onSelectNode={setDestSelected}
+          onConfirm={confirmDestination}
+          onSkip={skipDestinationPicker}
+          onCancel={() => setMode("preflight")}
         />
       )}
 
       {mode === "creds" && profile && (
         <CredsView
           T={T}
-          title={`Sign in to Jama to push to "${profile.default_destination_name}"`}
+          title={`Sign in to Jama to push to "${effectiveDestination?.name || ""}"`}
           credsForm={credsForm}
           setCredsForm={setCredsForm}
           onSubmit={submitCreds}
-          onCancel={() => setMode("preflight")}
+          onCancel={() => setMode("destination")}
           submitLabel="Sign in & push"
           busy={busy}
         />
@@ -202,8 +319,9 @@ export const JamaExportRunFlow = ({
           T={T}
           status={runStatus}
           log={runLog}
-          profile={profile}
+          destinationName={effectiveDestination?.name}
           tcCount={tcIds.length}
+          onCloseKeepRunning={closeKeepRunning}
         />
       )}
 
@@ -211,7 +329,7 @@ export const JamaExportRunFlow = ({
         <DoneView
           T={T}
           status={runStatus}
-          profile={profile}
+          destinationName={effectiveDestination?.name}
           log={runLog}
           onDone={finishDone}
         />
@@ -239,6 +357,7 @@ const Header = ({ T, mode, tcCount, onClose }) => {
     no_profiles:      "Push to Jama",
     pick_profile:     "Pick an export profile",
     preflight:        `Push ${tcCount} test case${tcCount === 1 ? "" : "s"} to Jama`,
+    destination:      "Where should this push go?",
     creds:            "Sign in to Jama",
     running:          "Pushing to Jama",
     done:             "Push complete",
@@ -375,10 +494,69 @@ const PreflightView = ({ T, profile, tcCount, splitCounts, onContinue, onCancel 
   );
 };
 
-const RunningView = ({ T, status, log, profile, tcCount }) => (
+const DestinationView = ({
+  T, profile, tree, expanded, selected, loading, loadError,
+  onToggleExpand, onSelectNode, onConfirm, onSkip, onCancel,
+}) => {
+  const defaultName = profile?.default_destination_name;
+  const defaultId = profile?.default_destination_jama_id;
+  const selectedIsDefault = selected?.type === "set" && selected.jama_id === defaultId;
+  const selectedIsValid = selected?.type === "set";
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: T.text, marginBottom: 6 }}>
+        Default destination for <strong>{profile?.name}</strong>:{" "}
+        <span style={{ color: T.green, fontFamily: mono, fontWeight: 600 }}>{defaultName}</span>
+      </div>
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+        Keep the default, or pick a different Set below. This choice applies to this push only — the profile's saved default is unchanged.
+      </div>
+
+      {loading && (
+        <div style={{ padding: 24, textAlign: "center", color: T.textMuted, fontSize: 12 }}>
+          Loading project tree...
+        </div>
+      )}
+
+      {!loading && loadError && (
+        <>
+          <div style={{
+            padding: "10px 12px", background: T.amberDim, borderRadius: 6,
+            border: `1px solid ${T.amber}33`, marginBottom: 12, fontSize: 12, color: T.amber, lineHeight: 1.5,
+          }}>
+            {loadError}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <Button variant="ghost" small onClick={onCancel}>Back</Button>
+            <Button small onClick={onSkip}>Continue with default</Button>
+          </div>
+        </>
+      )}
+
+      {!loading && !loadError && tree && (
+        <JamaTreePicker
+          T={T}
+          profile={profile}
+          tree={tree}
+          expanded={expanded}
+          selected={selected}
+          onToggleExpand={onToggleExpand}
+          onSelectNode={onSelectNode}
+          intro={null}
+          confirmLabel={selectedIsDefault ? "Continue with default" : "Use this destination"}
+          onCancel={onCancel}
+          onConfirm={onConfirm}
+        />
+      )}
+    </div>
+  );
+};
+
+const RunningView = ({ T, status, log, destinationName, tcCount, onCloseKeepRunning }) => (
   <div>
     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>
-      Pushing {tcCount} test case{tcCount === 1 ? "" : "s"} to {profile?.default_destination_name} — {status?.status_message || "Starting..."}
+      Pushing {tcCount} test case{tcCount === 1 ? "" : "s"} to {destinationName} — {status?.status_message || "Starting..."}
     </div>
     <StatusBadge T={T} status={status?.status} />
     <div style={{ fontSize: 11, color: T.textMuted, marginTop: 8 }}>
@@ -386,10 +564,17 @@ const RunningView = ({ T, status, log, profile, tcCount }) => (
       Updated: <strong>{status?.updated_count ?? 0}</strong>
     </div>
     <LogPane T={T} log={log} style={{ marginTop: 12 }} />
+    {onCloseKeepRunning && (
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+        <Button variant="ghost" small onClick={onCloseKeepRunning} title="Close this dialog. The push keeps running in the background; a toast will appear when it finishes.">
+          Close (keep running)
+        </Button>
+      </div>
+    )}
   </div>
 );
 
-const DoneView = ({ T, status, profile, log, onDone }) => {
+const DoneView = ({ T, status, destinationName, log, onDone }) => {
   const created = status?.created_count ?? 0;
   const updated = status?.updated_count ?? 0;
   return (
@@ -399,7 +584,7 @@ const DoneView = ({ T, status, profile, log, onDone }) => {
         border: `1px solid ${T.green}33`, marginBottom: 12,
       }}>
         <div style={{ fontSize: 13, color: T.green, fontWeight: 600 }}>
-          ✓ Pushed to {profile?.default_destination_name}
+          ✓ Pushed to {destinationName}
         </div>
         <div style={{ fontSize: 12, color: T.text, marginTop: 6 }}>
           {created} test case{created === 1 ? "" : "s"} created · {updated} updated in place
@@ -466,3 +651,27 @@ const FailedView = ({ T, status, log, runId, onRetry, onClose }) => {
     </div>
   );
 };
+
+// ─── Tree helpers ───────────────────────────────────────────────────────
+
+function findNodeById(node, jamaId) {
+  if (!node) return null;
+  if (node.jama_id === jamaId) return node;
+  for (const child of node.children || []) {
+    const found = findNodeById(child, jamaId);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Returns the chain of ancestor jama_ids leading to the target (exclusive
+// of the target itself) so we can pre-expand the picker to show it.
+function pathTo(node, targetId, trail = []) {
+  if (!node) return null;
+  if (node.jama_id === targetId) return trail;
+  for (const child of node.children || []) {
+    const sub = pathTo(child, targetId, [...trail, node.jama_id]);
+    if (sub) return sub;
+  }
+  return null;
+}
