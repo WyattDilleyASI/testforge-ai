@@ -17,6 +17,8 @@ import { SettingsWrapper } from "./components/SettingsWrapper";
 import { MoonlightView } from "./components/MoonlightView";
 import { AnalyticsView } from "./components/AnalyticsView";
 import { BackgroundExportRunsProvider } from "./contexts/backgroundExportRuns";
+import { WhatsNewModal } from "./components/WhatsNewModal";
+import { WHATS_NEW, WHATS_NEW_STORAGE_KEY, unseenWhatsNewEntries } from "./whatsNew";
 import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas, RainstormCanvas,
   StarfieldParallaxCanvas,
   CampfireCanvas,
@@ -225,6 +227,25 @@ export default function App() {
   const [easterEggToast, setEasterEggToast] = useState(null);
   const [preEasterEggTheme, setPreEasterEggTheme] = useState(null);
   const [hotDogOverlay, setHotDogOverlay] = useState(false);
+
+  // What's-new modal: shown on first authenticated mount after a new
+  // release. Closed once acknowledged; stored per-browser in
+  // localStorage. Editing the entries is just appending to whatsNew.js.
+  const [whatsNewEntries, setWhatsNewEntries] = useState([]);
+  useEffect(() => {
+    if (authState !== "authenticated") return;
+    let lastSeen = "";
+    try { lastSeen = localStorage.getItem(WHATS_NEW_STORAGE_KEY) || ""; } catch (_) {}
+    const unseen = unseenWhatsNewEntries(lastSeen);
+    if (unseen.length > 0) setWhatsNewEntries(unseen);
+  }, [authState]);
+  const dismissWhatsNew = useCallback(() => {
+    try {
+      const latestId = WHATS_NEW[0]?.id;
+      if (latestId) localStorage.setItem(WHATS_NEW_STORAGE_KEY, latestId);
+    } catch (_) {}
+    setWhatsNewEntries([]);
+  }, []);
 
   // Toast surfaced when a background Jama export run completes.
   // null | { kind: "done"|"failed", message, runId }
@@ -525,6 +546,7 @@ useEffect(() => {
       {themeName === "weather" && <WeatherInfoCard weatherData={weatherData} />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
       {exportToast && <EasterEggToast message={exportToast.message} onDone={() => setExportToast(null)} />}
+      {whatsNewEntries.length > 0 && <WhatsNewModal entries={whatsNewEntries} onDismiss={dismissWhatsNew} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");
         setPreEasterEggTheme(null);
