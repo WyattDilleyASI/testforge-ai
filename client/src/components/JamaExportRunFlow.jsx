@@ -26,6 +26,7 @@ export const JamaExportRunFlow = ({
   selectedTestCases,        // array of TC rows from the library (need .tc_id + .jama_id)
   onClose,
   onExportComplete,
+  presetProfileId = null,   // when set, skip the pick_profile step and use this profile
 }) => {
   const T = useTheme();
   const { monitor: monitorBackgroundRun } = useBackgroundExportRuns();
@@ -84,6 +85,17 @@ export const JamaExportRunFlow = ({
         const all = data.profiles || [];
         setProfiles(all);
         if (all.length === 0) { setMode("no_profiles"); return; }
+        // Caller can preset a profile (e.g. the new sidebar Push view picks
+        // both TCs and profile before launching this flow). Skip the
+        // pick-profile step when the preset id is valid.
+        if (presetProfileId) {
+          const preset = all.find((p) => p.id === presetProfileId);
+          if (preset) {
+            setProfile(preset);
+            setMode("preflight");
+            return;
+          }
+        }
         if (all.length === 1) {
           setProfile(all[0]);
           setMode("preflight");
@@ -95,7 +107,7 @@ export const JamaExportRunFlow = ({
         setMode("no_profiles");
       }
     })();
-  }, []);
+  }, [presetProfileId]);
 
   useEffect(() => {
     if (!activeRunId) return;

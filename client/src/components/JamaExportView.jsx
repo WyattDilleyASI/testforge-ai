@@ -24,7 +24,7 @@ import {
 
 const LAST_USERNAME_KEY = "tf_last_jama_username";
 
-export const JamaExportView = ({ currentUser, onClose }) => {
+export const JamaExportView = ({ currentUser, onClose, embedded = false }) => {
   const T = useTheme();
   const canManage = currentUser.role === "Admin" || currentUser.role === "QA Manager";
   const isAdmin = currentUser.role === "Admin";
@@ -128,6 +128,13 @@ export const JamaExportView = ({ currentUser, onClose }) => {
     } catch (e) { setError(e.message); }
   };
 
+  // Broadcast after any profile mutation so other views (Push to Jama,
+  // anywhere else with a stale profile list) can re-fetch. Fire-and-forget;
+  // anyone interested listens via window.addEventListener.
+  const notifyProfilesChanged = () => {
+    window.dispatchEvent(new CustomEvent("testforge:jama-export-profiles-changed"));
+  };
+
   const loadBaseUrl = async () => {
     try {
       const data = await api.getJamaBaseUrl();
@@ -225,6 +232,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
         scrape_subtree_name: (f.scrape_subtree_name || "Verification & Validation").trim(),
       });
       await refreshProfiles();
+      notifyProfilesChanged();
       setMode("list");
     } catch (e) {
       setError(e.message);
@@ -330,6 +338,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
         default_destination_name: pickerSelected.name,
       });
       await refreshProfiles();
+      notifyProfilesChanged();
       setError(`✓ Set default destination for "${selectedProfile.name}": ${pickerSelected.name} (${pickerSelected.jama_id}).`);
       setMode("list");
     } catch (e) {
@@ -364,6 +373,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
         scrape_subtree_name: (editForm.scrape_subtree_name || "Verification & Validation").trim(),
       });
       await refreshProfiles();
+      notifyProfilesChanged();
       setMode("list");
     } catch (e) {
       setError(e.message);
@@ -384,6 +394,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
       await api.deleteJamaExportProfile(profileToDelete.id);
       setProfileToDelete(null);
       await refreshProfiles();
+      notifyProfilesChanged();
       setMode("list");
     } catch (e) {
       setError(e.message);
@@ -393,9 +404,14 @@ export const JamaExportView = ({ currentUser, onClose }) => {
   };
 
   // ── Render ───────────────────────────────────────────────────────────
+  // When `embedded` (e.g. mounted inside Push to Jama) we skip the outer
+  // Card chrome and the title bar — the host already provides them.
+  const Wrapper = embedded
+    ? ({ children }) => <div>{children}</div>
+    : ({ children }) => <Card style={{ marginBottom: 16, padding: 16 }}>{children}</Card>;
   return (
-    <Card style={{ marginBottom: 16, padding: 16 }}>
-      <Header T={T} mode={mode} onClose={onClose} />
+    <Wrapper>
+      {!embedded && <Header T={T} mode={mode} onClose={onClose} />}
       <ErrorBanner msg={error} />
 
       {mode === "list" && baseUrl === "" && (
@@ -517,7 +533,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
           busy={busy}
         />
       )}
-    </Card>
+    </Wrapper>
   );
 };
 
