@@ -18,6 +18,7 @@ import { Card, Button, ErrorBanner } from "./shared";
 import { CredsView, StatusBadge, LogPane } from "./JamaImportView";
 import { JamaTreePicker } from "./JamaTreePicker";
 import { useBackgroundExportRuns } from "../contexts/backgroundExportRuns";
+import { Callout } from "./Callout";
 
 const LAST_USERNAME_KEY = "tf_last_jama_username";
 
@@ -144,22 +145,23 @@ export const JamaExportRunFlow = ({
     setDestLoadError("");
     try {
       const data = await api.getJamaExportProjectTree(profile.id);
-      const vv = (data.tree.children || []).find((c) => c.name === "Verification & Validation");
-      if (!vv) {
+      const subtreeName = profile.scrape_subtree_name || "Verification & Validation";
+      const subtree = (data.tree.children || []).find((c) => c.name === subtreeName);
+      if (!subtree) {
         setDestLoadError(
-          'This project\'s cached tree has no "Verification & Validation" component. ' +
+          `This project's cached tree has no "${subtreeName}" component. ` +
           "Refresh the tree from Configure Jama export and try again, or continue with the saved default."
         );
         return;
       }
-      setDestTree(vv);
-      const auto = new Set([vv.jama_id]);
+      setDestTree(subtree);
+      const auto = new Set([subtree.jama_id]);
       const defaultId = effectiveDestination?.jama_id;
       if (defaultId) {
-        const found = findNodeById(vv, defaultId);
+        const found = findNodeById(subtree, defaultId);
         if (found) {
           setDestSelected(found);
-          for (const ancestorId of (pathTo(vv, defaultId) || [])) auto.add(ancestorId);
+          for (const ancestorId of (pathTo(subtree, defaultId) || [])) auto.add(ancestorId);
         }
       }
       setDestExpanded(auto);
@@ -385,16 +387,29 @@ const Header = ({ T, mode, tcCount, onClose }) => {
 const NoProfilesView = ({ T, onClose }) => (
   <div>
     <div style={{
-      padding: "12px", background: T.amberDim, borderRadius: 6,
+      padding: "14px 16px", background: T.amberDim, borderRadius: 6,
       border: `1px solid ${T.amber}33`, marginBottom: 12,
     }}>
-      <div style={{ fontSize: 13, color: T.amber, fontWeight: 600 }}>
-        No export profiles configured
+      <div style={{ fontSize: 13, color: T.amber, fontWeight: 600, marginBottom: 8 }}>
+        Push to Jama isn't set up yet
       </div>
-      <div style={{ fontSize: 12, color: T.text, marginTop: 6 }}>
-        Set up a Jama export profile first (and pick a default destination Set)
-        from the Library overflow menu → "Configure Jama export".
+      <div style={{ fontSize: 12, color: T.text, lineHeight: 1.6 }}>
+        Someone with Admin or QA Manager access needs to do a one-time setup. Do these steps in order — the Jama mapping (step 1) is a prerequisite and only needs to be done once per Jama project, not per profile:
       </div>
+      <ol style={{ fontSize: 12, color: T.text, lineHeight: 1.7, paddingLeft: 22, marginTop: 8, marginBottom: 0 }}>
+        <li>
+          <strong>In Jama (once per project):</strong> right-click a Set under your test-case area → <strong>Import</strong> → upload a Testforge-exported XLSX → configure field mappings → on the final wizard step click <strong>"Save This As New Document Mapping"</strong> and note the name you save it under.
+        </li>
+        <li>
+          In Testforge: <strong>Library → overflow menu (⋮) → "Configure Jama export"</strong> → <strong>New profile</strong>. Paste the Jama project URL, enter the saved-mapping name from step 1 exactly, and confirm the "Subtree to scrape" name matches the top-level component in your Jama project (default: <code style={{ fontFamily: mono }}>Verification &amp; Validation</code>).
+        </li>
+        <li>
+          Click <strong>"Refresh tree"</strong> on the profile so Testforge caches the project's Set structure.
+        </li>
+        <li>
+          Click <strong>"Pick destination"</strong> and choose the default Set that new test cases will land in.
+        </li>
+      </ol>
     </div>
     <div style={{ display: "flex", justifyContent: "flex-end" }}>
       <Button small onClick={onClose}>OK</Button>
@@ -505,6 +520,10 @@ const DestinationView = ({
 
   return (
     <div>
+      <Callout id="jama-export-destination-step" title="New: per-run destination" variant="tip">
+        This step lets you send a single push to a different Jama Set without touching the profile's saved default.
+        Useful when most of your pushes go to one place but you occasionally need to drop a batch somewhere else.
+      </Callout>
       <div style={{ fontSize: 12, color: T.text, marginBottom: 6 }}>
         Default destination for <strong>{profile?.name}</strong>:{" "}
         <span style={{ color: T.green, fontFamily: mono, fontWeight: 600 }}>{defaultName}</span>
@@ -555,6 +574,12 @@ const DestinationView = ({
 
 const RunningView = ({ T, status, log, destinationName, tcCount, onCloseKeepRunning }) => (
   <div>
+    {onCloseKeepRunning && (
+      <Callout id="jama-export-close-keeps-running" title="You can close this and keep working" variant="tip">
+        Long pushes can take minutes. Click <strong>Close (keep running)</strong> below (or the × in the header)
+        and the export continues in the background. A toast will pop up at the top of the screen when it finishes.
+      </Callout>
+    )}
     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 8 }}>
       Pushing {tcCount} test case{tcCount === 1 ? "" : "s"} to {destinationName} — {status?.status_message || "Starting..."}
     </div>

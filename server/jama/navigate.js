@@ -23,14 +23,11 @@
 
 const path = require("path");
 
-// Name of the subtree to deep-scrape. Other top-level components are
-// captured as roots-with-no-children placeholders so the tree retains
-// project context without paying the full expansion cost.
-//
-// HARDCODED for MVP — this matches the V&V container in the ASI
-// Landscaping project. To support other subtrees later, surface this
-// as a profile-level field.
-const SCRAPE_SUBTREE_NAME = "Verification & Validation";
+// Default name of the subtree to deep-scrape if a caller doesn't
+// override. Matches the ASI Landscaping project's V&V container. Each
+// export profile can override this via its scrape_subtree_name column —
+// scrapeProjectTree() accepts it as the second arg.
+const DEFAULT_SCRAPE_SUBTREE_NAME = "Verification & Validation";
 
 const {
   NavigationFailed,
@@ -71,9 +68,9 @@ const {
  *   - Containers (Project, Component, Set, …) have `aria-expanded`;
  *     leaves don't. Toggle click target: `.rs-tree-node-toggle`.
  */
-async function scrapeProjectTree(session, projectUrl) {
+async function scrapeProjectTree(session, projectUrl, subtreeName = DEFAULT_SCRAPE_SUBTREE_NAME) {
   const { page, onLog } = session;
-  onLog("info", "Scraping project tree...");
+  onLog("info", `Scraping project tree (subtree: "${subtreeName}")...`);
 
   await openProject(session, projectUrl);
 
@@ -85,7 +82,7 @@ async function scrapeProjectTree(session, projectUrl) {
   }
 
   // Phase 1: expand all collapsed containers (handles virtualization).
-  await expandAllTreeNodes(page, onLog);
+  await expandAllTreeNodes(page, onLog, subtreeName);
 
   // Phase 2: scroll through and capture every visible row, deduping by
   // data-key. Returns a FLAT list of nodes with level info.
@@ -109,7 +106,7 @@ async function scrapeProjectTree(session, projectUrl) {
 //
 // Strategy:
 //   1. Scroll through the virtualized tree to find the row whose
-//      title matches SCRAPE_SUBTREE_NAME. Record its level + data-key.
+//      title matches subtreeName. Record its level + data-key.
 //   2. If it's collapsed, expand it first.
 //   3. Walk forward (by topPx) from that row. Every collapsed row we
 //      encounter is a descendant *as long as* its aria-level is
@@ -117,26 +114,26 @@ async function scrapeProjectTree(session, projectUrl) {
 //      we see at level <= root.level marks the end of the subtree.
 //   4. Use Playwright clicks with force+noWaitAfter for speed (same
 //      proven mechanism as before, just scoped).
-async function expandAllTreeNodes(page, onLog) {
+async function expandAllTreeNodes(page, onLog, subtreeName = DEFAULT_SCRAPE_SUBTREE_NAME) {
   // ── Phase 1: locate the target subtree by name ─────────────────
-  onLog("info", `Looking for subtree "${SCRAPE_SUBTREE_NAME}"...`);
+  onLog("info", `Looking for subtree "${subtreeName}"...`);
   await scrollTreeTo(page, 0);
   await page.waitForTimeout(150);
 
   let target = null;
   for (let scrollAttempts = 0; scrollAttempts < 200; scrollAttempts++) {
     const visible = await readVisibleRows(page);
-    target = visible.find((r) => (r.name || "").trim() === SCRAPE_SUBTREE_NAME);
+    target = visible.find((r) => (r.name || "").trim() === subtreeName);
     if (target) break;
     const moved = await scrollTreeBy(page, 400);
     if (!moved) break;
     await page.waitForTimeout(120);
   }
   if (!target) {
-    onLog("warn", `Subtree "${SCRAPE_SUBTREE_NAME}" not found — nothing to expand.`);
+    onLog("warn", `Subtree "${subtreeName}" not found — nothing to expand.`);
     return;
   }
-  onLog("info", `Found "${SCRAPE_SUBTREE_NAME}" at level ${target.level}. Expanding descendants only...`);
+  onLog("info", `Found "${subtreeName}" at level ${target.level}. Expanding descendants only...`);
 
   // ── Phase 2: ensure the subtree root is expanded ──────────────
   if (target.expandable && !target.expanded) {
@@ -201,7 +198,7 @@ async function expandAllTreeNodes(page, onLog) {
       expandedKeys.add(nextToExpand.key);
       totalExpanded++;
       if (totalExpanded % 10 === 0) {
-        onLog("info", `Expanded ${totalExpanded} descendant(s) of "${SCRAPE_SUBTREE_NAME}"...`);
+        onLog("info", `Expanded ${totalExpanded} descendant(s) of "${subtreeName}"...`);
       }
     } else {
       failedKeys.add(nextToExpand.key);
@@ -218,7 +215,7 @@ async function expandAllTreeNodes(page, onLog) {
       `Finished expanding subtree: ${totalExpanded} succeeded, ${totalFailed} failed.`
     );
   } else {
-    onLog("info", `Finished expanding subtree "${SCRAPE_SUBTREE_NAME}": ${totalExpanded} descendant(s).`);
+    onLog("info", `Finished expanding subtree "${subtreeName}": ${totalExpanded} descendant(s).`);
   }
 }
 

@@ -185,21 +185,33 @@ function initializeJama() {
       default_destination_jama_id TEXT,
       default_destination_name    TEXT,
       import_mapping_name         TEXT    NOT NULL DEFAULT 'Testforge Auto Import',
+      scrape_subtree_name         TEXT    NOT NULL DEFAULT 'Verification & Validation',
       created_by_user_id          TEXT    NOT NULL,
       created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at                  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
   `);
 
-  // Migration: add import_mapping_name to existing installations.
-  // Saved field mapping that Jama's import wizard reuses across runs.
-  // First-time team setup: our orchestrator builds the mapping during
-  // the wizard's Step 4 and saves it under this name; every subsequent
-  // run picks it from the dropdown.
+  // Migrations for jama_export_profiles (additive only — never drop or
+  // rename columns that prior installs depend on).
   const exportCols = core.prepare("PRAGMA table_info(jama_export_profiles)").all().map((c) => c.name);
+
+  // import_mapping_name: saved field mapping that Jama's import wizard
+  // reuses across runs. Team setup: run one manual XLSX import in Jama,
+  // save the mapping with this name, and every push thereafter reuses it.
   if (!exportCols.includes("import_mapping_name")) {
     core.exec(
       "ALTER TABLE jama_export_profiles ADD COLUMN import_mapping_name TEXT NOT NULL DEFAULT 'Testforge Auto Import'"
+    );
+  }
+
+  // scrape_subtree_name: name of the top-level component in this Jama
+  // project that holds Sets of test cases. Default matches the ASI
+  // Landscaping project but is configurable per profile so other teams
+  // can point at "Test Cases" or whatever their project uses.
+  if (!exportCols.includes("scrape_subtree_name")) {
+    core.exec(
+      "ALTER TABLE jama_export_profiles ADD COLUMN scrape_subtree_name TEXT NOT NULL DEFAULT 'Verification & Validation'"
     );
   }
 

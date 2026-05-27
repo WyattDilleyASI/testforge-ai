@@ -336,10 +336,11 @@ router.put("/profiles/:id", requireManager, (req, res) => {
 });
 
 // DELETE /api/jama/profiles/:id
-// Cascade-deletes any import jobs that reference this profile too —
-// otherwise the FK constraint blocks the delete for any profile that's
-// been used. Job history for deleted profiles isn't useful in practice;
-// the imported requirements themselves are unaffected.
+// Cascade-deletes every table that FKs to this profile (import jobs +
+// tree-scrape jobs). Without these the constraint blocks the parent
+// delete for any profile that's been used at all. Job history for
+// deleted profiles isn't useful in practice; the imported requirements
+// themselves are unaffected.
 router.delete("/profiles/:id", requireManager, (req, res) => {
   const id = Number(req.params.id);
   const existing = profileById(id);
@@ -348,11 +349,12 @@ router.delete("/profiles/:id", requireManager, (req, res) => {
   const db = getCoreDb();
   const tx = db.transaction(() => {
     db.prepare("DELETE FROM jama_import_jobs WHERE profile_id = ?").run(id);
+    db.prepare("DELETE FROM jama_tree_scrape_jobs WHERE profile_id = ?").run(id);
     db.prepare("DELETE FROM jama_profiles WHERE id = ?").run(id);
   });
   tx();
 
-  logAudit(req.session.name, "JAMA_PROFILE_DELETED", `Profile "${existing.name}" (and its job history)`);
+  logAudit(req.session.name, "JAMA_PROFILE_DELETED", `Profile "${existing.name}" (and its job + scrape history)`);
   res.json({ ok: true });
 });
 
@@ -582,7 +584,7 @@ router.post("/export-profiles", requireManager, (req, res) => {
   const {
     name, project_id, project_url, project_label,
     default_destination_jama_id, default_destination_name,
-    import_mapping_name,
+    import_mapping_name, scrape_subtree_name,
   } = req.body || {};
   if (!name || !project_id || !project_url || !project_label) {
     return res.status(400).json({
@@ -594,8 +596,8 @@ router.post("/export-profiles", requireManager, (req, res) => {
       INSERT INTO jama_export_profiles (
         name, project_id, project_url, project_label,
         default_destination_jama_id, default_destination_name,
-        import_mapping_name, created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        import_mapping_name, scrape_subtree_name, created_by_user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name,
       Number(project_id),
@@ -604,6 +606,7 @@ router.post("/export-profiles", requireManager, (req, res) => {
       default_destination_jama_id || null,
       default_destination_name || null,
       (import_mapping_name || "Testforge Auto Import").trim(),
+      (scrape_subtree_name || "Verification & Validation").trim(),
       req.session.userId,
     );
     const profile = exportProfileById(result.lastInsertRowid);
@@ -629,7 +632,7 @@ router.put("/export-profiles/:id", requireManager, (req, res) => {
   for (const k of [
     "name", "project_id", "project_url", "project_label",
     "default_destination_jama_id", "default_destination_name",
-    "import_mapping_name",
+    "import_mapping_name", "scrape_subtree_name",
   ]) {
     if (k in req.body) fields[k] = req.body[k];
   }
@@ -656,8 +659,9 @@ router.put("/export-profiles/:id", requireManager, (req, res) => {
 });
 
 // DELETE /api/jama/export-profiles/:id
-// Cascade-deletes any tree-scrape jobs that reference this profile, same
-// reasoning as the import-side delete.
+// Cascade-deletes everything FK'd to this profile (tree-scrape jobs +
+// export runs). Without the runs delete the FK constraint blocks the
+// parent delete for any profile that's ever been pushed with.
 router.delete("/export-profiles/:id", requireManager, (req, res) => {
   const id = Number(req.params.id);
   const existing = exportProfileById(id);
@@ -666,12 +670,13 @@ router.delete("/export-profiles/:id", requireManager, (req, res) => {
   const db = getCoreDb();
   const tx = db.transaction(() => {
     db.prepare("DELETE FROM jama_export_tree_scrape_jobs WHERE profile_id = ?").run(id);
+    db.prepare("DELETE FROM jama_export_runs WHERE export_profile_id = ?").run(id);
     db.prepare("DELETE FROM jama_export_profiles WHERE id = ?").run(id);
   });
   tx();
 
   logAudit(req.session.name, "JAMA_EXPORT_PROFILE_DELETED",
-    `Export profile "${existing.name}" (and its scrape history)`);
+    `Export profile "${existing.name}" (and its scrape history + run history)`);
   res.json({ ok: true });
 });
 

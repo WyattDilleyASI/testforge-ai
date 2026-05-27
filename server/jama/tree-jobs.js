@@ -103,7 +103,12 @@ async function runTreeScrapeJobIn(table, { jobId, profile, userId, username, pas
     password = null;
 
     log.setStatus("expanding", "Expanding tree nodes...");
-    const { tree, nodeCount } = await scrapeProjectTree(session, profile.project_url);
+    // Export profiles store their own scrape_subtree_name (defaults to
+    // "Verification & Validation"). Import profiles don't have that
+    // column — they fall through to the function default.
+    const { tree, nodeCount } = await scrapeProjectTree(
+      session, profile.project_url, profile.scrape_subtree_name,
+    );
 
     log.setStatus("saving", "Saving tree to database...");
     getCoreDb().prepare(`

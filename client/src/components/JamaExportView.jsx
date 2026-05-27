@@ -51,9 +51,12 @@ export const JamaExportView = ({ currentUser, onClose }) => {
     project_url: "",
     project_label: "",
     import_mapping_name: "Testforge Auto Import",
+    scrape_subtree_name: "Verification & Validation",
   });
 
-  const [editForm, setEditForm] = useState({ id: null, name: "", import_mapping_name: "" });
+  const [editForm, setEditForm] = useState({
+    id: null, name: "", import_mapping_name: "", scrape_subtree_name: "",
+  });
   const [profileToDelete, setProfileToDelete] = useState(null);
 
   // Base URL config (shared setting with import side — same key on server)
@@ -160,6 +163,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
       project_url: "",
       project_label: "",
       import_mapping_name: "Testforge Auto Import",
+      scrape_subtree_name: "Verification & Validation",
     });
     setCredsForm((f) => ({ ...f, password: "" }));
     setMode("creds_discover");
@@ -218,6 +222,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
         project_url: f.project_url,
         project_label: f.project_label.trim(),
         import_mapping_name: (f.import_mapping_name || "Testforge Auto Import").trim(),
+        scrape_subtree_name: (f.scrape_subtree_name || "Verification & Validation").trim(),
       });
       await refreshProfiles();
       setMode("list");
@@ -274,26 +279,25 @@ export const JamaExportView = ({ currentUser, onClose }) => {
     setMode("picker");
     try {
       const data = await api.getJamaExportProjectTree(profile.id);
-      const vv = (data.tree.children || []).find(
-        (c) => c.name === "Verification & Validation"
-      );
-      if (!vv) {
+      const subtreeName = profile.scrape_subtree_name || "Verification & Validation";
+      const subtree = (data.tree.children || []).find((c) => c.name === subtreeName);
+      if (!subtree) {
         setError(
-          `This project's cached tree has no "Verification & Validation" component, ` +
-          `so there's nowhere to put exported test cases. Refresh the tree, or verify ` +
-          `the project has a V&V section in Jama.`
+          `This project's cached tree has no "${subtreeName}" component, so there's ` +
+          `nowhere to put exported test cases. Refresh the tree, or update the ` +
+          `profile's "Subtree to scrape" field to match an actual top-level component name in Jama.`
         );
         setMode("list");
         return;
       }
-      setPickerTree(vv);
-      const auto = new Set([vv.jama_id]);
-      // Pre-select the saved default if it's still inside V&V.
+      setPickerTree(subtree);
+      const auto = new Set([subtree.jama_id]);
+      // Pre-select the saved default if it's still inside the subtree.
       if (profile.default_destination_jama_id) {
-        const found = findNodeById(vv, profile.default_destination_jama_id);
+        const found = findNodeById(subtree, profile.default_destination_jama_id);
         if (found) {
           setPickerSelected(found);
-          for (const ancestorId of pathTo(vv, profile.default_destination_jama_id)) {
+          for (const ancestorId of pathTo(subtree, profile.default_destination_jama_id)) {
             auto.add(ancestorId);
           }
         }
@@ -341,6 +345,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
       id: profile.id,
       name: profile.name,
       import_mapping_name: profile.import_mapping_name || "Testforge Auto Import",
+      scrape_subtree_name: profile.scrape_subtree_name || "Verification & Validation",
     });
     setError("");
     setMode("edit_profile");
@@ -356,6 +361,7 @@ export const JamaExportView = ({ currentUser, onClose }) => {
       await api.updateJamaExportProfile(editForm.id, {
         name: editForm.name.trim(),
         import_mapping_name: (editForm.import_mapping_name || "Testforge Auto Import").trim(),
+        scrape_subtree_name: (editForm.scrape_subtree_name || "Verification & Validation").trim(),
       });
       await refreshProfiles();
       setMode("list");
@@ -554,13 +560,38 @@ const ProfileListView = ({
   <>
     {profiles.length === 0 ? (
       <div style={{
-        padding: "20px 12px", textAlign: "center", color: T.textMuted, fontSize: 13,
+        padding: "16px 16px", color: T.text, fontSize: 13,
         border: `1px dashed ${T.border}`, borderRadius: 6, marginBottom: 12,
+        background: T.surface,
       }}>
-        No saved Jama export profiles yet.
-        {canManage
-          ? " Create one to point at the Jama project you export test cases to."
-          : " Ask an Admin or QA Manager to create one."}
+        <div style={{ fontWeight: 600, color: T.textBright, marginBottom: 6 }}>
+          No saved Jama export profiles yet
+        </div>
+        {canManage ? (
+          <>
+            <div style={{ color: T.text, lineHeight: 1.6 }}>
+              An export profile pairs Testforge with a Jama project so test cases can be pushed straight in. Do these steps in order — the Jama mapping setup (step 1) is a prerequisite and only needs to be done once per Jama project, not per Testforge profile:
+            </div>
+            <ol style={{ color: T.text, lineHeight: 1.7, paddingLeft: 22, marginTop: 8, marginBottom: 6 }}>
+              <li>
+                <strong>In Jama (once per project):</strong> right-click any Set in your test-case area → <strong>Import</strong> → upload a Testforge-exported XLSX (download one from Library → Export → XLSX) → configure field mappings → on the final wizard step click <strong>"Save This As New Document Mapping"</strong>. Note the name you save it under.
+              </li>
+              <li>
+                Click <strong>"New profile"</strong> below. Paste the Jama project URL (the dashboard URL with <code style={{ fontFamily: mono, fontSize: 11 }}>/dashboard/&lt;id&gt;</code>), confirm the "Subtree to scrape" name matches your project's top-level test-case component (default: <code style={{ fontFamily: mono, fontSize: 11 }}>Verification &amp; Validation</code>), and enter the saved-mapping name from step 1 exactly.
+              </li>
+              <li>
+                Click <strong>"Refresh tree"</strong> on the profile row to cache the project's Set structure.
+              </li>
+              <li>
+                Click <strong>"Pick destination"</strong> to set the default Set new pushes land in (users can override per-run from the push flow).
+              </li>
+            </ol>
+          </>
+        ) : (
+          <div style={{ color: T.textMuted, lineHeight: 1.6 }}>
+            Ask an Admin or QA Manager to set one up. They'll need to (1) save a field mapping in Jama via a one-time manual import, then (2) create the profile here pointing at the Jama project, refresh the tree, and pick a default destination Set.
+          </div>
+        )}
       </div>
     ) : (
       <div style={{ border: `1px solid ${T.border}`, borderRadius: 6, overflow: "hidden", marginBottom: 12 }}>
@@ -641,6 +672,8 @@ const DiscoverFormView = ({ T, form, setForm, onSave, onCancel, busy }) => (
       ✓ Found project #{form.project_id}. Confirm the details below.
     </div>
 
+    <PrerequisiteBanner T={T} />
+
     <Input
       label="Project label"
       value={form.project_label}
@@ -659,8 +692,25 @@ const DiscoverFormView = ({ T, form, setForm, onSave, onCancel, busy }) => (
       style={{ marginBottom: 6 }}
     />
     <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
-      You'll pick a default destination (a Set node inside V&V) after the
-      profile is created, by running "Refresh tree" then "Pick destination".
+      You'll pick a default destination Set inside the subtree (below) after
+      the profile is created, by running "Refresh tree" then "Pick destination".
+    </div>
+
+    <Input
+      label="Subtree to scrape (contains your test-case Sets)"
+      value={form.scrape_subtree_name}
+      onChange={(v) => setForm((f) => ({ ...f, scrape_subtree_name: v }))}
+      placeholder="Verification & Validation"
+      mono
+      style={{ marginBottom: 6 }}
+    />
+    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+      Name of the top-level component in this Jama project that contains the Sets
+      you push test cases into. Default <code style={{ fontFamily: mono }}>Verification &amp; Validation</code> matches the ASI
+      Landscaping project — change this if your team uses a different name (e.g.
+      <code style={{ fontFamily: mono }}> Test Cases</code>). Must match the Jama component name exactly, including spacing
+      and the &amp; ampersand. Open this project in Jama and copy the name from
+      the Explorer sidebar to be sure.
     </div>
 
     <Input
@@ -671,18 +721,10 @@ const DiscoverFormView = ({ T, form, setForm, onSave, onCancel, busy }) => (
       mono
       style={{ marginBottom: 6 }}
     />
-    <div style={{
-      fontSize: 11, color: T.amber, marginBottom: 14, lineHeight: 1.6,
-      padding: "8px 10px", background: T.amberDim, borderRadius: 4,
-      border: `1px solid ${T.amber}33`,
-    }}>
-      <strong>One-time setup per Jama project:</strong> in Jama, do a manual Excel import
-      to your V&amp;V destination, set up the field mappings (Name → Name,
-      Description → Description, Step Action → Step Action, etc.), and on
-      the final wizard step click <strong>"Save This As New Document Mapping"</strong>.
-      Whatever name you saved it under, enter that name here exactly.
-      Testforge picks this mapping from the dropdown on every push so the
-      import doesn't need re-configuring.
+    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+      Match the mapping name you saved in Jama during the prerequisite step above.
+      Testforge picks this mapping from the dropdown on every push so the import
+      doesn't need re-configuring.
     </div>
 
     <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -690,6 +732,34 @@ const DiscoverFormView = ({ T, form, setForm, onSave, onCancel, busy }) => (
       <Button small onClick={onSave} disabled={busy}>
         {busy ? "Saving..." : "Save profile"}
       </Button>
+    </div>
+  </div>
+);
+
+// Shared prerequisite banner shown at the top of the create form and
+// the edit form. The order of operations is non-obvious — the Jama
+// mapping has to exist BEFORE the first push, otherwise the saved-
+// mapping name we type into the form won't match anything in Jama's
+// dropdown. Pinning this at the top makes the sequence unmistakable.
+const PrerequisiteBanner = ({ T }) => (
+  <div style={{
+    fontSize: 12, color: T.text, marginBottom: 16, lineHeight: 1.6,
+    padding: "12px 14px", background: T.amberDim, borderRadius: 6,
+    border: `1px solid ${T.amber}55`,
+  }}>
+    <div style={{ fontSize: 13, fontWeight: 700, color: T.amber, marginBottom: 6 }}>
+      One-time setup in Jama (do this once per Jama project — before your first push)
+    </div>
+    <ol style={{ margin: 0, paddingLeft: 22, color: T.text }}>
+      <li>Open Testforge → Library → select any test case → use the "Export → XLSX" button to download a sample Testforge-exported file.</li>
+      <li>In Jama, right-click on the Set you'll push test cases to → <strong>Import</strong> → upload that XLSX.</li>
+      <li>Walk through the Data Import Wizard, configure the field mappings (Name → Name, Description → Description, Step Action → Step Action, etc.).</li>
+      <li>On the final wizard step click <strong>"Save This As New Document Mapping"</strong> and give it a memorable name.</li>
+      <li>Enter that exact name into the <em>Jama saved-mapping name</em> field below.</li>
+    </ol>
+    <div style={{ marginTop: 8, fontSize: 11, color: T.textMuted, lineHeight: 1.5 }}>
+      Skipping this means every push will fail to find the mapping in Jama's dropdown.
+      You only need to do it once per Jama project, not per Testforge profile.
     </div>
   </div>
 );
@@ -720,6 +790,21 @@ const EditProfileView = ({ T, form, setForm, onSave, onCancel, busy }) => (
     />
 
     <Input
+      label="Subtree to scrape (contains your test-case Sets)"
+      value={form.scrape_subtree_name}
+      onChange={(v) => setForm((f) => ({ ...f, scrape_subtree_name: v }))}
+      placeholder="Verification & Validation"
+      mono
+      style={{ marginBottom: 6 }}
+    />
+    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+      Name of the top-level component in this Jama project that contains the Sets
+      you push test cases into. Must match the Jama component name exactly. If you
+      change this, click "Refresh tree" on the profile afterwards so the destination
+      picker reflects the new subtree.
+    </div>
+
+    <Input
       label="Jama saved-mapping name"
       value={form.import_mapping_name}
       onChange={(v) => setForm((f) => ({ ...f, import_mapping_name: v }))}
@@ -727,17 +812,13 @@ const EditProfileView = ({ T, form, setForm, onSave, onCancel, busy }) => (
       mono
       style={{ marginBottom: 6 }}
     />
-    <div style={{
-      fontSize: 11, color: T.amber, marginBottom: 14, lineHeight: 1.6,
-      padding: "8px 10px", background: T.amberDim, borderRadius: 4,
-      border: `1px solid ${T.amber}33`,
-    }}>
-      <strong>One-time setup per Jama project:</strong> in Jama, do a manual Excel import
-      to your V&amp;V destination, configure the field mappings, and on the
-      final wizard step click <strong>"Save This As New Document Mapping"</strong>.
-      Enter the saved name here exactly. Testforge picks it from the dropdown
-      on every push so the import doesn't need re-configuring.
+    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
+      Match the mapping name you saved in Jama (see the prerequisite below if you
+      haven't done that yet — it has to be done once per Jama project before any
+      push will work).
     </div>
+
+    <PrerequisiteBanner T={T} />
 
     <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
       <Button variant="ghost" small onClick={onCancel} disabled={busy}>Cancel</Button>
