@@ -16,6 +16,17 @@
 
 export const WHATS_NEW = [
   {
+    id: "2026-06-01-jama-setup-merged-into-description",
+    date: "2026-06-01",
+    title: "Action required: re-save your Jama field mapping",
+    bullets: [
+      "Jama is merging the Setup field into Description across all Test Case items on 2026-06-02 (5:00–7:00 AM MDT). Setup content will live inside Description from now on.",
+      "Testforge's XLSX export has been updated to match: the Setup column is gone, and Setup content is appended to the Description column with a blank line separator.",
+      "After the Jama tenant migration finishes on June 2, open each of your export profiles' configured Jama project and run one manual XLSX import using a fresh Testforge export. Re-save the field mapping (overwrite the existing one with the same name) so it reflects the new column layout.",
+      "Pushes attempted between today and the Jama migration completing will fail to import because the old saved mapping still expects a Setup column. Wait until after Jama's migration window to push, or push now and retry after re-saving the mapping.",
+    ],
+  },
+  {
     id: "2026-05-27-jama-integration",
     date: "2026-05-27",
     title: "Two-way Jama integration",

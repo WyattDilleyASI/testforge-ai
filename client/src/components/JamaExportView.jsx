@@ -769,7 +769,7 @@ const PrerequisiteBanner = ({ T }) => (
     <ol style={{ margin: 0, paddingLeft: 22, color: T.text }}>
       <li>Open Testforge → Library → select any test case → use the "Export → XLSX" button to download a sample Testforge-exported file.</li>
       <li>In Jama, right-click on the Set you'll push test cases to → <strong>Import</strong> → upload that XLSX.</li>
-      <li>Walk through the Data Import Wizard, configure the field mappings (Name → Name, Description → Description, Step Action → Step Action, etc.).</li>
+      <li>Walk through the Data Import Wizard, configure the field mappings (Name → Name, Description → Description, Step Action → Step Action, etc.). Testforge no longer emits a Setup column — Jama merged Setup into Description on 2026-06-02, so Setup content is appended to Description in the XLSX.</li>
       <li>On the final wizard step click <strong>"Save This As New Document Mapping"</strong> and give it a memorable name.</li>
       <li>Enter that exact name into the <em>Jama saved-mapping name</em> field below.</li>
     </ol>

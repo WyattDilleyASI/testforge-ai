@@ -19,10 +19,15 @@
 const XLSX = require("xlsx");
 const { getTcDb, getReqDb } = require("../db");
 
+// Jama is merging the Setup field into Description across the whole
+// tenant on 2026-06-02 — see memory/project_jama_setup_to_description_migration.md.
+// We emit a single Description column containing both (setup content
+// appended after a blank line). After the Jama-side template change,
+// users must re-save their saved mapping in Jama so it no longer
+// references the now-removed Setup field.
 const HEADERS = [
   "Name",
   "Description",
-  "Setup",
   "Automation Tool",
   "Automated",
   "Step Number",
@@ -34,9 +39,18 @@ const HEADERS = [
 ];
 
 const COL_WIDTHS = [
-  { wch: 40 }, { wch: 50 }, { wch: 40 }, { wch: 16 }, { wch: 10 },
-  { wch: 10 }, { wch: 50 }, { wch: 50 }, { wch: 20 }, { wch: 10 }, { wch: 50 },
+  { wch: 40 }, { wch: 70 }, { wch: 16 }, { wch: 10 }, { wch: 10 },
+  { wch: 50 }, { wch: 50 }, { wch: 20 }, { wch: 10 }, { wch: 50 },
 ];
+
+// Merge two text blocks with a blank-line separator, but skip empties so
+// we don't produce leading/trailing blank lines when one side is missing.
+function mergeDescAndSetup(descText, setupText) {
+  const d = (descText || "").trim();
+  const s = (setupText || "").trim();
+  if (d && s) return `${d}\n\n${s}`;
+  return d || s;
+}
 
 // Strip HTML tags + decode common entities so Excel cells hold plain text.
 function stripHtmlForXlsx(str) {
@@ -136,14 +150,15 @@ function buildJamaXlsxBuffer(tcIds = null) {
       }
     } catch (_) { /* ignore */ }
 
+    const mergedDescText = mergeDescAndSetup(descText, setupText);
+
     if (steps.length === 0) {
-      rows.push([tc.title, descText, setupText, "Manual", "No", "", "", "", "", priority, upstreamText]);
+      rows.push([tc.title, mergedDescText, "Manual", "No", "", "", "", "", priority, upstreamText]);
     } else {
       steps.forEach((step, i) => {
         rows.push([
           tc.title,
-          descText,
-          setupText,
+          mergedDescText,
           "Manual",
           "No",
           i + 1,
