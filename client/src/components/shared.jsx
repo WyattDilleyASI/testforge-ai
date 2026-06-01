@@ -845,6 +845,18 @@ export const TestCaseEditForm = ({
         </div>
       ))}
 
+      <Button
+        small
+        variant="ghost"
+        onClick={swallow(() => setEditForm(p => ({
+          ...p,
+          steps: [...(p.steps || []), { step: "", expectedResult: "" }],
+        })))}
+        style={{ alignSelf: "flex-start", marginTop: 4 }}
+      >
+        + Add step
+      </Button>
+
       <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
         <Button small onClick={swallow(onSave)} disabled={saving || !editForm.title?.trim()}>{saving ? "Saving..." : "Save"}</Button>
         <Button small variant="ghost" onClick={swallow(onCancel)}>Cancel</Button>
