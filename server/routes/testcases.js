@@ -7,6 +7,7 @@ const sharp = require("sharp");
 const { getTcDb, getReqDb, getKbDb, getDb, logAudit, logTokenUsage, getProductContext, getSetting, readImageBase64 } = require("../db");
 const { requireAuth, requireMobileAuth } = require("../auth");
 const al = require("../al");
+const { buildJamaXlsxBuffer } = require("../jama/build-xlsx");
 
 const MAX_IMAGE_DIM = 1568; // Claude API max for multi-image requests (safe under 2000px limit)
 
@@ -899,130 +900,18 @@ router.put("/:tcId/status", requireMobileAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Strip HTML tags and decode entities for plain-text XLSX cells
-function stripHtmlForXlsx(str) {
-  if (!str) return "";
-  return str
-    .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/&#x([0-9A-Fa-f]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 // GET /api/testcases/export/xlsx — export test cases in JAMA xlsx format (optionally filtered by ?ids=TC-001,TC-002)
 router.get("/export/xlsx", requireAuth, (req, res) => {
-  const db = getTcDb();
-  let testCases;
+  let ids = null;
   if (req.query.ids) {
-    const ids = req.query.ids.split(",").map(id => id.trim()).filter(Boolean);
+    ids = req.query.ids.split(",").map((id) => id.trim()).filter(Boolean);
     if (ids.length === 0) return res.status(400).json({ error: "No valid IDs provided" });
-    const placeholders = ids.map(() => "?").join(",");
-    testCases = db.prepare(`SELECT * FROM test_cases WHERE tc_id IN (${placeholders}) ORDER BY rowid`).all(...ids);
-  } else {
-    // Exclude seeded baseline TCs from "export all" — they're internal training
-    // content, not deliverable test cases. Selected-ID export above is unaffected.
-    testCases = db.prepare("SELECT * FROM test_cases WHERE is_seeded = 0 OR is_seeded IS NULL ORDER BY rowid").all();
   }
-  const requirements = getReqDb().prepare("SELECT * FROM requirements").all();
-  const reqMap = {};
-  for (const r of requirements) reqMap[r.req_id] = r;
-
-  const headers = ["Name", "Description", "Setup", "Automation Tool", "Automated", "Step Number", "Step Action", "Step Expected Result", "Step Notes", "Priority", "Upstream Relationship"];
-  const rows = [headers];
-
-  for (const tc of testCases) {
-    const steps = JSON.parse(tc.steps || "[]");
-    const linkedReqIds = JSON.parse(tc.linked_req_ids || "[]");
-    const priority = linkedReqIds.length > 0 && reqMap[linkedReqIds[0]] ? reqMap[linkedReqIds[0]].priority : "High";
-
-    // Format upstream relationships as "ID - Name; ID - Name"
-    // Source from linked_req_ids primarily; fall back to raw upstream_relationship for Jama-imported TCs.
-    let upstreamText = "";
-    if (linkedReqIds.length > 0) {
-      upstreamText = linkedReqIds.map(id => {
-        const r = reqMap[id];
-        return r && r.title ? `${id} - ${r.title}` : id;
-      }).join("; ");
-    } else {
-      try {
-        const ups = JSON.parse(tc.upstream_relationship || "[]");
-        if (Array.isArray(ups) && ups.length > 0) {
-          upstreamText = ups.map(u => `${u.id} - ${u.name}`).join("; ");
-        }
-      } catch {}
-    }
-
-    // Unpack structured description and setup if JSON, otherwise use plain text
-    const tlReqs = JSON.parse(tc.testlink_requirements || "[]");
-    let descText = tc.description || "";
-    try {
-      const d = JSON.parse(tc.description || "");
-      if (d && typeof d === "object") {
-        const parts = [];
-        if (d.objective) parts.push(`Objective:\n${d.objective}`);
-        if (tlReqs.length > 0) parts.push(`TestLink Requirements:\n${tlReqs.map(r => `• ${r.doc_id}${r.title ? ` — ${r.title}` : ""}`).join("\n")}`);
-        if (d.scope?.length > 0) parts.push(`Scope:\n${Array.isArray(d.scope) ? d.scope.join(", ") : d.scope}`);
-        if (d.assumptions && d.assumptions.length) parts.push(`Assumptions:\n${d.assumptions.map(a => `• ${a}`).join("\n")}`);
-        descText = parts.join("\n\n");
-      }
-    } catch {}
-
-    let setupText = tc.preconditions || "";
-    try {
-      const s = JSON.parse(tc.preconditions || "");
-      if (s && typeof s === "object") {
-        const parts = [];
-        if (s.preconditions && s.preconditions.length) parts.push(`Preconditions:\n${s.preconditions.map(p => `• ${p}`).join("\n")}`);
-        if (s.environment && s.environment.length) parts.push(`Environment:\n${s.environment.map(e => `• ${e}`).join("\n")}`);
-        if (s.equipment && s.equipment.length) parts.push(`Equipment:\n${s.equipment.map(e => `• ${e}`).join("\n")}`);
-        if (s.testData && s.testData.length) parts.push(`Test Data:\n${s.testData.map(t => `• ${t}`).join("\n")}`);
-        setupText = parts.join("\n\n");
-      }
-    } catch {}
-
-    if (steps.length === 0) {
-      rows.push([tc.title, descText, setupText, "Manual", "No", "", "", "", "", priority, upstreamText]);
-    } else {
-      steps.forEach((step, i) => {
-        rows.push([
-          tc.title,
-          descText,
-          setupText,
-          "Manual",
-          "No",
-          i + 1,
-          stripHtmlForXlsx(step.step),
-          stripHtmlForXlsx(step.expectedResult),
-          "",
-          priority,
-          upstreamText,
-        ]);
-      });
-    }
-  }
-
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-
-  // Column widths matching the JAMA template style
-  ws["!cols"] = [
-    { wch: 40 }, { wch: 50 }, { wch: 40 }, { wch: 16 }, { wch: 10 },
-    { wch: 10 }, { wch: 50 }, { wch: 50 }, { wch: 20 }, { wch: 10 }, { wch: 50 },
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, "Test Cases");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-
-  logAudit(req.session.name, "TC_EXPORT_XLSX", `Exported ${testCases.length} test cases to XLSX`);
+  const { buffer, testCaseCount } = buildJamaXlsxBuffer(ids);
+  logAudit(req.session.name, "TC_EXPORT_XLSX", `Exported ${testCaseCount} test cases to XLSX`);
   res.setHeader("Content-Disposition", `attachment; filename="testforge_export_${Date.now()}.xlsx"`);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.send(buf);
+  res.send(buffer);
 });
 
 // POST /api/testcases/import-doc — parse JAMA Verification Test Cases .docx or "All Item Details" .doc (MHT)

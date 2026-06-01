@@ -27,6 +27,10 @@ export const JamaImportView = ({ currentUser, onClose, onImportComplete }) => {
   // ── State ────────────────────────────────────────────────────────────
   // mode: list | creds_import | creds_discover | discover_form |
   //       running | done | failed | edit_profile | confirm_delete
+  //
+  // Tree-scrape + picker modes moved to JamaExportView — see
+  // client/src/components/JamaExportView.jsx. Import profiles are
+  // requirement-only now.
   const [mode, setMode] = useState("list");
   const [profiles, setProfiles] = useState([]);
   const [error, setError] = useState("");
@@ -488,7 +492,7 @@ const Header = ({ T, mode, onClose }) => {
   );
 };
 
-const BaseUrlSetupBanner = ({ T, isAdmin, baseUrlInput, setBaseUrlInput, onSave, busy }) => (
+export const BaseUrlSetupBanner = ({ T, isAdmin, baseUrlInput, setBaseUrlInput, onSave, busy }) => (
   <div style={{
     marginBottom: 14, padding: "10px 12px", background: T.amberDim, borderRadius: 6,
     border: `1px solid ${T.amber}33`,
@@ -581,7 +585,7 @@ const ProfileListView = ({ T, profiles, canManage, baseUrlReady, onRun, onEdit, 
   </>
 );
 
-const CredsView = ({ T, title, subtitle, credsForm, setCredsForm, onSubmit, onCancel, submitLabel, busy, extras }) => (
+export const CredsView = ({ T, title, subtitle, credsForm, setCredsForm, onSubmit, onCancel, submitLabel, busy, extras }) => (
   <form
     onSubmit={(e) => { e.preventDefault(); if (!busy) onSubmit(); }}
     autoComplete="on"
@@ -597,6 +601,8 @@ const CredsView = ({ T, title, subtitle, credsForm, setCredsForm, onSubmit, onCa
       label="Jama username"
       value={credsForm.username}
       onChange={(v) => setCredsForm((f) => ({ ...f, username: v }))}
+      name="username"
+      autoComplete="username"
       style={{ marginBottom: 10 }}
     />
     <Input
@@ -604,13 +610,15 @@ const CredsView = ({ T, title, subtitle, credsForm, setCredsForm, onSubmit, onCa
       type="password"
       value={credsForm.password}
       onChange={(v) => setCredsForm((f) => ({ ...f, password: v }))}
+      name="password"
+      autoComplete="current-password"
       style={{ marginBottom: extras ? 10 : 14 }}
     />
     {extras}
 
     <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-      <Button variant="ghost" small onClick={onCancel} disabled={busy}>Cancel</Button>
-      <Button small onClick={onSubmit} disabled={busy}>
+      <Button type="button" variant="ghost" small onClick={onCancel} disabled={busy}>Cancel</Button>
+      <Button type="submit" small disabled={busy}>
         {busy ? "Working..." : submitLabel}
       </Button>
     </div>
@@ -793,17 +801,18 @@ const ConfirmDeleteView = ({ T, profile, onConfirm, onCancel, busy }) => (
 
 // ─── Small bits ─────────────────────────────────────────────────────────
 
-const StatusBadge = ({ T, status }) => {
+export const StatusBadge = ({ T, status }) => {
   if (!status) return null;
   const colors = {
     queued: "amber", authenticating: "amber", navigating: "amber",
     waiting_for_report: "amber", downloading: "amber", ingesting: "amber",
+    expanding: "amber", capturing: "amber", saving: "amber",
     done: "green", failed: "red",
   };
   return <Badge color={colors[status] || "accent"}>{status.replace(/_/g, " ")}</Badge>;
 };
 
-const LogPane = ({ T, log, style }) => (
+export const LogPane = ({ T, log, style }) => (
   <div
     style={{
       maxHeight: 240, overflowY: "auto", padding: "8px 10px",
@@ -828,7 +837,7 @@ function levelColor(T, level) {
   return T.text;
 }
 
-function relativeTime(iso) {
+export function relativeTime(iso) {
   if (!iso) return "";
   const t = Date.parse(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z");
   if (Number.isNaN(t)) return "";

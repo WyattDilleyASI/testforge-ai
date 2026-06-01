@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useTheme, mono } from "../theme";
 import { Card, Badge, Button, ReqIdTag, EmptyState, DraftDisclaimer, AutoResizeTextarea, RejectionPicker, PurgeConfirmation, TestCaseEditForm, InlineConfirm, OverflowMenu, useIsMobile } from "./shared";
 import { useAsyncAction, useSelection, useExpandCollapse, useInlineEdit } from "../hooks";
+import { JamaExportRunFlow } from "./JamaExportRunFlow";
 
-export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) => {
+export const TestCaseLibraryView = ({ testCases, requirements = [], refresh, openJamaExport }) => {
   const COLORS = useTheme();
   const isMobile = useIsMobile();
 
@@ -32,6 +33,18 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [clearRejectedConfirm, setClearRejectedConfirm] = useState(false);
   const [traceSearch, setTraceSearch] = useState("");
+  // Jama push flow — opened from the bulk action bar, freezes the selection
+  // until the flow closes so refresh doesn't shrink the picked TC list mid-run.
+  const [jamaPushTcs, setJamaPushTcs] = useState(null);
+
+  // Refresh when a background-monitored push finishes, so the TC list
+  // picks up the new jama_exported_at timestamps. App.jsx fires this
+  // event from the BackgroundExportRunsProvider's onComplete handler.
+  useEffect(() => {
+    const onJamaDone = () => { refresh?.(); };
+    window.addEventListener("testforge:jama-export-complete", onJamaDone);
+    return () => window.removeEventListener("testforge:jama-export-complete", onJamaDone);
+  }, [refresh]);
 
   const sortedTcs = [...testCases].sort((a, b) => (b.generated_at || "").localeCompare(a.generated_at || ""));
   const statusFiltered = filter === "all" ? sortedTcs : sortedTcs.filter(tc => tc.status.toLowerCase() === filter);
@@ -160,6 +173,14 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
 
   return (
     <div>
+      {jamaPushTcs && (
+        <JamaExportRunFlow
+          selectedTestCases={jamaPushTcs}
+          onClose={() => setJamaPushTcs(null)}
+          onExportComplete={() => { setJamaPushTcs(null); exitSelectMode(); refresh(); }}
+        />
+      )}
+
       {/* Header row — title left, actions right */}
       <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 0, marginBottom: 24 }}>
         <div>
@@ -190,6 +211,7 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
             <OverflowMenu
               items={[
                 { label: "Export XLSX", onClick: () => api.exportTestCasesXlsx(), disabled: testCases.length === 0 },
+                { label: "Configure Jama export", onClick: () => openJamaExport?.(), hidden: !openJamaExport },
                 { label: `Clear Rejected (${rejectedCount})`, onClick: () => setClearRejectedConfirm(true), severity: "danger", hidden: rejectedCount === 0 },
                 { label: "Clear All", onClick: () => setClearAllConfirm(true), severity: "danger", disabled: testCases.length === 0 },
               ]}
@@ -227,6 +249,9 @@ export const TestCaseLibraryView = ({ testCases, requirements = [], refresh }) =
               <Button variant="secondary" small onClick={selectAllTcs}>{allSelected ? "Deselect All" : "Select All"}</Button>
               {selectedTcIds.size > 0 && <>
                 <Button variant="primary" small onClick={exportSelected}>Export Selected ({selectedTcIds.size})</Button>
+                <Button variant="secondary" small onClick={() => setJamaPushTcs(filteredTcs.filter(tc => selectedTcIds.has(tc.tc_id)))}>
+                  Push to Jama ({selectedTcIds.size})
+                </Button>
                 <Button variant="danger" small onClick={() => setBulkConfirm("delete")} disabled={asyncLoading}>Delete Selected ({selectedTcIds.size})</Button>
                 <Button variant="warning" small onClick={() => setBulkConfirm("purge")} disabled={asyncLoading}>Purge Selected ({selectedTcIds.size})</Button>
               </>}

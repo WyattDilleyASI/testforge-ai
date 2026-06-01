@@ -30,13 +30,26 @@ const path = require("path");
 const { getCoreDb, getSetting, setSetting, logAudit } = require("../db");
 const { requireAuth, requireRole } = require("../auth");
 const { JamaSession } = require("../jama/browser");
-const { discoverProjectByUrl } = require("../jama/navigate");
+const { discoverProjectByUrl, scrapeProjectTree } = require("../jama/navigate");
+const {
+  createTreeJob,
+  getTreeJob,
+  runTreeScrapeJob,
+  createExportTreeJob,
+  getExportTreeJob,
+  runExportTreeScrapeJob,
+} = require("../jama/tree-jobs");
 const {
   createJob,
   getJob,
   runImportJob,
   rollbackImportJob,
 } = require("../jama/jobs");
+const {
+  createExportRun,
+  getExportRun,
+  runExportJob,
+} = require("../jama/export-jobs");
 
 const router = express.Router();
 
@@ -73,6 +86,12 @@ function readCredsOr400(req, res) {
 function profileById(id) {
   return getCoreDb()
     .prepare("SELECT * FROM jama_profiles WHERE id = ?")
+    .get(id);
+}
+
+function exportProfileById(id) {
+  return getCoreDb()
+    .prepare("SELECT * FROM jama_export_profiles WHERE id = ?")
     .get(id);
 }
 
@@ -115,6 +134,133 @@ router.put("/settings/base-url", requireRole("Admin"), (req, res) => {
   setSetting("jama_base_url", cleaned);
   logAudit(req.session.name, "JAMA_BASE_URL_SET", `Set jama_base_url to ${cleaned}`);
   res.json({ ok: true, base_url: cleaned });
+});
+
+// ─── Project tree (for TC export destination picker) ─────────────────────
+
+// POST /api/jama/profiles/:id/refresh-tree
+// Body: { username, password }
+// Kicks off a background tree-scrape job and returns the job_id
+// immediately. Frontend polls /tree-jobs/:id or subscribes via
+// /tree-jobs/:id/stream for live progress.
+router.post("/profiles/:id/refresh-tree", requireManager, (req, res) => {
+  const baseUrl = readBaseUrlOr400(res); if (!baseUrl) return;
+  const creds = readCredsOr400(req, res); if (!creds) return;
+
+  const profile = profileById(Number(req.params.id));
+  if (!profile) return res.status(404).json({ error: "Profile not found" });
+  if (!profile.project_url) {
+    return res.status(400).json({ error: "Profile has no project_url — recreate it from the current 'New profile' flow." });
+  }
+
+  const jobId = createTreeJob({ profileId: profile.id, userId: req.session.userId });
+  logAudit(
+    req.session.name,
+    "JAMA_TREE_SCRAPE_STARTED",
+    `Job ${jobId} for profile "${profile.name}" (project ${profile.project_label})`
+  );
+
+  // Fire and forget — orchestrator catches all errors and writes them
+  // to the job row. The .catch is paranoia for exceptions that escape
+  // the inner try.
+  runTreeScrapeJob({
+    jobId,
+    profile,
+    userId: req.session.userId,
+    username: creds.username,
+    password: creds.password,
+    baseUrl,
+  }).catch((e) => {
+    console.error(`runTreeScrapeJob ${jobId} escaped:`, e);
+  });
+
+  res.status(202).json({ job_id: jobId });
+});
+
+// GET /api/jama/tree-jobs/:id
+// One-shot status snapshot.
+router.get("/tree-jobs/:id", requireAuth, (req, res) => {
+  const job = getTreeJob(Number(req.params.id));
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json({ job });
+});
+
+// GET /api/jama/tree-jobs/:id/stream
+// Server-Sent Events stream — same shape as the import-job SSE.
+router.get("/tree-jobs/:id/stream", requireAuth, (req, res) => {
+  const jobId = Number(req.params.id);
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  let lastLogLength = 0;
+  let lastStatus = null;
+  let done = false;
+
+  const tick = () => {
+    if (done) return;
+    const job = getTreeJob(jobId);
+    if (!job) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: "Job not found" })}\n\n`);
+      finish();
+      return;
+    }
+    if (job.log.length > lastLogLength) {
+      for (const entry of job.log.slice(lastLogLength)) {
+        res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
+      }
+      lastLogLength = job.log.length;
+    }
+    if (job.status !== lastStatus) {
+      res.write(`event: status\ndata: ${JSON.stringify({
+        status: job.status,
+        status_message: job.status_message,
+        node_count: job.node_count,
+        error_message: job.error_message,
+      })}\n\n`);
+      lastStatus = job.status;
+    }
+    if (job.status === "done" || job.status === "failed") finish();
+  };
+  const finish = () => {
+    done = true;
+    clearInterval(interval);
+    try { res.end(); } catch (_) {}
+  };
+  const interval = setInterval(tick, 1000);
+  tick();
+  req.on("close", finish);
+});
+
+// GET /api/jama/profiles/:id/tree
+// Returns the cached tree for this profile's project, or 404 if not yet
+// scraped. Any authed user can read.
+router.get("/profiles/:id/tree", requireAuth, (req, res) => {
+  const profile = profileById(Number(req.params.id));
+  if (!profile) return res.status(404).json({ error: "Profile not found" });
+
+  const row = getCoreDb()
+    .prepare("SELECT tree_json, node_count, scraped_at FROM jama_project_trees WHERE project_id = ?")
+    .get(profile.project_id);
+  if (!row) {
+    return res.status(404).json({
+      error: "No cached tree for this project yet. Ask an Admin/QA Manager to run 'Refresh project tree'.",
+      code: "JAMA_TREE_NOT_CACHED",
+    });
+  }
+
+  let tree;
+  try { tree = JSON.parse(row.tree_json); }
+  catch (_) { return res.status(500).json({ error: "Cached tree is corrupted; refresh it." }); }
+
+  res.json({
+    tree,
+    node_count: row.node_count,
+    scraped_at: row.scraped_at,
+  });
 });
 
 // ─── Profiles CRUD ────────────────────────────────────────────────────────
@@ -190,10 +336,11 @@ router.put("/profiles/:id", requireManager, (req, res) => {
 });
 
 // DELETE /api/jama/profiles/:id
-// Cascade-deletes any import jobs that reference this profile too —
-// otherwise the FK constraint blocks the delete for any profile that's
-// been used. Job history for deleted profiles isn't useful in practice;
-// the imported requirements themselves are unaffected.
+// Cascade-deletes every table that FKs to this profile (import jobs +
+// tree-scrape jobs). Without these the constraint blocks the parent
+// delete for any profile that's been used at all. Job history for
+// deleted profiles isn't useful in practice; the imported requirements
+// themselves are unaffected.
 router.delete("/profiles/:id", requireManager, (req, res) => {
   const id = Number(req.params.id);
   const existing = profileById(id);
@@ -202,11 +349,12 @@ router.delete("/profiles/:id", requireManager, (req, res) => {
   const db = getCoreDb();
   const tx = db.transaction(() => {
     db.prepare("DELETE FROM jama_import_jobs WHERE profile_id = ?").run(id);
+    db.prepare("DELETE FROM jama_tree_scrape_jobs WHERE profile_id = ?").run(id);
     db.prepare("DELETE FROM jama_profiles WHERE id = ?").run(id);
   });
   tx();
 
-  logAudit(req.session.name, "JAMA_PROFILE_DELETED", `Profile "${existing.name}" (and its job history)`);
+  logAudit(req.session.name, "JAMA_PROFILE_DELETED", `Profile "${existing.name}" (and its job + scrape history)`);
   res.json({ ok: true });
 });
 
@@ -396,6 +544,423 @@ router.post("/imports/:id/rollback", requireManager, (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Export profiles (test-case → Jama)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Parallel of the import-profile routes above, but:
+//   - keyed off jama_export_profiles instead of jama_profiles
+//   - no filter_name (TC export doesn't run a Jama report)
+//   - tracks an optional default destination node inside the V&V subtree
+//   - tree-scrape jobs live in jama_export_tree_scrape_jobs
+//
+// jama_project_trees is shared between import and export — both keyed on
+// project_id — so the same Jama project's cached tree serves both sides.
+// The "discover project by URL" endpoint is also shared (POST
+// /discover/project-by-url above) since it has no profile-side state.
+
+// ─── Export profiles CRUD ─────────────────────────────────────────────────
+
+// GET /api/jama/export-profiles
+router.get("/export-profiles", requireAuth, (req, res) => {
+  const rows = getCoreDb().prepare(`
+    SELECT p.*,
+           t.scraped_at  AS tree_scraped_at,
+           t.node_count  AS tree_node_count
+      FROM jama_export_profiles p
+      LEFT JOIN jama_project_trees t ON t.project_id = p.project_id
+     ORDER BY p.name
+  `).all();
+  res.json({ profiles: rows });
+});
+
+// POST /api/jama/export-profiles
+// Body: { name, project_id, project_url, project_label,
+//         default_destination_jama_id?, default_destination_name?,
+//         import_mapping_name? }
+router.post("/export-profiles", requireManager, (req, res) => {
+  const {
+    name, project_id, project_url, project_label,
+    default_destination_jama_id, default_destination_name,
+    import_mapping_name, scrape_subtree_name,
+  } = req.body || {};
+  if (!name || !project_id || !project_url || !project_label) {
+    return res.status(400).json({
+      error: "name, project_id, project_url, and project_label are required",
+    });
+  }
+  try {
+    const result = getCoreDb().prepare(`
+      INSERT INTO jama_export_profiles (
+        name, project_id, project_url, project_label,
+        default_destination_jama_id, default_destination_name,
+        import_mapping_name, scrape_subtree_name, created_by_user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      name,
+      Number(project_id),
+      project_url,
+      project_label,
+      default_destination_jama_id || null,
+      default_destination_name || null,
+      (import_mapping_name || "Testforge Auto Import").trim(),
+      (scrape_subtree_name || "Verification & Validation").trim(),
+      req.session.userId,
+    );
+    const profile = exportProfileById(result.lastInsertRowid);
+    logAudit(req.session.name, "JAMA_EXPORT_PROFILE_CREATED",
+      `Export profile "${name}" (project ${project_label})`);
+    res.status(201).json({ profile });
+  } catch (e) {
+    if (String(e.message).includes("UNIQUE")) {
+      return res.status(409).json({ error: `An export profile named "${name}" already exists` });
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PUT /api/jama/export-profiles/:id
+// Body: any subset of writable fields.
+router.put("/export-profiles/:id", requireManager, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = exportProfileById(id);
+  if (!existing) return res.status(404).json({ error: "Export profile not found" });
+
+  const fields = {};
+  for (const k of [
+    "name", "project_id", "project_url", "project_label",
+    "default_destination_jama_id", "default_destination_name",
+    "import_mapping_name", "scrape_subtree_name",
+  ]) {
+    if (k in req.body) fields[k] = req.body[k];
+  }
+  if (Object.keys(fields).length === 0) {
+    return res.status(400).json({ error: "no fields to update" });
+  }
+
+  try {
+    const setClauses = Object.keys(fields).map(k => `${k} = ?`).join(", ");
+    const params = [...Object.values(fields), id];
+    getCoreDb().prepare(
+      `UPDATE jama_export_profiles SET ${setClauses}, updated_at = datetime('now') WHERE id = ?`
+    ).run(...params);
+    const profile = exportProfileById(id);
+    logAudit(req.session.name, "JAMA_EXPORT_PROFILE_UPDATED",
+      `Export profile #${id} (${existing.name})`);
+    res.json({ profile });
+  } catch (e) {
+    if (String(e.message).includes("UNIQUE")) {
+      return res.status(409).json({ error: `An export profile with that name already exists` });
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/jama/export-profiles/:id
+// Cascade-deletes everything FK'd to this profile (tree-scrape jobs +
+// export runs). Without the runs delete the FK constraint blocks the
+// parent delete for any profile that's ever been pushed with.
+router.delete("/export-profiles/:id", requireManager, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = exportProfileById(id);
+  if (!existing) return res.status(404).json({ error: "Export profile not found" });
+
+  const db = getCoreDb();
+  const tx = db.transaction(() => {
+    db.prepare("DELETE FROM jama_export_tree_scrape_jobs WHERE profile_id = ?").run(id);
+    db.prepare("DELETE FROM jama_export_runs WHERE export_profile_id = ?").run(id);
+    db.prepare("DELETE FROM jama_export_profiles WHERE id = ?").run(id);
+  });
+  tx();
+
+  logAudit(req.session.name, "JAMA_EXPORT_PROFILE_DELETED",
+    `Export profile "${existing.name}" (and its scrape history + run history)`);
+  res.json({ ok: true });
+});
+
+// ─── Export-side project tree (refresh + fetch) ───────────────────────────
+
+// POST /api/jama/export-profiles/:id/refresh-tree
+// Same shape as the import-side refresh-tree: kicks off a background
+// scrape job and returns the job_id.
+router.post("/export-profiles/:id/refresh-tree", requireManager, (req, res) => {
+  const baseUrl = readBaseUrlOr400(res); if (!baseUrl) return;
+  const creds = readCredsOr400(req, res); if (!creds) return;
+
+  const profile = exportProfileById(Number(req.params.id));
+  if (!profile) return res.status(404).json({ error: "Export profile not found" });
+  if (!profile.project_url) {
+    return res.status(400).json({ error: "Export profile has no project_url — recreate it." });
+  }
+
+  const jobId = createExportTreeJob({ profileId: profile.id, userId: req.session.userId });
+  logAudit(
+    req.session.name,
+    "JAMA_EXPORT_TREE_SCRAPE_STARTED",
+    `Job ${jobId} for export profile "${profile.name}" (project ${profile.project_label})`
+  );
+
+  runExportTreeScrapeJob({
+    jobId,
+    profile,
+    userId: req.session.userId,
+    username: creds.username,
+    password: creds.password,
+    baseUrl,
+  }).catch((e) => {
+    console.error(`runExportTreeScrapeJob ${jobId} escaped:`, e);
+  });
+
+  res.status(202).json({ job_id: jobId });
+});
+
+// GET /api/jama/export-tree-jobs/:id
+router.get("/export-tree-jobs/:id", requireAuth, (req, res) => {
+  const job = getExportTreeJob(Number(req.params.id));
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json({ job });
+});
+
+// GET /api/jama/export-tree-jobs/:id/stream
+// Same SSE shape as the import-side tree-job stream.
+router.get("/export-tree-jobs/:id/stream", requireAuth, (req, res) => {
+  const jobId = Number(req.params.id);
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  let lastLogLength = 0;
+  let lastStatus = null;
+  let done = false;
+
+  const tick = () => {
+    if (done) return;
+    const job = getExportTreeJob(jobId);
+    if (!job) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: "Job not found" })}\n\n`);
+      finish();
+      return;
+    }
+    if (job.log.length > lastLogLength) {
+      for (const entry of job.log.slice(lastLogLength)) {
+        res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
+      }
+      lastLogLength = job.log.length;
+    }
+    if (job.status !== lastStatus) {
+      res.write(`event: status\ndata: ${JSON.stringify({
+        status: job.status,
+        status_message: job.status_message,
+        node_count: job.node_count,
+        error_message: job.error_message,
+      })}\n\n`);
+      lastStatus = job.status;
+    }
+    if (job.status === "done" || job.status === "failed") finish();
+  };
+  const finish = () => {
+    done = true;
+    clearInterval(interval);
+    try { res.end(); } catch (_) {}
+  };
+  const interval = setInterval(tick, 1000);
+  tick();
+  req.on("close", finish);
+});
+
+// GET /api/jama/export-profiles/:id/tree
+// Returns the cached project tree for this export profile's project, or
+// 404 if not yet scraped. Same payload shape as the import-side endpoint.
+router.get("/export-profiles/:id/tree", requireAuth, (req, res) => {
+  const profile = exportProfileById(Number(req.params.id));
+  if (!profile) return res.status(404).json({ error: "Export profile not found" });
+
+  const row = getCoreDb()
+    .prepare("SELECT tree_json, node_count, scraped_at FROM jama_project_trees WHERE project_id = ?")
+    .get(profile.project_id);
+  if (!row) {
+    return res.status(404).json({
+      error: "No cached tree for this project yet. Run 'Refresh project tree' first.",
+      code: "JAMA_TREE_NOT_CACHED",
+    });
+  }
+
+  let tree;
+  try { tree = JSON.parse(row.tree_json); }
+  catch (_) { return res.status(500).json({ error: "Cached tree is corrupted; refresh it." }); }
+
+  res.json({
+    tree,
+    node_count: row.node_count,
+    scraped_at: row.scraped_at,
+  });
+});
+
+// ─── Export runs (test cases → Jama) ─────────────────────────────────────
+
+// POST /api/jama/export-profiles/:id/run
+// Body: { username, password, tc_ids: [string], destination_jama_id?, destination_name? }
+// Kicks off the export in the background, returns { run_id } immediately.
+// Any authenticated user can run an existing profile — same policy as
+// running an import. The profile's default destination must already be
+// set, but the caller can override it for a single run (e.g. to push
+// to a different Set without changing the profile default).
+router.post("/export-profiles/:id/run", requireAuth, (req, res) => {
+  const baseUrl = readBaseUrlOr400(res); if (!baseUrl) return;
+  const creds = readCredsOr400(req, res); if (!creds) return;
+
+  const exportProfile = exportProfileById(Number(req.params.id));
+  if (!exportProfile) return res.status(404).json({ error: "Export profile not found" });
+  if (!exportProfile.default_destination_jama_id) {
+    return res.status(400).json({
+      error: "This export profile has no default destination — open 'Configure Jama export' and pick one first.",
+      code: "JAMA_EXPORT_NO_DESTINATION",
+    });
+  }
+
+  const tcIds = Array.isArray(req.body?.tc_ids) ? req.body.tc_ids : [];
+  if (tcIds.length === 0) {
+    return res.status(400).json({ error: "tc_ids must be a non-empty array of test-case ids" });
+  }
+
+  // Per-run destination override. If the caller supplies destination_jama_id
+  // it MUST be paired with a destination_name (we display the name in the
+  // log and the toast). We shallow-clone the profile so the override
+  // doesn't leak into other concurrent runs.
+  const overrideId = typeof req.body?.destination_jama_id === "string" ? req.body.destination_jama_id.trim() : "";
+  const overrideName = typeof req.body?.destination_name === "string" ? req.body.destination_name.trim() : "";
+  let effectiveProfile = exportProfile;
+  if (overrideId) {
+    if (!overrideName) {
+      return res.status(400).json({ error: "destination_name is required when destination_jama_id is provided" });
+    }
+    effectiveProfile = {
+      ...exportProfile,
+      default_destination_jama_id: overrideId,
+      default_destination_name: overrideName,
+    };
+  }
+
+  const runId = createExportRun({
+    exportProfile: effectiveProfile,
+    userId: req.session.userId,
+    tcIds,
+  });
+  const isOverride = effectiveProfile !== exportProfile;
+  logAudit(
+    req.session.name,
+    "JAMA_EXPORT_RUN_STARTED",
+    `Run ${runId} for export profile "${exportProfile.name}" — ${tcIds.length} TC(s) → ` +
+    `${effectiveProfile.default_destination_name}${isOverride ? " (per-run override)" : ""}`
+  );
+
+  // Fire and forget — runExportJob captures all errors internally and
+  // writes them to the run row. The .catch is paranoia for anything
+  // that escapes the inner try.
+  runExportJob({
+    runId,
+    exportProfile: effectiveProfile,
+    userId: req.session.userId,
+    username: creds.username,
+    password: creds.password,
+    baseUrl,
+    tcIds,
+  }).catch((e) => {
+    console.error(`runExportJob ${runId} escaped:`, e);
+  });
+
+  res.status(202).json({ run_id: runId });
+});
+
+// GET /api/jama/export-runs/:id
+// One-shot status snapshot.
+router.get("/export-runs/:id", requireAuth, (req, res) => {
+  const run = getExportRun(Number(req.params.id));
+  if (!run) return res.status(404).json({ error: "Run not found" });
+  res.json({ run });
+});
+
+// GET /api/jama/export-runs/:id/screenshot
+// Returns the PNG screenshot captured when an export run failed (if
+// any). Same access policy as the import-side screenshot route:
+// restricted to the user who ran the export, or Admin/QA Manager.
+router.get("/export-runs/:id/screenshot", requireAuth, (req, res) => {
+  const runId = Number(req.params.id);
+  const run = getCoreDb().prepare("SELECT user_id FROM jama_export_runs WHERE id = ?").get(runId);
+  if (!run) return res.status(404).json({ error: "Run not found" });
+
+  const isOwner = run.user_id === req.session.userId;
+  const isManager = req.session.role === "Admin" || req.session.role === "QA Manager";
+  if (!isOwner && !isManager) {
+    return res.status(403).json({ error: "Not your run" });
+  }
+
+  const dataDir = process.env.DATA_DIR || path.join(__dirname, "..", "..", "data");
+  const filePath = path.join(dataDir, "jama-debug", `export-run-${runId}.png`);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "No screenshot captured for this run" });
+  }
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Content-Disposition", `inline; filename="export-run-${runId}-failure.png"`);
+  fs.createReadStream(filePath).pipe(res);
+});
+
+// GET /api/jama/export-runs/:id/stream
+// SSE — same shape as the import job stream.
+router.get("/export-runs/:id/stream", requireAuth, (req, res) => {
+  const runId = Number(req.params.id);
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  let lastLogLength = 0;
+  let lastStatus = null;
+  let done = false;
+
+  const tick = () => {
+    if (done) return;
+    const run = getExportRun(runId);
+    if (!run) {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: "Run not found" })}\n\n`);
+      finish();
+      return;
+    }
+    if (run.log.length > lastLogLength) {
+      for (const entry of run.log.slice(lastLogLength)) {
+        res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
+      }
+      lastLogLength = run.log.length;
+    }
+    if (run.status !== lastStatus) {
+      res.write(`event: status\ndata: ${JSON.stringify({
+        status: run.status,
+        status_message: run.status_message,
+        total_count: run.total_count,
+        created_count: run.created_count,
+        updated_count: run.updated_count,
+        failed_tc_id: run.failed_tc_id,
+        error_message: run.error_message,
+      })}\n\n`);
+      lastStatus = run.status;
+    }
+    if (run.status === "done" || run.status === "failed") finish();
+  };
+  const finish = () => {
+    done = true;
+    clearInterval(interval);
+    try { res.end(); } catch (_) {}
+  };
+  const interval = setInterval(tick, 1000);
+  tick();
+  req.on("close", finish);
 });
 
 module.exports = router;

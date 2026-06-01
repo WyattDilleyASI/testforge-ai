@@ -294,6 +294,11 @@ function initialize() {
   if (!tcCols.includes("testlink_requirements")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN testlink_requirements TEXT DEFAULT '[]'");
   if (!tcCols.includes("is_seeded")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN is_seeded INTEGER NOT NULL DEFAULT 0");
   if (tcCols.includes("pass_fail_criteria")) tcDb.exec("ALTER TABLE test_cases RENAME COLUMN pass_fail_criteria TO description");
+  // Jama export tracking — set on first successful push to Jama, then
+  // used to keep re-exports idempotent (update the existing Jama item
+  // instead of creating duplicates).
+  if (!tcCols.includes("jama_id")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN jama_id TEXT");
+  if (!tcCols.includes("jama_exported_at")) tcDb.exec("ALTER TABLE test_cases ADD COLUMN jama_exported_at TEXT");
 
   // ── Knowledge Base DB ──
   // NOTE: images column now stores metadata only [{name, media_type, description}]

@@ -8,6 +8,7 @@ import { Sidebar } from "./components/Sidebar";
 import { DashboardView } from "./components/DashboardView";
 import { RequirementsView } from "./components/RequirementsView";
 import { JamaImportView } from "./components/JamaImportView";
+import { JamaExportView } from "./components/JamaExportView";
 import { JamaStalenessBanner } from "./components/JamaStalenessBanner";
 import { TestCasesWrapper } from "./components/TestCasesWrapper";
 import { KbView } from "./components/KbView";
@@ -15,6 +16,9 @@ import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
 import { MoonlightView } from "./components/MoonlightView";
 import { AnalyticsView } from "./components/AnalyticsView";
+import { BackgroundExportRunsProvider } from "./contexts/backgroundExportRuns";
+import { WhatsNewModal } from "./components/WhatsNewModal";
+import { WHATS_NEW, WHATS_NEW_STORAGE_KEY, unseenWhatsNewEntries } from "./whatsNew";
 import { EasterEggToast, EasterEggResetButton, StarfieldCanvas, MatrixRainCanvas, AuroraCanvas, VaporwaveCanvas, FirefliesCanvas, FishTankCanvas, HotDogCanvas, RainstormCanvas,
   StarfieldParallaxCanvas,
   CampfireCanvas,
@@ -117,6 +121,7 @@ export default function App() {
   // Jama browser import lives at app level so the staleness banner +
   // import panel can render above any page (not just RequirementsView).
   const [showJamaBrowserImport, setShowJamaBrowserImport] = useState(false);
+  const [showJamaBrowserExport, setShowJamaBrowserExport] = useState(false);
 
   const [weatherData, setWeatherData] = useState(null);
 
@@ -222,6 +227,50 @@ export default function App() {
   const [easterEggToast, setEasterEggToast] = useState(null);
   const [preEasterEggTheme, setPreEasterEggTheme] = useState(null);
   const [hotDogOverlay, setHotDogOverlay] = useState(false);
+
+  // What's-new modal: shown on first authenticated mount after a new
+  // release. Closed once acknowledged; stored per-browser in
+  // localStorage. Editing the entries is just appending to whatsNew.js.
+  const [whatsNewEntries, setWhatsNewEntries] = useState([]);
+  useEffect(() => {
+    if (authState !== "authenticated") return;
+    let lastSeen = "";
+    try { lastSeen = localStorage.getItem(WHATS_NEW_STORAGE_KEY) || ""; } catch (_) {}
+    const unseen = unseenWhatsNewEntries(lastSeen);
+    if (unseen.length > 0) setWhatsNewEntries(unseen);
+  }, [authState]);
+  const dismissWhatsNew = useCallback(() => {
+    try {
+      const latestId = WHATS_NEW[0]?.id;
+      if (latestId) localStorage.setItem(WHATS_NEW_STORAGE_KEY, latestId);
+    } catch (_) {}
+    setWhatsNewEntries([]);
+  }, []);
+
+  // Toast surfaced when a background Jama export run completes.
+  // null | { kind: "done"|"failed", message, runId }
+  const [exportToast, setExportToast] = useState(null);
+  const handleExportRunComplete = useCallback((payload) => {
+    const dest = payload.destinationName ? ` (${payload.destinationName})` : "";
+    if (payload.status === "done") {
+      const total = (payload.createdCount || 0) + (payload.updatedCount || 0);
+      setExportToast({
+        kind: "done",
+        runId: payload.runId,
+        message: `✓ Jama push complete${dest}: ${total} item${total === 1 ? "" : "s"} pushed.`,
+      });
+    } else {
+      const err = (payload.errorMessage || "Unknown error").slice(0, 140);
+      setExportToast({
+        kind: "failed",
+        runId: payload.runId,
+        message: `✗ Jama push failed${dest}: ${err}`,
+      });
+    }
+    // Notify anyone with stale TC data (e.g. the library list) so they
+    // can re-fetch and pick up the new jama_exported_at timestamps.
+    window.dispatchEvent(new CustomEvent("testforge:jama-export-complete", { detail: payload }));
+  }, []);
 
   const handleThemeChange = (key) => {
     setThemeName(key);
@@ -413,6 +462,7 @@ useEffect(() => {
   `;
 
   return <ThemeContext.Provider value={activeTheme}>
+    <BackgroundExportRunsProvider onComplete={handleExportRunComplete}>
     <div style={{
       display: "flex",
       minHeight: "100vh",
@@ -495,6 +545,8 @@ useEffect(() => {
          activeTheme._sunshine || activeTheme._mainlyClear) && <AmbientCanvas />}
       {themeName === "weather" && <WeatherInfoCard weatherData={weatherData} />}
       {easterEggToast && <EasterEggToast message={easterEggToast} onDone={() => setEasterEggToast(null)} />}
+      {exportToast && <EasterEggToast message={exportToast.message} onDone={() => setExportToast(null)} />}
+      {whatsNewEntries.length > 0 && <WhatsNewModal entries={whatsNewEntries} onDismiss={dismissWhatsNew} />}
       {activeTheme._hidden && <EasterEggResetButton onReset={() => {
         handleThemeChange(preEasterEggTheme || "midnight");
         setPreEasterEggTheme(null);
@@ -567,9 +619,18 @@ useEffect(() => {
           />
         )}
 
+        {/* Jama export panel — scoped to the test cases page since it's
+            the only domain that uses it. */}
+        {page === "testcases" && showJamaBrowserExport && (
+          <JamaExportView
+            currentUser={currentUser}
+            onClose={() => setShowJamaBrowserExport(false)}
+          />
+        )}
+
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} currentUser={currentUser} />}
         {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} openJamaImport={() => setShowJamaBrowserImport(true)} />}
-        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} initialReqId={initialReqId} />}
+        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} initialReqId={initialReqId} openJamaExport={() => setShowJamaBrowserExport(true)} />}
         {page === "traceability" && (isMobile
           ? <MobileGate icon="◈" title="SysML Traceability" description="The traceability graph requires a larger screen to navigate. Open this link on a desktop or tablet to use it." />
           : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
@@ -582,5 +643,6 @@ useEffect(() => {
       </main>
       </div>{/* end mobile column wrapper */}
     </div>
+    </BackgroundExportRunsProvider>
   </ThemeContext.Provider>;
 }

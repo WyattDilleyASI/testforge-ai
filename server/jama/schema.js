@@ -119,6 +119,170 @@ function initializeJama() {
   core.exec("CREATE INDEX IF NOT EXISTS idx_jama_jobs_user    ON jama_import_jobs(user_id);");
   core.exec("CREATE INDEX IF NOT EXISTS idx_jama_jobs_status  ON jama_import_jobs(status);");
 
+  // ── jama_tree_scrape_jobs ───────────────────────────────────────
+  // One row per attempted tree scrape. Same status/log pattern as
+  // jama_import_jobs so the frontend can stream progress via SSE.
+  core.exec(`
+    CREATE TABLE IF NOT EXISTS jama_tree_scrape_jobs (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id      INTEGER NOT NULL REFERENCES jama_profiles(id),
+      user_id         TEXT    NOT NULL,
+      status          TEXT    NOT NULL DEFAULT 'queued' CHECK (status IN (
+                        'queued', 'authenticating', 'expanding',
+                        'capturing', 'saving', 'done', 'failed'
+                      )),
+      status_message  TEXT,
+      log_json        TEXT    NOT NULL DEFAULT '[]',
+      node_count      INTEGER,
+      error_message   TEXT,
+      started_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      finished_at     TEXT
+    );
+  `);
+  core.exec("CREATE INDEX IF NOT EXISTS idx_jama_tree_jobs_profile ON jama_tree_scrape_jobs(profile_id);");
+  core.exec("CREATE INDEX IF NOT EXISTS idx_jama_tree_jobs_user    ON jama_tree_scrape_jobs(user_id);");
+
+  // ── jama_project_trees ──────────────────────────────────────────
+  // Cached Jama project sidebar tree, scraped by Playwright when an
+  // admin runs "Refresh project tree" on a profile. Keyed on
+  // project_id (NOT profile_id) — multiple Testforge profiles may
+  // reference the same Jama project, and they share one tree.
+  //
+  // tree_json shape (recursive):
+  //   { name, jama_id, type, children: [...] }
+  // - "type" reflects the icon class on the sidebar node (folder, set,
+  //   component, test_section, etc.) so the picker UI can render
+  //   appropriate icons.
+  // - Leaf items (individual requirements / TCs) are NOT included —
+  //   only containers that can hold children. The tree is for
+  //   destination-picking on export, not browsing all items.
+  core.exec(`
+    CREATE TABLE IF NOT EXISTS jama_project_trees (
+      project_id          INTEGER PRIMARY KEY,
+      tree_json           TEXT    NOT NULL,
+      node_count          INTEGER NOT NULL DEFAULT 0,
+      scraped_at          TEXT    NOT NULL DEFAULT (datetime('now')),
+      scraped_by_user_id  TEXT    NOT NULL
+    );
+  `);
+
+  // ── jama_export_profiles ────────────────────────────────────────
+  // Saved test-case export configurations. Distinct from jama_profiles
+  // (which handle requirement *imports* keyed on a sidebar filter) —
+  // exports point at a Jama project and optionally remember a default
+  // destination node inside the V&V subtree where new TCs land.
+  //
+  // default_destination_jama_id / _name are nullable: an export profile
+  // can exist before a destination has been picked, in which case the
+  // user is prompted to choose at export time.
+  core.exec(`
+    CREATE TABLE IF NOT EXISTS jama_export_profiles (
+      id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name                        TEXT    UNIQUE NOT NULL,
+      project_id                  INTEGER NOT NULL,
+      project_url                 TEXT    NOT NULL,
+      project_label               TEXT    NOT NULL,
+      default_destination_jama_id TEXT,
+      default_destination_name    TEXT,
+      import_mapping_name         TEXT    NOT NULL DEFAULT 'Testforge Auto Import',
+      scrape_subtree_name         TEXT    NOT NULL DEFAULT 'Verification & Validation',
+      created_by_user_id          TEXT    NOT NULL,
+      created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at                  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Migrations for jama_export_profiles (additive only — never drop or
+  // rename columns that prior installs depend on).
+  const exportCols = core.prepare("PRAGMA table_info(jama_export_profiles)").all().map((c) => c.name);
+
+  // import_mapping_name: saved field mapping that Jama's import wizard
+  // reuses across runs. Team setup: run one manual XLSX import in Jama,
+  // save the mapping with this name, and every push thereafter reuses it.
+  if (!exportCols.includes("import_mapping_name")) {
+    core.exec(
+      "ALTER TABLE jama_export_profiles ADD COLUMN import_mapping_name TEXT NOT NULL DEFAULT 'Testforge Auto Import'"
+    );
+  }
+
+  // scrape_subtree_name: name of the top-level component in this Jama
+  // project that holds Sets of test cases. Default matches the ASI
+  // Landscaping project but is configurable per profile so other teams
+  // can point at "Test Cases" or whatever their project uses.
+  if (!exportCols.includes("scrape_subtree_name")) {
+    core.exec(
+      "ALTER TABLE jama_export_profiles ADD COLUMN scrape_subtree_name TEXT NOT NULL DEFAULT 'Verification & Validation'"
+    );
+  }
+
+  // ── jama_export_tree_scrape_jobs ────────────────────────────────
+  // Parallel of jama_tree_scrape_jobs, but FK'd to jama_export_profiles
+  // so the import and export sides have independent scrape history.
+  // jama_project_trees is shared (keyed on project_id) — both profile
+  // types reuse the same cached tree for the same Jama project.
+  core.exec(`
+    CREATE TABLE IF NOT EXISTS jama_export_tree_scrape_jobs (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id      INTEGER NOT NULL REFERENCES jama_export_profiles(id),
+      user_id         TEXT    NOT NULL,
+      status          TEXT    NOT NULL DEFAULT 'queued' CHECK (status IN (
+                        'queued', 'authenticating', 'expanding',
+                        'capturing', 'saving', 'done', 'failed'
+                      )),
+      status_message  TEXT,
+      log_json        TEXT    NOT NULL DEFAULT '[]',
+      node_count      INTEGER,
+      error_message   TEXT,
+      started_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      finished_at     TEXT
+    );
+  `);
+  core.exec("CREATE INDEX IF NOT EXISTS idx_jama_export_tree_jobs_profile ON jama_export_tree_scrape_jobs(profile_id);");
+  core.exec("CREATE INDEX IF NOT EXISTS idx_jama_export_tree_jobs_user    ON jama_export_tree_scrape_jobs(user_id);");
+
+  // ── jama_export_runs ────────────────────────────────────────────
+  // One row per test-case export attempt (a single user clicking
+  // "Export to Jama" with N TCs selected). Stop-on-first-failure
+  // semantics: when one TC errors, the whole run goes to 'failed' and
+  // the rest of the queue is abandoned. failed_tc_id pinpoints which
+  // one tripped it so the user can fix and rerun (already-pushed TCs
+  // get skipped on the next run via their stored jama_id).
+  //
+  // Per-TC results are logged into log_json as level=info/error entries
+  // — same shape as the import jobs — to keep the SSE plumbing
+  // identical. Aggregate counts get materialized at the end for the
+  // history list.
+  //
+  // destination_jama_id is the resolved Set node at run start —
+  // captured here so a later destination change on the profile doesn't
+  // muddle the history.
+  core.exec(`
+    CREATE TABLE IF NOT EXISTS jama_export_runs (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      export_profile_id    INTEGER NOT NULL REFERENCES jama_export_profiles(id),
+      user_id              TEXT    NOT NULL,
+      destination_jama_id  TEXT    NOT NULL,
+      destination_name     TEXT    NOT NULL,
+      tc_ids_json          TEXT    NOT NULL,
+      status               TEXT    NOT NULL DEFAULT 'queued' CHECK (status IN (
+                             'queued', 'authenticating', 'navigating',
+                             'exporting', 'done', 'failed'
+                           )),
+      status_message       TEXT,
+      log_json             TEXT    NOT NULL DEFAULT '[]',
+      total_count          INTEGER NOT NULL DEFAULT 0,
+      created_count        INTEGER NOT NULL DEFAULT 0,
+      updated_count        INTEGER NOT NULL DEFAULT 0,
+      failed_tc_id         TEXT,
+      error_message        TEXT,
+      started_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+      finished_at          TEXT
+    );
+  `);
+  core.exec("CREATE INDEX IF NOT EXISTS idx_jama_export_runs_profile ON jama_export_runs(export_profile_id);");
+  core.exec("CREATE INDEX IF NOT EXISTS idx_jama_export_runs_user    ON jama_export_runs(user_id);");
+  core.exec("CREATE INDEX IF NOT EXISTS idx_jama_export_runs_status  ON jama_export_runs(status);");
+
   console.log("  ✓ Jama browser import tables initialized");
 
   // Prune old job history + orphan debug screenshots on every startup.
