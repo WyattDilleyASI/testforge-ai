@@ -65,10 +65,14 @@ export const PushToJamaView = ({ testCases = [], refresh, currentUser }) => {
     return () => window.removeEventListener("testforge:jama-export-profiles-changed", onChange);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filter pipeline: search + not-yet-exported (unless "show all").
+  // Filter pipeline:
+  //   1. only Approved (status === "Reviewed") — hard rule, no override
+  //   2. not-yet-exported unless `showAll` is on
+  //   3. search across id/title/req-ids
   const filteredTcs = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return testCases
+      .filter((tc) => tc.status === "Reviewed")
       .filter((tc) => showAll || !tc.jama_exported_at)
       .filter((tc) => {
         if (!q) return true;
@@ -322,10 +326,11 @@ const ProfilePicker = ({ T, profiles, selectedProfileId, onPick, showProfileMana
 
 const TcTable = ({
   T, testCases, filteredTcs, selectedTcIds, searchQuery, setSearchQuery,
-  showAll, setShowAll, allVisibleSelected, toggleTc, toggleAllVisible,
+  showAll, setShowAll,
+  allVisibleSelected, toggleTc, toggleAllVisible,
 }) => {
-  const totalCount = testCases.length;
-  const exportedCount = testCases.filter((tc) => tc.jama_exported_at).length;
+  const approvedCount = testCases.filter((tc) => tc.status === "Reviewed").length;
+  const exportedCount = testCases.filter((tc) => tc.jama_exported_at && tc.status === "Reviewed").length;
 
   return (
     <Card style={{ padding: 0, marginBottom: 8 }}>
@@ -334,10 +339,10 @@ const TcTable = ({
         display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
       }}>
         <div style={{ fontSize: 12, color: T.textMuted, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-          Test cases
+          Approved test cases
         </div>
         <div style={{ fontSize: 11, color: T.textMuted, fontFamily: mono }}>
-          {filteredTcs.length} of {totalCount} shown · {exportedCount} already pushed
+          {filteredTcs.length} of {approvedCount} shown · {exportedCount} already pushed
         </div>
         <div style={{ flex: 1 }} />
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.text, cursor: "pointer" }}>
@@ -361,13 +366,18 @@ const TcTable = ({
       </div>
 
       {filteredTcs.length === 0 ? (
-        <div style={{ padding: 24, textAlign: "center", color: T.textMuted, fontSize: 12 }}>
-          {totalCount === 0
-            ? "No test cases in Testforge yet. Generate some from the Requirements page first."
-            : showAll
-              ? "No test cases match your search."
-              : "Every test case has already been pushed. Toggle 'Show already-pushed' to see them again."
-          }
+        <div style={{ padding: 24, textAlign: "center", color: T.textMuted, fontSize: 12, lineHeight: 1.6 }}>
+          {testCases.length === 0 ? (
+            "No test cases in Testforge yet. Generate some from the Requirements page first."
+          ) : approvedCount === 0 ? (
+            <>No <strong>approved</strong> test cases yet. Approve some in the Library tab to make them eligible for Jama push.</>
+          ) : !showAll && approvedCount === exportedCount ? (
+            <>All approved test cases have already been pushed. Toggle "Show already-pushed" to see them again.</>
+          ) : searchQuery ? (
+            "No approved test cases match your search."
+          ) : (
+            "No approved test cases match the current filters."
+          )}
         </div>
       ) : (
         <div style={{ maxHeight: 480, overflowY: "auto" }}>
