@@ -406,11 +406,14 @@ export const JamaExportView = ({ currentUser, onClose, embedded = false }) => {
   // ── Render ───────────────────────────────────────────────────────────
   // When `embedded` (e.g. mounted inside Push to Jama) we skip the outer
   // Card chrome and the title bar — the host already provides them.
-  const Wrapper = embedded
-    ? ({ children }) => <div>{children}</div>
-    : ({ children }) => <Card style={{ marginBottom: 16, padding: 16 }}>{children}</Card>;
-  return (
-    <Wrapper>
+  //
+  // Important: we DON'T define a `<Wrapper>` component inline here. Doing
+  // so creates a new component identity on every render, which makes
+  // React unmount and remount the entire subtree on each keystroke,
+  // killing form focus and any transient child state. The two branches
+  // below both use static component types so React reconciles cleanly.
+  const inner = (
+    <>
       {!embedded && <Header T={T} mode={mode} onClose={onClose} />}
       <ErrorBanner msg={error} />
 
@@ -533,8 +536,11 @@ export const JamaExportView = ({ currentUser, onClose, embedded = false }) => {
           busy={busy}
         />
       )}
-    </Wrapper>
+    </>
   );
+  return embedded
+    ? <div>{inner}</div>
+    : <Card style={{ marginBottom: 16, padding: 16 }}>{inner}</Card>;
 };
 
 // ─── Sub-views ──────────────────────────────────────────────────────────
