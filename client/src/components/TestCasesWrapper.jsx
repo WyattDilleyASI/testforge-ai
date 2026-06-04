@@ -13,7 +13,7 @@ const TC_SECTIONS = [
   { key: "testlink", label: "TestLink Import", icon: "⟲", desktopOnly: true },
 ];
 
-export const TestCasesWrapper = ({ requirements, testCases, refresh, initialReqId, openJamaExport }) => {
+export const TestCasesWrapper = ({ requirements, testCases, refresh, initialReqId, openJamaExport, currentUser }) => {
   const COLORS = useTheme();
   const isMobile = useIsMobile();
   const [activeSection, setActiveSection] = useState("generate");
@@ -25,7 +25,7 @@ export const TestCasesWrapper = ({ requirements, testCases, refresh, initialReqI
       case "library":
         return <TestCaseLibraryView testCases={testCases} requirements={requirements} refresh={refresh} openJamaExport={openJamaExport} />;
       case "pushjama":
-        return <PushToJamaView testCases={testCases} refresh={refresh} onNavigateToConfigure={openJamaExport} />;
+        return <PushToJamaView testCases={testCases} refresh={refresh} currentUser={currentUser} />;
       case "testlink":
         return <TestLinkImportView refresh={refresh} />;
       default:

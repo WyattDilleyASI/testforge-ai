@@ -630,7 +630,7 @@ useEffect(() => {
 
         {page === "dashboard" && <DashboardView requirements={requirements} testCases={testCases} kbEntries={kbEntries} tokenUsage={tokenUsage} currentUser={currentUser} />}
         {page === "requirements" && <RequirementsView requirements={requirements} refresh={loadData} currentUser={currentUser} openJamaImport={() => setShowJamaBrowserImport(true)} />}
-        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} initialReqId={initialReqId} openJamaExport={() => setShowJamaBrowserExport(true)} />}
+        {page === "testcases" && <TestCasesWrapper requirements={requirements} testCases={testCases} kbEntries={kbEntries} refresh={loadData} initialReqId={initialReqId} openJamaExport={() => setShowJamaBrowserExport(true)} currentUser={currentUser} />}
         {page === "traceability" && (isMobile
           ? <MobileGate icon="◈" title="SysML Traceability" description="The traceability graph requires a larger screen to navigate. Open this link on a desktop or tablet to use it." />
           : <SysMLTraceability requirements={requirements} testCases={testCases} useTheme={useTheme} Badge={Badge} Card={Card} Button={Button} mono={mono} font={font} refresh={loadData} initialFamilyId={initialFamilyId} />
