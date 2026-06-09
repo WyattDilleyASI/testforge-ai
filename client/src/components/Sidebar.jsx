@@ -9,6 +9,7 @@ export const NAV_ITEMS = [
   { key: "kb",            label: "Knowledge Base",       icon: "◪" },
   { key: "analytics",     label: "Learning Engine",      icon: "◉" },
   { key: "settings",      label: "Settings",             icon: "⚙" },
+  { key: "help",          label: "Help",                 icon: "?" },
   { key: "deferred",      label: "Deferred to v2",       icon: "◬" },
 ];
 
