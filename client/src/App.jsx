@@ -14,6 +14,7 @@ import { TestCasesWrapper } from "./components/TestCasesWrapper";
 import { KbView } from "./components/KbView";
 import { DeferredView } from "./components/DeferredView";
 import { SettingsWrapper } from "./components/SettingsWrapper";
+import { HelpView } from "./components/HelpView";
 import { MoonlightView } from "./components/MoonlightView";
 import { AnalyticsView } from "./components/AnalyticsView";
 import { BackgroundExportRunsProvider } from "./contexts/backgroundExportRuns";
@@ -640,6 +641,7 @@ useEffect(() => {
         {page === "analytics" && <AnalyticsView currentUser={currentUser} />}
         {page === "deferred" && <DeferredView />}
         {page === "settings" && <SettingsWrapper currentUser={currentUser} currentTheme={themeName} onThemeChange={handleThemeChange} requirements={requirements} testCases={testCases} kbEntries={kbEntries} />}
+        {page === "help" && <HelpView currentUser={currentUser} />}
       </main>
       </div>{/* end mobile column wrapper */}
     </div>
