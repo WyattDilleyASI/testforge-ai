@@ -10,33 +10,36 @@ import { api } from "./api";
 
 // ─── DATA TRANSFORMER ──────────────────────────────────────────
 
-// Base JAMA requirement-type keyword → depth-level mapping.
-// The project-ID prefix (e.g. "LFWM2-") is intentionally omitted so TestForge
-// works across multiple projects without reconfiguration.
-const JAMA_BASE_TYPES = { "PRD_Rqmts": 0, "SYSRQ": 1, "SubSys_Rqmt": 2, "CMPRQ": 3 };
+// Base JAMA requirement-type keyword → category. The SubSystem tier has been
+// removed: a system requirement's LEVEL (L1, L2, …) is now derived from its
+// upstream trace chain (see computeDepth in transformForDiagram), not from its
+// type. The project-ID prefix (e.g. "LFWM2-") is intentionally omitted so
+// TestForge works across multiple projects without reconfiguration.
+const JAMA_BASE_CATEGORIES = { "PRD_Rqmts": "product", "SYSRQ": "system", "CMPRQ": "component" };
 
-// Merges base types with any user-configured extras saved by the import prefix
-// configuration panel (stored in localStorage as "tf_custom_prefixes").
-function getJamaTypeDepth() {
+// Merges base categories with any user-configured extras saved by the import
+// prefix configuration panel (stored in localStorage as "tf_custom_prefixes").
+// A legacy "subsys" bucket may still be present in storage; it is ignored.
+function getJamaTypeCategory() {
   try {
     const stored = localStorage.getItem("tf_custom_prefixes");
-    if (!stored) return JAMA_BASE_TYPES;
-    const custom = JSON.parse(stored); // { prd:[], sys:[], subsys:[], cmp:[] }
-    const merged = { ...JAMA_BASE_TYPES };
-    (custom.prd    || []).forEach(t => { if (t) merged[t] = 0; });
-    (custom.sys    || []).forEach(t => { if (t) merged[t] = 1; });
-    (custom.subsys || []).forEach(t => { if (t) merged[t] = 2; });
-    (custom.cmp    || []).forEach(t => { if (t) merged[t] = 3; });
+    if (!stored) return JAMA_BASE_CATEGORIES;
+    const custom = JSON.parse(stored); // { prd:[], sys:[], cmp:[], tc:[] }
+    const merged = { ...JAMA_BASE_CATEGORIES };
+    (custom.prd || []).forEach(t => { if (t) merged[t] = "product"; });
+    (custom.sys || []).forEach(t => { if (t) merged[t] = "system"; });
+    (custom.cmp || []).forEach(t => { if (t) merged[t] = "component"; });
+    (custom.tc  || []).forEach(t => { if (t) merged[t] = "testcase"; });
     return merged;
-  } catch { return JAMA_BASE_TYPES; }
+  } catch { return JAMA_BASE_CATEGORIES; }
 }
 
 // Returns the matched type keyword for a JAMA-style ID, or null if not recognised.
 // Matches "{optional-project-prefix-}TYPE-{digits}" regardless of what precedes the type.
 function getJamaType(id) {
   if (!id) return null;
-  const typeDepth = getJamaTypeDepth();
-  for (const type of Object.keys(typeDepth)) {
+  const map = getJamaTypeCategory();
+  for (const type of Object.keys(map)) {
     const escaped = type.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (new RegExp(`(^|-)${escaped}-\\d+$`).test(id)) return type;
   }
@@ -51,40 +54,102 @@ function detectIdFormat(id) {
   return "unknown";
 }
 
-function getDepth(id) {
+// Static fallback depth for the non-JAMA "fwm" ID convention (dash-separated
+// numeric segments, e.g. FWM-01-02-03). Only used when a category can't be
+// derived from a JAMA type keyword.
+function fwmDepth(id) { return Math.min(Math.max((id.match(/\d+/g) || []).length - 1, 0), 3); }
+
+// Category of a requirement: "product" | "system" | "component" | null.
+// JAMA IDs map by type keyword; legacy "fwm" IDs fall back to a depth-based
+// guess so those projects keep rendering (0 → product, 1 → system, ≥2 → component).
+function getCategory(id) {
   const type = getJamaType(id);
-  if (type !== null) return getJamaTypeDepth()[type] ?? 0;
-  const format = detectIdFormat(id);
-  if (format === "fwm") { return Math.min(Math.max((id.match(/\d+/g) || []).length - 1, 0), 3); }
-  return 0;
+  if (type !== null) return getJamaTypeCategory()[type] || null;
+  if (detectIdFormat(id) === "fwm") { const d = fwmDepth(id); return d === 0 ? "product" : d === 1 ? "system" : "component"; }
+  return null;
 }
 
-function resolveParent(req, allReqIds) {
-  const id = req.req_id, format = detectIdFormat(id);
-  if (format === "fwm") { const p = id.replace(/[-_.]\d+$/, ""); return (p !== id && allReqIds.has(p)) ? p : ""; }
-  if (format === "jama") {
-    const myDepth = getDepth(id);
-    for (const rel of (req.relationships || [])) { if (rel.direction === "Upstream" && allReqIds.has(rel.id) && getDepth(rel.id) === myDepth - 1) return rel.id; }
-    return "";
+// The type keyword embedded in a JAMA-style ID: the segment just before the
+// trailing "-<digits>" (e.g. "LFWM2-PRDKPI-1" → "PRDKPI"). Registering this
+// keyword under a category (see classifyPrefix) makes getJamaType match every
+// ID that shares it.
+function idTypeKeyword(id) {
+  const stripped = String(id || "").replace(/-\d+$/, "");
+  const seg = stripped.split("-").pop();
+  return seg || stripped;
+}
+
+// Persist a keyword → category mapping into the localStorage "tf_custom_prefixes"
+// config that getJamaTypeCategory() reads. Moving a keyword between categories
+// removes it from the others first so it never lands in two buckets.
+function persistPrefixMapping(keyword, category) {
+  const bucketKey = category === "product" ? "prd" : category === "system" ? "sys" : category === "component" ? "cmp" : "tc";
+  let custom = {};
+  try { custom = JSON.parse(localStorage.getItem("tf_custom_prefixes") || "{}"); } catch { custom = {}; }
+  const buckets = {};
+  for (const k of ["prd", "sys", "cmp", "tc", "subsys"]) {
+    buckets[k] = Array.isArray(custom[k]) ? custom[k].filter((t) => t !== keyword) : [];
   }
-  return "";
-}
-
-function mapJamaRelationshipType(rel, reqDepth) {
-  const relDepth = getDepth(rel.id);
-  // Direct parent relationship is already captured via resolveParent/containment edges — skip it here
-  if (rel.direction === "Upstream" && relDepth === reqDepth - 1) return null;
-  // All other req-to-req relationships (cross-level derives, traces, etc.) render as containment
-  return "containment";
+  buckets[bucketKey] = Array.from(new Set([...buckets[bucketKey], keyword]));
+  localStorage.setItem("tf_custom_prefixes", JSON.stringify(buckets));
 }
 
 function transformForDiagram(apiRequirements, apiTestCases = [], options = {}) {
   const { includeTestCases = false } = options;
   const allReqIds = new Set(apiRequirements.map((r) => r.req_id));
+  const reqById = new Map(apiRequirements.map((r) => [r.req_id, r]));
+
+  // Upstream trace targets that exist in this data set (excluding self).
+  function upstreamParentIds(apiReq) {
+    return (apiReq.relationships || [])
+      .filter((rel) => rel.direction === "Upstream" && rel.id !== apiReq.req_id && allReqIds.has(rel.id))
+      .map((rel) => rel.id);
+  }
+
+  // ── Dynamic level (depth) computation ──────────────────────────────────
+  // Product = 0. Every other requirement = shortest path to a Product along
+  // Upstream traces, i.e. min(parent depth) + 1. A system req tracing to a
+  // Product is L1; to an L1 system, L2; and so on. A component sits one level
+  // below the system it traces to. Unrooted reqs (no path to a Product) → L1.
+  // A cycle guard keeps the level well-defined even if system reqs form a loop.
+  const depthMemo = {};
+  const inProgress = new Set();
+  function computeDepth(id) {
+    if (id in depthMemo) return depthMemo[id];
+    if (getCategory(id) === "product") { depthMemo[id] = 0; return 0; }
+    const apiReq = reqById.get(id);
+    if (!apiReq) return fwmDepth(id);
+    if (inProgress.has(id)) return Infinity; // cycle — this path can't reach a Product
+    inProgress.add(id);
+    let best = Infinity;
+    for (const p of upstreamParentIds(apiReq)) {
+      const d = computeDepth(p);
+      if (d + 1 < best) best = d + 1;
+    }
+    inProgress.delete(id);
+    const result = best === Infinity ? 1 : best; // unrooted → L1
+    depthMemo[id] = result;
+    return result;
+  }
+
+  // Layout parent = the upstream trace giving the shallowest level (argmin), so
+  // the diagram tree follows the primary derivation chain. Products — and any
+  // requirement with no in-set upstream trace — are layout roots.
+  function resolveParentId(apiReq) {
+    const id = apiReq.req_id;
+    if (detectIdFormat(id) === "fwm") { const p = id.replace(/[-_.]\d+$/, ""); return (p !== id && allReqIds.has(p)) ? p : ""; }
+    if (getCategory(id) === "product") return "";
+    let bestP = "", bestD = Infinity;
+    for (const p of upstreamParentIds(apiReq)) {
+      const d = computeDepth(p);
+      if (d < bestD) { bestD = d; bestP = p; }
+    }
+    return bestP;
+  }
 
   const requirements = apiRequirements.map((req) => ({
     id: req.req_id, name: req.title || req.req_id, text: req.description || "",
-    parent: resolveParent(req, allReqIds),
+    parent: resolveParentId(req),
     _meta: {
       priority: req.priority, status: req.status,
       acceptance_criteria: req.acceptance_criteria || [], rationale: req.rationale || "",
@@ -95,31 +160,39 @@ function transformForDiagram(apiRequirements, apiTestCases = [], options = {}) {
   }));
 
   const depths = {};
-  requirements.forEach((r) => { depths[r.id] = getDepth(r.id); });
+  requirements.forEach((r) => { depths[r.id] = computeDepth(r.id); });
 
   const relationships = [];
   const allDiagramIds = new Set(requirements.map((r) => r.id));
+  const parentById = new Map(requirements.map((r) => [r.id, r.parent]));
   const edgeSet = new Set();
 
+  // Layout-parent containment edges (the trace tree).
   for (const req of requirements) {
-    if (req.parent && allDiagramIds.has(req.parent))
+    if (req.parent && allDiagramIds.has(req.parent)) {
       relationships.push({ type: "containment", source: req.parent, target: req.id });
-  }
-
-  for (const apiReq of apiRequirements) {
-    const rels = apiReq.relationships || [];
-    const reqDepth = getDepth(apiReq.req_id);
-    for (const rel of rels) {
-      if (!allReqIds.has(rel.id) || rel.id === apiReq.req_id) continue;
-      const edgeType = mapJamaRelationshipType(rel, reqDepth);
-      if (!edgeType) continue;
-      const key = `${edgeType}:${apiReq.req_id}->${rel.id}`;
-      if (!edgeSet.has(key)) { edgeSet.add(key); relationships.push({ type: edgeType, source: apiReq.req_id, target: rel.id }); }
+      edgeSet.add(`containment:${req.parent}->${req.id}`);
     }
   }
 
+  // Every other req-to-req relationship renders as a cross-reference containment
+  // edge. Skip the edge already drawn as this node's layout-parent (in either
+  // direction) so it isn't duplicated.
+  for (const apiReq of apiRequirements) {
+    for (const rel of (apiReq.relationships || [])) {
+      if (!allReqIds.has(rel.id) || rel.id === apiReq.req_id) continue;
+      if (parentById.get(apiReq.req_id) === rel.id) continue; // child → its own layout parent
+      const key = `containment:${apiReq.req_id}->${rel.id}`;
+      if (!edgeSet.has(key)) { edgeSet.add(key); relationships.push({ type: "containment", source: apiReq.req_id, target: rel.id }); }
+    }
+  }
+
+  // A component with no upstream trace to a system is genuinely orphaned. System
+  // and product reqs are never orphaned (unrooted systems default to L1).
   const orphans = new Set();
-  for (const req of requirements) { if (depths[req.id] > 0 && !req.parent) orphans.add(req.id); }
+  for (const req of requirements) {
+    if (!req.parent && getCategory(req.id) === "component") orphans.add(req.id);
+  }
 
   const tcNodes = [];
   let tcLinkCount = 0;
@@ -183,12 +256,37 @@ const VAGUE_TERMS = [
   "performant", "high quality", "timely",
 ];
 
-const LEVEL_CONFIG = [
-  { label: "Product Requirement", abbr: "PRD", accent: "#4d70d8", stereo: "#7090e0" },
-  { label: "System Requirement", abbr: "SYS", accent: "#3d8a60", stereo: "#60c890" },
-  { label: "Subsystem Requirement", abbr: "SUB", accent: "#8a7030", stereo: "#c8b050" },
-  { label: "Component Requirement", abbr: "CMP", accent: "#7840a8", stereo: "#b070e0" },
+// One visual config per requirement category. A system requirement's level
+// (L1, L2, …) is shown as a badge on the node rather than by a distinct color
+// per level, so the palette stays fixed no matter how deep the trace chain runs.
+const CATEGORY_CONFIG = {
+  product:   { label: "Product Requirement",   abbr: "PRD", accent: "#4d70d8", stereo: "#7090e0" },
+  system:    { label: "System Requirement",    abbr: "SYS", accent: "#3d8a60", stereo: "#60c890" },
+  component: { label: "Component Requirement", abbr: "CMP", accent: "#7840a8", stereo: "#b070e0" },
+  testcase:  { label: "Test Case",             abbr: "TC",  accent: "#2596be", stereo: "#5ec5e0" },
+};
+// Categories shown in the legend / used for the type filter (requirement tiers only).
+const CATEGORY_ORDER = ["product", "system", "component"];
+// Choices offered in the Classify-ID popup — adds Test Case for IDs that are
+// actually test cases mislabeled as «Requirement» by the import.
+const CLASSIFY_OPTIONS = ["product", "system", "component", "testcase"];
+const UNKNOWN_CATEGORY_CFG = { label: "Requirement", abbr: "REQ", accent: "#8a8a8a", stereo: "#b0b0b0" };
+
+// Diagnostic pseudo-filters listed in the legend beneath the requirement types.
+// They aren't categories — each selects items matching a traceability/coverage
+// problem (see matchesTypeFilter). Products are excluded from both: they are
+// roots (need no upstream trace) and don't require test cases.
+const DIAGNOSTIC_FILTERS = [
+  { key: "missing_trace", label: "Missing Traceability", glyph: "⚠", accent: "#e0a020", stereo: "#f0c040" },
+  { key: "missing_tests", label: "Missing Test Cases",   glyph: "∅", accent: "#d0506a", stereo: "#e07890" },
 ];
+
+// Human label for a legend filter key (a category or a diagnostic filter).
+function filterLabel(key) {
+  const diag = DIAGNOSTIC_FILTERS.find((d) => d.key === key);
+  if (diag) return diag.label;
+  return `${(CATEGORY_CONFIG[key] || UNKNOWN_CATEGORY_CFG).label}s`;
+}
 
 const TC_STATUS_COLORS = {
   Draft:    { accent: "#FBBF24", bg: "#fbbf2418", border: "#FBBF24", label: "DRAFT" },
@@ -201,7 +299,7 @@ const REL_CONFIG = {
   verify:      { stroke: "#40c870", dash: "7,4", markerEnd: "mk-verify" },
 };
 
-function getLevelCfg(depth) { return LEVEL_CONFIG[Math.min(Math.max(depth, 0), LEVEL_CONFIG.length - 1)]; }
+function getCategoryCfg(id) { return CATEGORY_CONFIG[getCategory(id)] || UNKNOWN_CATEGORY_CFG; }
 
 function assessTACO(req) {
   const text = (req.text || "").toLowerCase(), id = (req.id || "").trim();
@@ -305,7 +403,8 @@ function isLightTheme(T) {
 function renderBox(parent, req, pos, depth, isOrphan, callbacks, theme) {
   const { x, y } = pos, W = NODE_W, H = NODE_H, HH = 38;
   const taco = assessTACO(req), allPass = taco.T && taco.A && taco.C && taco.O;
-  const lc = getLevelCfg(depth);
+  const lc = getCategoryCfg(req.id);
+  const isSystem = getCategory(req.id) === "system";
   const boxBg = theme.surfaceRaised;
   const boxBorder = isOrphan ? "#c03030" : lc.accent;
   const headerBg = isOrphan ? (theme._isLight ? "#fde8e8" : "#1e0808") : (theme._isLight ? lc.accent + "18" : lc.accent + "30");
@@ -328,6 +427,16 @@ function renderBox(parent, req, pos, depth, isOrphan, callbacks, theme) {
   const dispId = req.id.length > 13 ? req.id.slice(0, 11) + "…" : req.id;
   g.append("text").attr("x", 6).attr("y", 11).attr("text-anchor", "start").attr("fill", isOrphan ? "#e05050" : lc.stereo).attr("font-size", "8.5").attr("font-weight", "700").text(isOrphan ? "⚠ " + dispId : dispId);
   g.append("text").attr("x", W - 6).attr("y", 11).attr("text-anchor", "end").attr("fill", lc.stereo).attr("font-size", "8.5").attr("font-style", "italic").attr("opacity", "0.85").text(`«${lc.label}»`);
+
+  // System-requirement level badge (L1, L2, …) — centered in the header band.
+  // `depth` is the computed level: shortest trace distance below the Product tier.
+  if (isSystem) {
+    const badgeText = `L${depth}`, bw = 16 + badgeText.length * 6;
+    g.append("rect").attr("x", W / 2 - bw / 2).attr("y", 2).attr("width", bw).attr("height", 13).attr("rx", 3)
+      .attr("fill", theme._isLight ? lc.accent + "22" : lc.accent + "40").attr("stroke", lc.accent).attr("stroke-width", "0.75");
+    g.append("text").attr("x", W / 2).attr("y", 11.5).attr("text-anchor", "middle").attr("fill", lc.stereo)
+      .attr("font-size", "8.5").attr("font-weight", "800").text(badgeText);
+  }
 
   wrapText(req.name, 26, 2).forEach((line, i) => {
     g.append("text").attr("x", W / 2).attr("y", 23 + i * 13).attr("text-anchor", "middle").attr("fill", theme.textBright).attr("font-size", "11").attr("font-weight", "700").text(line);
@@ -437,7 +546,7 @@ function renderLodBox(parent, req, pos, depth, callbacks, theme) {
   const isTc = req._isTc === true;
   const W = isTc ? TC_W : NODE_W;
   const H = 26;
-  const lc = isTc ? null : getLevelCfg(depth);
+  const lc = isTc ? null : getCategoryCfg(req.id);
   const sc = isTc ? (TC_STATUS_COLORS[req._meta?.status] || TC_STATUS_COLORS.Draft) : null;
   const accent = isTc ? sc.accent : lc.accent;
   const labelColor = isTc ? sc.accent : lc.stereo;
@@ -633,14 +742,37 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   const [toast, setToast] = useState(null); // { message, isError }
   const [kbEntries, setKbEntries] = useState([]);       // KB entries matched to right-clicked req
   const [kbSelected, setKbSelected] = useState(new Set()); // checked KB entry IDs
-  const [highlightedLevel, setHighlightedLevel] = useState(null); // depth index highlighted via legend right-click
+  const [highlightedLevel, setHighlightedLevel] = useState(null); // requirement category highlighted via legend right-click ("product" | "system" | "component")
   const [legendExpanded, setLegendExpanded] = useState(false);   // legend full-view toggle
+  const [classifyMenu, setClassifyMenu] = useState(null);        // { x, y, id, keyword, stage } for the Classify-ID flow
+  const [prefixVersion, setPrefixVersion] = useState(0);         // bumped when a prefix→category mapping is added, to recompute the diagram
 
-  // Transform — includeTestCases controlled by toggle
+  // Transform — includeTestCases controlled by toggle. prefixVersion is a
+  // dependency so newly-classified ID prefixes recolor/relevel immediately.
   const diagramData = useMemo(
     () => transformForDiagram(apiReqs || [], apiTcs || [], { includeTestCases: showTcs }),
-    [apiReqs, apiTcs, showTcs]
+    [apiReqs, apiTcs, showTcs, prefixVersion]
   );
+
+  // Requirement IDs with at least one linked test case, taken from the raw TC
+  // list so it's accurate regardless of the TC-overlay toggle. Backs the
+  // "Missing Test Cases" filter.
+  const reqIdsWithTests = useMemo(() => {
+    const s = new Set();
+    for (const tc of (apiTcs || [])) for (const rid of (tc.linked_req_ids || [])) s.add(rid);
+    return s;
+  }, [apiTcs]);
+
+  // Does a diagram node match a legend filter key? Requirement categories match
+  // by type; the two diagnostic filters match a traceability/coverage problem.
+  // Products are excluded from both diagnostics.
+  const matchesTypeFilter = useCallback((r, key) => {
+    if (!r || r._isTc) return false;
+    const cat = getCategory(r.id);
+    if (key === "missing_trace") return (cat === "system" || cat === "component") && !r.parent;
+    if (key === "missing_tests") return (cat === "system" || cat === "component") && !reqIdsWithTests.has(r.id);
+    return cat === key;
+  }, [reqIdsWithTests]);
 
   const [activeReqs, setActiveReqs] = useState([]);
   const [activeRels, setActiveRels] = useState([]);
@@ -755,7 +887,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
       applySelection(svgSel, curSelected, activeRelsRef.current, vs.isTcSet);
     } else if (curLevel !== null) {
       const highlighted = new Set(
-        vs.activeReqs.filter(r => !r._isTc && (vs.depths[r.id] || 0) === curLevel).map(r => r.id)
+        vs.activeReqs.filter(r => matchesTypeFilter(r, curLevel)).map(r => r.id)
       );
       svgSel.selectAll(".req-box").each(function () {
         const rid = d3.select(this).attr("data-req-id");
@@ -812,9 +944,9 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
       // Node selected — use the standard selection highlight
       applySelection(svg, selectedId, activeRels, isTcSet);
     } else if (highlightedLevel !== null) {
-      // Legend right-clicked — highlight all requirements at that depth level
+      // Legend right-clicked — highlight all items matching that filter
       const highlighted = new Set(
-        activeReqs.filter(r => !r._isTc && (diagramData.depths[r.id] || 0) === highlightedLevel).map(r => r.id)
+        activeReqs.filter(r => matchesTypeFilter(r, highlightedLevel)).map(r => r.id)
       );
       svg.selectAll(".req-box").each(function () {
         const rid = d3.select(this).attr("data-req-id");
@@ -828,10 +960,10 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
       // Nothing active — clear all highlighting
       applySelection(svg, null, activeRels, isTcSet);
     }
-  }, [selectedId, highlightedLevel, activeRels, isTcSet, activeReqs, diagramData.depths]);
+  }, [selectedId, highlightedLevel, activeRels, isTcSet, activeReqs, diagramData.depths, matchesTypeFilter]);
   useEffect(() => { if (!svgRef.current) return; const hidden = applyCollapse(d3.select(svgRef.current), collapsedEdges, activeRels); if (selectedId && hidden.has(selectedId)) setSelectedId(null); }, [collapsedEdges, activeRels, selectedId]);
   useEffect(() => { const h = () => setContextMenu(null); document.addEventListener("click", h); return () => document.removeEventListener("click", h); }, []);
-  useEffect(() => { const h = (e) => { if (e.key === "Escape") { setEditingReq(null); setContextMenu(null); } }; document.addEventListener("keydown", h); return () => document.removeEventListener("keydown", h); }, []);
+  useEffect(() => { const h = (e) => { if (e.key === "Escape") { setEditingReq(null); setContextMenu(null); setClassifyMenu(null); } }; document.addEventListener("keydown", h); return () => document.removeEventListener("keydown", h); }, []);
 
   // Fetch matched KB entries when context menu opens on a requirement
   useEffect(() => {
@@ -943,17 +1075,17 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
     setTimeout(() => enterFamilyView(initialFamilyId), 50);
   }, [initialFamilyId, diagramData, enterFamilyView]);
 
-  const enterLevelView = useCallback((depth) => {
-    const filtered = diagramData.requirements.filter((r) => !r._isTc && (diagramData.depths[r.id] || 0) === depth);
-    if (!filtered.length) return;
+  const enterLevelView = useCallback((category) => {
+    const filtered = diagramData.requirements.filter((r) => matchesTypeFilter(r, category));
+    if (!filtered.length) { setToast({ message: `No items match "${filterLabel(category)}"`, isError: false }); return; }
     const ids = new Set(filtered.map((r) => r.id));
     // Also include TCs linked to these requirements
     if (showTcs) { diagramData.requirements.filter(r => r._isTc && (r._meta?.reqIds || []).some(rid => ids.has(rid))).forEach(tc => { ids.add(tc.id); filtered.push(tc); }); }
-    setViewMode("level"); setViewTarget(depth);
+    setViewMode("level"); setViewTarget(category);
     setActiveReqs(filtered);
     setActiveRels(diagramData.relationships.filter((r) => ids.has(r.source) && ids.has(r.target)));
     setSelectedId(null);
-  }, [diagramData, showTcs]);
+  }, [diagramData, showTcs, matchesTypeFilter]);
 
   const exitFilteredView = useCallback(() => {
     // Return the URL to the plain traceability page (replaceState avoids firing hashchange).
@@ -990,12 +1122,31 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
   }, []);
 
   const hasData = activeReqs.length > 0;
-  const viewLabel = viewMode === "family" ? `Family: ${viewTarget}` : viewMode === "level" ? `Level: ${getLevelCfg(viewTarget).label}` : null;
+  const viewLabel = viewMode === "family" ? `Family: ${viewTarget}` : viewMode === "level" ? filterLabel(viewTarget) : null;
   const panelBg = _isLight ? "rgba(255,255,255,0.92)" : "rgba(8,10,20,0.95)";
 
   // Only requirements (not TCs) for TACO panel
-  const reqsOnly = useMemo(() => activeReqs.filter(r => !r._isTc), [activeReqs]);
-  const tcCount = useMemo(() => activeReqs.filter(r => r._isTc).length, [activeReqs]);
+  // Unclassified items: requirements whose ID didn't match any known JAMA type
+  // (Product / System / Component) and aren't test cases. These render on the
+  // diagram as «Requirement» — surfacing them here helps the user spot IDs the
+  // import didn't recognize. Computed across the full data set (not the active
+  // view) so it's a complete checklist regardless of any family/type filter.
+  const unclassified = useMemo(
+    () => diagramData.requirements.filter(r => !r._isTc && getCategory(r.id) === null),
+    [diagramData.requirements]
+  );
+
+  // Classify an unrecognized ID prefix as a Product / System / Component type.
+  // Persists the mapping, recomputes the diagram, and reports how many items
+  // the new mapping now covers.
+  const classifyPrefix = useCallback((keyword, category) => {
+    if (!keyword) return;
+    persistPrefixMapping(keyword, category);
+    const affected = (diagramData.requirements || []).filter(r => !r._isTc && idTypeKeyword(r.id) === keyword).length;
+    setPrefixVersion(v => v + 1);
+    setClassifyMenu(null);
+    setToast({ message: `Classified "${keyword}-*" as ${CATEGORY_CONFIG[category].label} · ${affected} item${affected !== 1 ? "s" : ""} updated`, isError: false });
+  }, [diagramData.requirements]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -1053,7 +1204,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
 
         {/* Finder */}
         {hasData && (
-          <div style={{ position: "absolute", top: 12, right: 12, width: 210, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, display: "flex", flexDirection: "column", maxHeight: "calc(100% - 180px)", zIndex: 50, backdropFilter: "blur(8px)" }}>
+          <div style={{ position: "absolute", top: 12, right: 12, width: 210, background: panelBg, border: `1px solid ${T.border}`, borderRadius: 6, display: "flex", flexDirection: "column", maxHeight: "calc(100% - 250px)", zIndex: 50, backdropFilter: "blur(8px)" }}>
             <div style={{ padding: "7px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.6px", textTransform: "uppercase" }}>Finder <span style={{ opacity: 0.6 }}>({finderReqs.length})</span></span>
               <button onClick={() => setFinderCollapsed(!finderCollapsed)} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 3, color: T.textMuted, cursor: "pointer", fontSize: 12, lineHeight: 1, padding: "1px 7px" }}>{finderCollapsed ? "+" : "−"}</button>
@@ -1088,7 +1239,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
             {/* Header row — always visible */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
               <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", fontSize: 9 }}>
-                Requirement Levels <span style={{ fontSize: 8, fontWeight: 400 }}>(click to filter)</span>
+                Requirement Types <span style={{ fontSize: 8, fontWeight: 400 }}>(click to filter)</span>
               </div>
               <button
                 onClick={() => setLegendExpanded(v => !v)}
@@ -1098,18 +1249,42 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
             </div>
 
             {/* Requirement levels — always visible */}
-            {LEVEL_CONFIG.map((lc, i) => {
-              const isHighlighted = highlightedLevel === i;
+            {CATEGORY_ORDER.map((cat) => {
+              const lc = CATEGORY_CONFIG[cat];
+              const isHighlighted = highlightedLevel === cat;
               return (
                 <div
-                  key={lc.abbr}
-                  onClick={() => enterLevelView(i)}
-                  onContextMenu={(e) => { e.preventDefault(); setSelectedId(null); setHighlightedLevel(prev => prev === i ? null : i); }}
+                  key={cat}
+                  onClick={() => enterLevelView(cat)}
+                  onContextMenu={(e) => { e.preventDefault(); setSelectedId(null); setHighlightedLevel(prev => prev === cat ? null : cat); }}
                   style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text, cursor: "pointer", padding: "3px 6px", borderRadius: 4, marginLeft: -6, marginRight: -6, background: isHighlighted ? lc.accent + "22" : "transparent", outline: isHighlighted ? `1px solid ${lc.accent}66` : "none" }}
                 >
                   <span style={{ display: "inline-block", padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, background: isHighlighted ? lc.accent + "44" : T.surface, border: `1px solid ${lc.accent}`, color: lc.stereo }}>{lc.abbr}</span>
                   {lc.label}
                   {isHighlighted && <span style={{ marginLeft: "auto", fontSize: 8, color: lc.stereo, fontWeight: 700, opacity: 0.8 }}>●</span>}
+                </div>
+              );
+            })}
+            {/* System levels (L1, L2, …) are shown as a badge on each node. */}
+            <div style={{ margin: "2px 0 0", paddingLeft: 2, fontSize: 8, color: T.textMuted, opacity: 0.85 }}>
+              System <span style={{ fontWeight: 800, color: CATEGORY_CONFIG.system.stereo }}>L1</span>/<span style={{ fontWeight: 800, color: CATEGORY_CONFIG.system.stereo }}>L2</span>… badge shows trace depth
+            </div>
+
+            {/* Diagnostic filters — traceability / test-coverage problems */}
+            <div style={{ color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", fontSize: 9, marginTop: 9, marginBottom: 3 }}>Diagnostics</div>
+            {DIAGNOSTIC_FILTERS.map((d) => {
+              const isHighlighted = highlightedLevel === d.key;
+              return (
+                <div
+                  key={d.key}
+                  onClick={() => enterLevelView(d.key)}
+                  onContextMenu={(e) => { e.preventDefault(); setSelectedId(null); setHighlightedLevel(prev => prev === d.key ? null : d.key); }}
+                  title={d.key === "missing_trace" ? "System or component requirements with no parent" : "System or component requirements with no linked test cases"}
+                  style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text, cursor: "pointer", padding: "3px 6px", borderRadius: 4, marginLeft: -6, marginRight: -6, background: isHighlighted ? d.accent + "22" : "transparent", outline: isHighlighted ? `1px solid ${d.accent}66` : "none" }}
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, borderRadius: 3, fontSize: 10, fontWeight: 700, background: isHighlighted ? d.accent + "44" : T.surface, border: `1px solid ${d.accent}`, color: d.stereo }}>{d.glyph}</span>
+                  {d.label}
+                  {isHighlighted && <span style={{ marginLeft: "auto", fontSize: 8, color: d.stereo, fontWeight: 700, opacity: 0.8 }}>●</span>}
                 </div>
               );
             })}
@@ -1183,7 +1358,11 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
               <>
                 <div style={{ color: T.accent, fontWeight: 700, marginBottom: 4, fontSize: 12 }}>{tooltip.req.id}</div>
                 {tooltip.isOrphan && <div style={{ marginBottom: 7, padding: "5px 8px", background: T.redDim, border: `1px solid ${T.red}44`, borderRadius: 4, color: T.red, fontSize: 10, lineHeight: 1.5 }}>⚠ Missing parent requirement</div>}
-                <div style={{ marginBottom: 6 }}><span style={{ padding: "1px 6px", borderRadius: 3, fontSize: 10, fontWeight: 700, background: T.surface, border: `1px solid ${getLevelCfg(tooltip.depth || 0).accent}`, color: getLevelCfg(tooltip.depth || 0).stereo }}>{getLevelCfg(tooltip.depth || 0).label}</span></div>
+                <div style={{ marginBottom: 6 }}>{(() => {
+                  const cfg = getCategoryCfg(tooltip.req.id);
+                  const lvl = getCategory(tooltip.req.id) === "system" ? ` · L${tooltip.depth || 0}` : "";
+                  return <span style={{ padding: "1px 6px", borderRadius: 3, fontSize: 10, fontWeight: 700, background: T.surface, border: `1px solid ${cfg.accent}`, color: cfg.stereo }}>{cfg.label}{lvl}</span>;
+                })()}</div>
                 <div style={{ color: T.textMuted, fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>Name</div>
                 <div style={{ color: T.textBright, margin: "2px 0 6px" }}>{tooltip.req.name}</div>
                 <div style={{ color: T.textMuted, fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>Text</div>
@@ -1210,6 +1389,11 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
             <div onClick={() => { enterFamilyView(contextMenu.req.id); setContextMenu(null); }} style={{ padding: "8px 14px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 9 }}>
               <span style={{ fontSize: 14 }}>◈</span> View Requirement Family
             </div>
+            {!contextMenu.req._isTc && getCategory(contextMenu.req.id) === null && (
+              <div onClick={() => { const cm = contextMenu; setContextMenu(null); setClassifyMenu({ x: cm.x, y: cm.y, id: cm.req.id, keyword: idTypeKeyword(cm.req.id), stage: "pick" }); }} style={{ padding: "8px 14px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ fontSize: 14 }}>🏷</span> Classify ID
+              </div>
+            )}
             {!contextMenu.req._isTc && (
               <>
                 <div style={{ height: 1, background: T.border, margin: "3px 0" }} />
@@ -1292,6 +1476,48 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
           </div>
         )}
 
+        {/* Classify-ID: step 1 — small cursor menu with the "Classify ID" action */}
+        {classifyMenu && classifyMenu.stage === "menu" && (
+          <>
+            <div onClick={() => setClassifyMenu(null)} onContextMenu={(e) => { e.preventDefault(); setClassifyMenu(null); }} style={{ position: "fixed", inset: 0, zIndex: 10000 }} />
+            <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", left: classifyMenu.x, top: classifyMenu.y, background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 6, padding: "4px 0", minWidth: 200, maxWidth: 320, zIndex: 10001, boxShadow: _isLight ? "0 8px 32px rgba(0,0,0,0.12)" : "0 8px 32px rgba(0,0,0,0.7)" }}>
+              <div style={{ padding: "6px 14px 5px", fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.7px", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={classifyMenu.id}>{classifyMenu.id}</div>
+              <div onClick={() => setClassifyMenu(m => ({ ...m, stage: "pick" }))} style={{ padding: "8px 14px", fontSize: 12, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ fontSize: 14 }}>🏷</span> Classify ID
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Classify-ID: step 2 — centered modal type picker (never clips off-screen) */}
+        {classifyMenu && classifyMenu.stage === "pick" && (
+          <div onClick={() => setClassifyMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: T.surfaceRaised, border: `1px solid ${T.border}`, borderRadius: 10, width: 380, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", zIndex: 10001, boxShadow: _isLight ? "0 12px 48px rgba(0,0,0,0.2)" : "0 12px 48px rgba(0,0,0,0.7)" }}>
+              <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.textBright }}>Classify ID Prefix</div>
+                  <div style={{ fontSize: 12, color: T.textMuted, marginTop: 5, lineHeight: 1.5 }}>
+                    Classify all <span style={{ fontFamily: mono, color: T.accent, fontWeight: 700 }}>{classifyMenu.keyword}-*</span> items as:
+                  </div>
+                  <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3, opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={classifyMenu.id}>e.g. {classifyMenu.id}</div>
+                </div>
+                <span onClick={() => setClassifyMenu(null)} title="Cancel" style={{ cursor: "pointer", color: T.textMuted, fontSize: 20, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>×</span>
+              </div>
+              <div style={{ padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                {CLASSIFY_OPTIONS.map((cat) => {
+                  const cfg = CATEGORY_CONFIG[cat];
+                  return (
+                    <div key={cat} onClick={() => classifyPrefix(classifyMenu.keyword, cat)} style={{ padding: "12px 14px", fontSize: 13, fontWeight: 600, color: T.text, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: `1px solid ${cfg.accent}55`, borderRadius: 7, background: _isLight ? cfg.accent + "12" : cfg.accent + "22" }}>
+                      <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 4, background: cfg.accent, border: `1px solid ${cfg.stereo}`, flexShrink: 0 }} />
+                      {cfg.label}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Generating overlay */}
         {generating && (
           <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 100, display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", background: T.surfaceRaised, border: `1px solid ${T.accent}44`, borderRadius: 8, boxShadow: _isLight ? "0 4px 20px rgba(0,0,0,0.1)" : "0 4px 20px rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
@@ -1311,38 +1537,34 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
         )}
       </div>
 
-      {/* TACO Assessment pane — requirements only */}
+      {/* Unclassified Items pane — IDs the import didn't recognize as a
+          Product / System / Component requirement (they render as «Requirement»). */}
       {hasData && (
         <div style={{ maxHeight: 180, overflowY: "auto", borderTop: `1px solid ${T.border}`, background: T.surface + "CC", backdropFilter: "blur(8px)", flexShrink: 0 }}>
-          <div style={{ padding: "6px 12px", fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", background: T.surface + "CC", backdropFilter: "blur(8px)", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 1 }}>
-            <span>TACO Assessment{tcCount > 0 ? ` · ${tcCount} TCs on diagram` : ""}</span>
-            <span style={{ fontWeight: 400 }}>
-              {(() => {
-                const pass = reqsOnly.filter((r) => { const t = assessTACO(r); return t.T && t.A && t.C && t.O; }).length;
-                const pct = reqsOnly.length ? Math.round((pass / reqsOnly.length) * 100) : 0;
-                return `${pass}/${reqsOnly.length} fully compliant (${pct}%)`;
-              })()}
+          <div style={{ padding: "6px 12px", fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", background: T.surface + "CC", backdropFilter: "blur(8px)", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 1 }}>
+            <span>Unclassified Items{unclassified.length > 0 ? ` · ${unclassified.length}` : ""}</span>
+            <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, fontSize: 9, color: T.textMuted }}>
+              IDs not recognized as Product / System / Component
             </span>
           </div>
-          {reqsOnly.map((req) => {
-            const taco = assessTACO(req);
-            const depth = diagramData.depths[req.id] || 0;
-            const lc = getLevelCfg(depth);
-            const isOrphan = diagramData.orphans.has(req.id);
-            return (
-              <div key={req.id} onClick={() => panToReq(req.id)} style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${T.bg}`, fontSize: 11, cursor: "pointer", background: isOrphan ? T.redDim : undefined }}>
-                <span style={{ color: T.accent, fontWeight: 600, minWidth: 72, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 110 }} title={req.id}>{req.id}</span>
-                {isOrphan && <span style={{ color: T.red, fontSize: 11 }} title="Missing parent">⚠</span>}
-                <span style={{ display: "inline-block", padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, background: T.surface, border: `1px solid ${lc.accent}`, color: lc.stereo }}>{lc.abbr}</span>
-                <span style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-                  {["T", "A", "C", "O"].map((k) => (
-                    <span key={k} style={{ display: "inline-block", width: 17, height: 17, borderRadius: 3, fontSize: 9, fontWeight: 800, textAlign: "center", lineHeight: "17px", background: taco[k] ? (_isLight ? "#e8f5e8" : "#0f2a0f") : (_isLight ? "#fde8e8" : "#2a0f0f"), color: taco[k] ? "#4caf50" : "#f44336", border: `1px solid ${taco[k] ? (_isLight ? "#a0d0a0" : "#1a4a1a") : (_isLight ? "#e0a0a0" : "#4a1a1a")}` }}>{k}</span>
-                  ))}
-                </span>
-                <span style={{ color: T.textMuted, fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{req.name}</span>
-              </div>
-            );
-          })}
+          {unclassified.length === 0 ? (
+            <div style={{ padding: "10px 12px", fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>
+              ✓ Every requirement mapped to a Product, System, or Component type.
+            </div>
+          ) : (
+            unclassified.map((req) => {
+              const jamaType = req._meta?.requirement_type;
+              return (
+                <div key={req.id} onClick={() => panToReq(req.id)} onContextMenu={(e) => { e.preventDefault(); setClassifyMenu({ x: e.clientX, y: e.clientY, id: req.id, keyword: idTypeKeyword(req.id), stage: "menu" }); }} title="Click to pan · right-click to classify this ID" style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${T.bg}`, fontSize: 11, cursor: "pointer" }}>
+                  <span style={{ color: T.amber, fontSize: 11, flexShrink: 0 }} title="Unrecognized ID type">⚠</span>
+                  <span style={{ color: T.accent, fontWeight: 600, minWidth: 72, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170 }} title={req.id}>{req.id}</span>
+                  <span style={{ display: "inline-block", padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700, background: T.surface, border: `1px solid ${UNKNOWN_CATEGORY_CFG.accent}`, color: UNKNOWN_CATEGORY_CFG.stereo, whiteSpace: "nowrap", flexShrink: 0 }}>«Requirement»</span>
+                  {jamaType && <span style={{ fontSize: 9, fontWeight: 600, color: T.textMuted, background: T.surface, padding: "1px 5px", borderRadius: 3, whiteSpace: "nowrap", flexShrink: 0 }} title="Type reported by Jama">{jamaType}</span>}
+                  <span style={{ color: T.textMuted, fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{req.name}</span>
+                </div>
+              );
+            })
+          )}
         </div>
       )}
     </div>
