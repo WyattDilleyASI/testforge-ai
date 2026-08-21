@@ -333,19 +333,23 @@ function wrapText(text, maxChars, maxLines) {
 function computeLayout(reqs, rels) {
   const children = {};
   const hasParent = new Set();
-  reqs.forEach((r) => { children[r.id] = []; });
+  // Test cases are NOT part of the requirement tree — they're placed in a single
+  // band below the deepest requirement (see end of this function), so a TC linked
+  // to many requirements doesn't drag its verify lines up through the middle of
+  // the model.
+  reqs.forEach((r) => { if (!r._isTc) children[r.id] = []; });
 
-  // Build the layout tree exclusively from each node's `parent` field so that
-  // cross-ref containment edges (req-to-req links that aren't direct parent-child)
-  // don't create duplicate children or cycles in the tree.
+  // Build the layout tree exclusively from each requirement's `parent` field so
+  // that cross-ref containment edges (req-to-req links that aren't direct
+  // parent-child) don't create duplicate children or cycles in the tree.
   reqs.forEach((r) => {
-    if (r.parent && children[r.parent]) {
+    if (!r._isTc && r.parent && children[r.parent]) {
       children[r.parent].push(r.id);
       hasParent.add(r.id);
     }
   });
 
-  const roots = reqs.filter((r) => !hasParent.has(r.id)).map((r) => r.id);
+  const roots = reqs.filter((r) => !r._isTc && !hasParent.has(r.id)).map((r) => r.id);
   const positions = {};
   const isTcMap = new Set(reqs.filter((r) => r._isTc).map((r) => r.id));
 
@@ -379,6 +383,50 @@ function computeLayout(reqs, rels) {
     placeNode(rid, startX + rw / 2, 0);
     startX += rw + H_PAD + 40;
   });
+
+  // ── Test-case band: one row below the deepest requirement ──
+  // All TCs share a single y so they never intermix with requirement tiers.
+  // Each TC wants to sit directly under its primary linked requirement (short,
+  // near-vertical verify lines). Where TCs would overlap, we merge them into a
+  // block centered on their combined targets — so they spread apart only as much
+  // as needed and stay as close to their parents as possible (a classic
+  // minimum-displacement label dodge).
+  const tcNodes = reqs.filter((r) => r._isTc);
+  if (tcNodes.length) {
+    const reqYs = Object.values(positions).map((p) => p.y);
+    const maxReqY = reqYs.length ? Math.max(...reqYs) : 0;
+    const bottomY = maxReqY + NODE_H + V_PAD;
+    const minGap = TC_W + H_PAD; // min center-to-center spacing between TCs
+    const targetX = (tc) => (positions[tc.parent] ? positions[tc.parent].x : 0);
+
+    // TCs sorted by their desired x (primary parent's x), id as a stable tiebreak.
+    const items = tcNodes
+      .map((tc) => ({ tc, target: targetX(tc) }))
+      .sort((a, b) => (a.target - b.target) || (a.tc.id < b.tc.id ? -1 : a.tc.id > b.tc.id ? 1 : 0));
+
+    // Greedy overlap merge. Each block is a run of TCs spaced by minGap whose
+    // first-item center `f` minimizes total displacement of its members to their
+    // targets: f = mean(target_i − i·minGap).
+    const blocks = [];
+    for (const it of items) {
+      blocks.push({ items: [it], f: it.target });
+      while (blocks.length >= 2) {
+        const right = blocks[blocks.length - 1];
+        const left = blocks[blocks.length - 2];
+        if (right.f < left.f + left.items.length * minGap) {
+          const merged = left.items.concat(right.items);
+          let sum = 0;
+          merged.forEach((m, idx) => { sum += m.target - idx * minGap; });
+          blocks.splice(blocks.length - 2, 2, { items: merged, f: sum / merged.length });
+        } else break;
+      }
+    }
+
+    for (const block of blocks) {
+      block.items.forEach((m, idx) => { positions[m.tc.id] = { x: block.f + idx * minGap, y: bottomY }; });
+    }
+  }
+
   return positions;
 }
 
