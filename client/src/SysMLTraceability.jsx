@@ -15,7 +15,7 @@ import { api } from "./api";
 // upstream trace chain (see computeDepth in transformForDiagram), not from its
 // type. The project-ID prefix (e.g. "LFWM2-") is intentionally omitted so
 // TestForge works across multiple projects without reconfiguration.
-const JAMA_BASE_CATEGORIES = { "PRD_Rqmts": "product", "SYSRQ": "system", "CMPRQ": "component" };
+const JAMA_BASE_CATEGORIES = { "PRDUseCase": "usecase", "PRD_Rqmts": "product", "SYSRQ": "system", "CMPRQ": "component" };
 
 // Merges base categories with any user-configured extras saved by the import
 // prefix configuration panel (stored in localStorage as "tf_custom_prefixes").
@@ -24,8 +24,9 @@ function getJamaTypeCategory() {
   try {
     const stored = localStorage.getItem("tf_custom_prefixes");
     if (!stored) return JAMA_BASE_CATEGORIES;
-    const custom = JSON.parse(stored); // { prd:[], sys:[], cmp:[], tc:[] }
+    const custom = JSON.parse(stored); // { uc:[], prd:[], sys:[], cmp:[], tc:[] }
     const merged = { ...JAMA_BASE_CATEGORIES };
+    (custom.uc  || []).forEach(t => { if (t) merged[t] = "usecase"; });
     (custom.prd || []).forEach(t => { if (t) merged[t] = "product"; });
     (custom.sys || []).forEach(t => { if (t) merged[t] = "system"; });
     (custom.cmp || []).forEach(t => { if (t) merged[t] = "component"; });
@@ -83,11 +84,11 @@ function idTypeKeyword(id) {
 // config that getJamaTypeCategory() reads. Moving a keyword between categories
 // removes it from the others first so it never lands in two buckets.
 function persistPrefixMapping(keyword, category) {
-  const bucketKey = category === "product" ? "prd" : category === "system" ? "sys" : category === "component" ? "cmp" : "tc";
+  const bucketKey = category === "usecase" ? "uc" : category === "product" ? "prd" : category === "system" ? "sys" : category === "component" ? "cmp" : "tc";
   let custom = {};
   try { custom = JSON.parse(localStorage.getItem("tf_custom_prefixes") || "{}"); } catch { custom = {}; }
   const buckets = {};
-  for (const k of ["prd", "sys", "cmp", "tc", "subsys"]) {
+  for (const k of ["uc", "prd", "sys", "cmp", "tc", "subsys"]) {
     buckets[k] = Array.isArray(custom[k]) ? custom[k].filter((t) => t !== keyword) : [];
   }
   buckets[bucketKey] = Array.from(new Set([...buckets[bucketKey], keyword]));
@@ -116,7 +117,12 @@ function transformForDiagram(apiRequirements, apiTestCases = [], options = {}) {
   const inProgress = new Set();
   function computeDepth(id) {
     if (id in depthMemo) return depthMemo[id];
-    if (getCategory(id) === "product") { depthMemo[id] = 0; return 0; }
+    const baseCat = getCategory(id);
+    // Product is the reference tier (depth 0) so system levels stay
+    // Product-relative (a system under a product is L1). Use Cases sit above
+    // products in the layout tree but share depth 0 for numbering — they carry
+    // no level badge, so the number is never displayed for them.
+    if (baseCat === "product" || baseCat === "usecase") { depthMemo[id] = 0; return 0; }
     const apiReq = reqById.get(id);
     if (!apiReq) return fwmDepth(id);
     if (inProgress.has(id)) return Infinity; // cycle — this path can't reach a Product
@@ -138,7 +144,12 @@ function transformForDiagram(apiRequirements, apiTestCases = [], options = {}) {
   function resolveParentId(apiReq) {
     const id = apiReq.req_id;
     if (detectIdFormat(id) === "fwm") { const p = id.replace(/[-_.]\d+$/, ""); return (p !== id && allReqIds.has(p)) ? p : ""; }
-    if (getCategory(id) === "product") return "";
+    const cat = getCategory(id);
+    if (cat === "usecase") return "";                     // top tier — always a root
+    if (cat === "product") {                              // parent is its upstream Use Case
+      const uc = upstreamParentIds(apiReq).find((p) => getCategory(p) === "usecase");
+      return uc || "";
+    }
     let bestP = "", bestD = Infinity;
     for (const p of upstreamParentIds(apiReq)) {
       const d = computeDepth(p);
@@ -260,22 +271,23 @@ const VAGUE_TERMS = [
 // (L1, L2, …) is shown as a badge on the node rather than by a distinct color
 // per level, so the palette stays fixed no matter how deep the trace chain runs.
 const CATEGORY_CONFIG = {
+  usecase:   { label: "Use Case",              abbr: "UC",  accent: "#c9772f", stereo: "#e2a463" },
   product:   { label: "Product Requirement",   abbr: "PRD", accent: "#4d70d8", stereo: "#7090e0" },
   system:    { label: "System Requirement",    abbr: "SYS", accent: "#3d8a60", stereo: "#60c890" },
   component: { label: "Component Requirement", abbr: "CMP", accent: "#7840a8", stereo: "#b070e0" },
   testcase:  { label: "Test Case",             abbr: "TC",  accent: "#2596be", stereo: "#5ec5e0" },
 };
-// Categories shown in the legend / used for the type filter (requirement tiers only).
-const CATEGORY_ORDER = ["product", "system", "component"];
-// Choices offered in the Classify-ID popup — adds Test Case for IDs that are
-// actually test cases mislabeled as «Requirement» by the import.
-const CLASSIFY_OPTIONS = ["product", "system", "component", "testcase"];
+// Categories shown in the legend / used for the type filter (top tier first).
+const CATEGORY_ORDER = ["usecase", "product", "system", "component"];
+// Choices offered in the Classify-ID popup — adds Use Case (top tier) and Test
+// Case for IDs the import left as «Requirement».
+const CLASSIFY_OPTIONS = ["usecase", "product", "system", "component", "testcase"];
 const UNKNOWN_CATEGORY_CFG = { label: "Requirement", abbr: "REQ", accent: "#8a8a8a", stereo: "#b0b0b0" };
 
 // Diagnostic pseudo-filters listed in the legend beneath the requirement types.
-// They aren't categories — each selects items matching a traceability/coverage
-// problem (see matchesTypeFilter). Products are excluded from both: they are
-// roots (need no upstream trace) and don't require test cases.
+// They aren't categories — each selects items with a traceability/coverage
+// problem (see matchesTypeFilter). "Missing Test Cases" applies only to system
+// and component requirements (use cases and products don't require test cases).
 const DIAGNOSTIC_FILTERS = [
   { key: "missing_trace", label: "Missing Traceability", glyph: "⚠", accent: "#e0a020", stereo: "#f0c040" },
   { key: "missing_tests", label: "Missing Test Cases",   glyph: "∅", accent: "#d0506a", stereo: "#e07890" },
@@ -811,16 +823,35 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
     return s;
   }, [apiTcs]);
 
+  // Map of parent id → set of its direct child categories (from the layout tree).
+  // Backs the downstream half of the "Missing Traceability" filter (Use Case must
+  // have a child Product; Product must have a child System).
+  const childCatsByParent = useMemo(() => {
+    const m = new Map();
+    for (const r of diagramData.requirements) {
+      if (r._isTc || !r.parent) continue;
+      if (!m.has(r.parent)) m.set(r.parent, new Set());
+      m.get(r.parent).add(getCategory(r.id));
+    }
+    return m;
+  }, [diagramData.requirements]);
+
   // Does a diagram node match a legend filter key? Requirement categories match
-  // by type; the two diagnostic filters match a traceability/coverage problem.
-  // Products are excluded from both diagnostics.
+  // by type; the diagnostic filters match a traceability/coverage problem.
   const matchesTypeFilter = useCallback((r, key) => {
     if (!r || r._isTc) return false;
     const cat = getCategory(r.id);
-    if (key === "missing_trace") return (cat === "system" || cat === "component") && !r.parent;
+    if (key === "missing_trace") {
+      // Combined upstream + downstream: missing a required parent, or a required child.
+      const childCats = childCatsByParent.get(r.id);
+      if (cat === "usecase") return !(childCats && childCats.has("product"));             // no child Product
+      if (cat === "product") return !r.parent || !(childCats && childCats.has("system"));  // no Use Case parent, or no child System
+      if (cat === "system" || cat === "component") return !r.parent;                       // no parent
+      return false;
+    }
     if (key === "missing_tests") return (cat === "system" || cat === "component") && !reqIdsWithTests.has(r.id);
     return cat === key;
-  }, [reqIdsWithTests]);
+  }, [reqIdsWithTests, childCatsByParent]);
 
   const [activeReqs, setActiveReqs] = useState([]);
   const [activeRels, setActiveRels] = useState([]);
@@ -1327,7 +1358,7 @@ export default function SysMLTraceability({ requirements: apiReqs, testCases: ap
                   key={d.key}
                   onClick={() => enterLevelView(d.key)}
                   onContextMenu={(e) => { e.preventDefault(); setSelectedId(null); setHighlightedLevel(prev => prev === d.key ? null : d.key); }}
-                  title={d.key === "missing_trace" ? "System or component requirements with no parent" : "System or component requirements with no linked test cases"}
+                  title={d.key === "missing_trace" ? "Broken trace — missing a required parent or child: Use Case w/o Product; Product w/o Use Case or w/o System; System/Component w/o parent" : "System or component requirements with no linked test cases"}
                   style={{ display: "flex", alignItems: "center", gap: 7, margin: "4px 0", color: T.text, cursor: "pointer", padding: "3px 6px", borderRadius: 4, marginLeft: -6, marginRight: -6, background: isHighlighted ? d.accent + "22" : "transparent", outline: isHighlighted ? `1px solid ${d.accent}66` : "none" }}
                 >
                   <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, borderRadius: 3, fontSize: 10, fontWeight: 700, background: isHighlighted ? d.accent + "44" : T.surface, border: `1px solid ${d.accent}`, color: d.stereo }}>{d.glyph}</span>
